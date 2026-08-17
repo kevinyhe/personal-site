@@ -4119,7 +4119,7 @@ export default function WeepingCherryTreeCanvas({
       renderer.setPixelRatio(getRenderPixelRatio());
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.08;
+      renderer.toneMappingExposure = 1.1;
       renderer.shadowMap.enabled = sceneQuality !== "low";
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.shadowMap.autoUpdate = false;
@@ -4127,10 +4127,12 @@ export default function WeepingCherryTreeCanvas({
       mount.appendChild(renderer.domElement);
       await reportSceneBuildProgress();
 
-      const hemi = new THREE.HemisphereLight(0xeaf5ff, 0x263d25, 1.8);
+      // Sky half matches the dome zenith blue; ground half bounces grass
+      // green back up into the underside of the canopy.
+      const hemi = new THREE.HemisphereLight(0xbdd3ea, 0x31502c, 1.95);
       scene.add(hemi);
 
-      const sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
+      const sun = new THREE.DirectionalLight(0xffe9c4, 3.2);
       sun.position.set(-7.2, 10.4, 3.1);
       sun.castShadow = sceneQuality !== "low";
       sun.shadow.mapSize.set(1024, 1024);
@@ -4148,6 +4150,144 @@ export default function WeepingCherryTreeCanvas({
       const fill = new THREE.DirectionalLight(0xbfd7ff, 0.65);
       fill.position.set(6, 4, -6);
       scene.add(fill);
+
+      // Cool rim from back-left so the canopy edge separates from the
+      // brighter sun-side sky. No shadows; purely a highlight.
+      const rim = new THREE.DirectionalLight(0xd6e4ff, 0.4);
+      rim.position.set(-4.5, 6, -8.5);
+      scene.add(rim);
+
+      // Sky dome: vertex-color gradient from skyColor at the horizon (kept
+      // identical to the fog color so the mound's far edge dissolves into it
+      // with no junction line) up to a deeper blue zenith, with a subtle warm
+      // bias toward the sun azimuth and faint procedural cloud wisps.
+      const createSkyDome = () => {
+        const sky = new THREE.Group();
+        sky.name = "Sky dome";
+        const smoothRamp = (edge0: number, edge1: number, v: number) => {
+          const k = clamp01((v - edge0) / (edge1 - edge0));
+          return k * k * (3 - 2 * k);
+        };
+        // Deep enough that the blue survives ACES tone mapping, which
+        // desaturates pale colors near the shoulder into gray.
+        const zenithColor = new THREE.Color(0x6f9dcc);
+        const warmColor = new THREE.Color(0xf9ead2);
+        const sunAzimuth = new THREE.Vector2(-7.2, 3.1).normalize();
+        // Camera far is 80 and the camera sits up to ~24 units from the
+        // origin, so keep radius + camera offset under the far plane or the
+        // dome gets clipped mid-frame.
+        const domeRadius = 52;
+        const domeGeometry = new THREE.SphereGeometry(domeRadius, 48, 32);
+        const domePositions = domeGeometry.attributes.position;
+        const domeColors = new Float32Array(domePositions.count * 3);
+        const vertexColor = new THREE.Color();
+        const vertexAzimuth = new THREE.Vector2();
+        for (let i = 0; i < domePositions.count; i += 1) {
+          const up = domePositions.getY(i) / domeRadius;
+          // Everything at or below the horizon stays exactly skyColor.
+          const zenithMix = Math.pow(clamp01((up - 0.02) / 0.7), 1.15);
+          vertexColor.copy(skyColor).lerp(zenithColor, zenithMix);
+          vertexAzimuth.set(domePositions.getX(i), domePositions.getZ(i));
+          if (vertexAzimuth.lengthSq() > 1e-6) {
+            const facing = clamp01(vertexAzimuth.normalize().dot(sunAzimuth));
+            const warmBand =
+              smoothRamp(0.03, 0.14, up) * (1 - smoothRamp(0.32, 0.72, up));
+            vertexColor.lerp(warmColor, facing * facing * warmBand * 0.16);
+          }
+          domeColors[i * 3] = vertexColor.r;
+          domeColors[i * 3 + 1] = vertexColor.g;
+          domeColors[i * 3 + 2] = vertexColor.b;
+        }
+        domeGeometry.setAttribute(
+          "color",
+          new THREE.BufferAttribute(domeColors, 3),
+        );
+        const domeMesh = new THREE.Mesh(
+          domeGeometry,
+          new THREE.MeshBasicMaterial({
+            vertexColors: true,
+            side: THREE.BackSide,
+            fog: false,
+            depthWrite: false,
+          }),
+        );
+        domeMesh.renderOrder = -2;
+        sky.add(domeMesh);
+
+        // Faint cloud wisps: one canvas of u-elongated value-noise fbm
+        // streaks, alpha-blended into the upper sky band only.
+        const cloudCanvas = document.createElement("canvas");
+        cloudCanvas.width = 512;
+        cloudCanvas.height = 256;
+        const cloudCtx = cloudCanvas.getContext("2d");
+        if (cloudCtx) {
+          const rng = makeRng(0x5cae1);
+          const latticeSize = 64;
+          const lattice = new Float32Array(latticeSize * latticeSize);
+          for (let i = 0; i < lattice.length; i += 1) lattice[i] = rng();
+          // periodX makes the noise wrap horizontally so the dome seam at
+          // u = 0/1 is invisible.
+          const latticeAt = (ix: number, iy: number, periodX: number) => {
+            const wx = ((ix % periodX) + periodX) % periodX;
+            const wy = ((iy % latticeSize) + latticeSize) % latticeSize;
+            return lattice[wy * latticeSize + (wx % latticeSize)];
+          };
+          const valueNoise = (x: number, y: number, periodX: number) => {
+            const ix = Math.floor(x);
+            const iy = Math.floor(y);
+            const fx = x - ix;
+            const fy = y - iy;
+            const sx = fx * fx * (3 - 2 * fx);
+            const sy = fy * fy * (3 - 2 * fy);
+            const a = latticeAt(ix, iy, periodX);
+            const b = latticeAt(ix + 1, iy, periodX);
+            const c = latticeAt(ix, iy + 1, periodX);
+            const d = latticeAt(ix + 1, iy + 1, periodX);
+            return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+          };
+          const cloudImage = cloudCtx.createImageData(512, 256);
+          const cloudData = cloudImage.data;
+          for (let py = 0; py < 256; py += 1) {
+            // py = 0 is the zenith (sphere uv.y = 1 with flipY canvas).
+            const v = (py + 0.5) / 256;
+            const band =
+              smoothRamp(0.08, 0.18, v) * (1 - smoothRamp(0.28, 0.4, v));
+            for (let px = 0; px < 512; px += 1) {
+              const u = (px + 0.5) / 512;
+              let fbm = 0;
+              fbm += valueNoise(u * 6, v * 24, 6) * 0.55;
+              fbm += valueNoise(u * 12, v * 48 + 17.3, 12) * 0.3;
+              fbm += valueNoise(u * 24, v * 96 + 41.7, 24) * 0.15;
+              const wisp = smoothRamp(0.52, 0.74, fbm) * band;
+              const o = (py * 512 + px) * 4;
+              cloudData[o] = 255;
+              cloudData[o + 1] = 251;
+              cloudData[o + 2] = 246;
+              cloudData[o + 3] = Math.round(wisp * 96);
+            }
+          }
+          cloudCtx.putImageData(cloudImage, 0, 0);
+          const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+          cloudTexture.colorSpace = THREE.SRGBColorSpace;
+          cloudTexture.wrapS = THREE.RepeatWrapping;
+          const cloudMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(domeRadius - 1, 32, 16),
+            new THREE.MeshBasicMaterial({
+              map: cloudTexture,
+              transparent: true,
+              side: THREE.BackSide,
+              fog: false,
+              depthWrite: false,
+            }),
+          );
+          cloudMesh.renderOrder = -1;
+          sky.add(cloudMesh);
+        }
+        return sky;
+      };
+      // Added to the scene (not worldGroup) so the sky never inherits any
+      // world transform.
+      scene.add(createSkyDome());
       await reportSceneBuildProgress();
 
       const groundMesh = createGround();
