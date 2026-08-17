@@ -15,7 +15,9 @@ export default function Home() {
         className="pointer-events-none fixed inset-x-0 top-0 z-10 h-36 bg-gradient-to-b from-black/60 to-transparent sm:hidden"
       />
 
-      <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-6 text-[#f0f0f0] mix-blend-difference sm:p-12">
+      {/* Solid type, no blend: the scene is dark everywhere except the
+          canopy, and difference-blending goes mottled green over pink. */}
+      <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-6 text-[#f0f0f0] sm:p-12">
         <p
           className="max-w-[28rem] text-[0.75rem] leading-[1.7] sm:text-[0.85rem]"
           data-hero-animate
@@ -29,9 +31,18 @@ export default function Home() {
 
         <div className="flex-1" />
 
-        <div className="flex flex-wrap items-baseline justify-between text-[clamp(3rem,15vw,13rem)] leading-[0.9]">
-          <span className="font-light tracking-[-0.05em]">Kevin</span>
-          <span className="font-serif-display italic">He.</span>
+        {/* Sized to the viewport's limiting axis: two stacked lines must
+            clear the tagline, hairline and bar without overflowing. */}
+        <div
+          className="flex flex-col text-[clamp(4rem,min(26vw,43vh),24rem)] leading-[0.82]"
+          style={{ textShadow: "0 2px 34px rgba(10,10,10,0.6), 0 0 8px rgba(10,10,10,0.35)" }}
+        >
+          <span className="self-start font-light tracking-[-0.05em]">
+            Kevin
+          </span>
+          <span className="-mt-[0.1em] self-end font-serif-display italic">
+            He.
+          </span>
         </div>
 
         <div

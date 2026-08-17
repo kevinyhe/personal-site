@@ -1,16 +1,16 @@
 # Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~54,687 words
+- 61 files · ~49,092 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 562 nodes · 842 edges · 49 communities (33 shown, 16 thin omitted)
+- 544 nodes · 761 edges · 48 communities (33 shown, 15 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1830187b`
+- Built from commit: `9b5d9d44`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,7 +22,6 @@
 - What You Must Do When Invoked
 - devDependencies
 - /graphify
-- graphify reference: extra exports and benchmark
 - graphify reference: extra exports and benchmark
 - graphify reference: query, path, explain
 - graphify reference: query, path, explain
@@ -65,16 +64,16 @@
 - AGENTS.md
 
 ## God Nodes (most connected - your core abstractions)
-1. `WeepingCherryGenerator` - 39 edges
-2. `lerp()` - 23 edges
-3. `clamp01()` - 21 edges
-4. `WeepingCherryTreeCanvas()` - 20 edges
-5. `smoothstep()` - 18 edges
-6. `compilerOptions` - 16 edges
-7. `validate()` - 14 edges
-8. `getGroundHeight()` - 14 edges
-9. `compress_file()` - 12 edges
-10. `createMossFoliage()` - 12 edges
+1. `WeepingCherryGenerator` - 38 edges
+2. `lerp()` - 17 edges
+3. `clamp01()` - 16 edges
+4. `compilerOptions` - 16 edges
+5. `validate()` - 14 edges
+6. `compress_file()` - 12 edges
+7. `What You Must Do When Invoked` - 12 edges
+8. `What You Must Do When Invoked` - 12 edges
+9. `smoothstep()` - 11 edges
+10. `WeepingCherryTreeCanvas()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `compress_file()` --calls--> `validate()`  [EXTRACTED]
@@ -91,7 +90,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (49 total, 16 thin omitted)
+## Communities (48 total, 15 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -110,8 +109,8 @@ Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 4 - "What You Must Do When Invoked"
-Cohesion: 0.14
-Nodes (5): Branch, getBranchFrame(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
+Cohesion: 0.15
+Nodes (6): Branch, getBranchFrame(), lerp(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -210,8 +209,8 @@ Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.06
-Nodes (72): applyBlossomWind(), applyBranchWind(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchGeometryBuilder (+64 more)
+Cohesion: 0.05
+Nodes (58): applyBlossomWind(), applyBranchWind(), arborGustEnvelope(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame (+50 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -222,19 +221,19 @@ Cohesion: 0.29
 Nodes (3): menuLinks, socialLinks, HeroIntroProps
 
 ## Knowledge Gaps
-- **257 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+252 more)
+- **256 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+251 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `smoothstep`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `compilerOptions` to `package.json`?**
   _High betweenness centrality (0.008) - this node is a cross-community bridge._
 - **What connects `inter`, `instrumentSerif`, `metadata` to the rest of the system?**
-  _257 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _256 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
   _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**

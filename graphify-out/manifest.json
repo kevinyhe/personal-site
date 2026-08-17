@@ -15,8 +15,8 @@
     "semantic_hash": ""
   },
   "app/page.tsx": {
-    "mtime": 1786997179.6403294,
-    "ast_hash": "ae7de6af073d49f2f1902f8653e64e86",
+    "mtime": 1786999743.960286,
+    "ast_hash": "5b73ee273bdd2c963003a9acc3061c79",
     "semantic_hash": ""
   },
   "eslint.config.mjs": {
@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "components/BareThreeCanvas.tsx": {
-    "mtime": 1786997269.457138,
-    "ast_hash": "b055d6c6d8e9fe81716610a576a020b6",
+    "mtime": 1786999077.3489194,
+    "ast_hash": "619dfde5f5b91ca12f658901bd24e59b",
     "semantic_hash": ""
   },
   "components/HeroIntro.tsx": {
