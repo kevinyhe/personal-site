@@ -1636,6 +1636,20 @@ const PETAL_FALLING = 1;
 const PETAL_VOID_FADE_START = -0.35;
 const PETAL_VOID_FADE_END = -2.1;
 
+// Shared flow field: one smooth curl-noise current that every falling petal
+// samples, so the flock reads as riding the same wind instead of confetti.
+const FLOW_NOISE_SCALE = 0.12; // world -> noise units (~1 big swirl per 8u)
+const FLOW_CURL_EPS = 0.35; // finite-difference step, in noise units
+const FLOW_CURL_STRENGTH = 1.6; // horizontal swirl speed at full gust (u/s)
+const FLOW_LIFT_STRENGTH = 0.6; // vertical channel scale (u/s)
+// Gust front that travels downwind across the canopy: modulates both petal
+// release and field strength, so detachment and acceleration sweep through
+// the tree as a moving wave instead of firing uniformly at random.
+const GUST_WAVE_LENGTH = 7; // world units crest-to-crest
+const GUST_WAVE_SPEED = 0.45; // crest travels at LENGTH*SPEED ~ 3.2 u/s
+// Gentle helical swirl in the wake trailing downwind of the trunk.
+const HELIX_STRENGTH = 0.22;
+
 class FallingPetalSystem {
   mesh: THREE.InstancedMesh;
   private rng: () => number;
@@ -1666,6 +1680,13 @@ class FallingPetalSystem {
   private color = new THREE.Color();
   private tmp = new THREE.Vector3();
   private wind = new THREE.Vector3(0.16, 0, 0.05);
+  // Unit wind direction in the horizontal plane (set in the constructor).
+  private windDirX = 1;
+  private windDirZ = 0;
+  // Scratch output of sampleFlow — plain numbers, no per-frame allocation.
+  private flowX = 0;
+  private flowY = 0;
+  private flowZ = 0;
 
   constructor({
     count,
@@ -1683,6 +1704,9 @@ class FallingPetalSystem {
     this.rng = rng;
     this.lobes = lobes;
     this.anchors = anchors && anchors.length > 0 ? anchors : null;
+    const windLen = Math.hypot(this.wind.x, this.wind.z) || 1;
+    this.windDirX = this.wind.x / windLen;
+    this.windDirZ = this.wind.z / windLen;
     this.mesh = new THREE.InstancedMesh(
       createFallingPetalGeometry(),
       material,
@@ -1716,10 +1740,12 @@ class FallingPetalSystem {
       this.vTerms[i] = this.rand(0.35, 0.75);
       // Falling-leaf side slip: lateral oscillation perpendicular to the
       // descent, with its own direction, amplitude, and tempo per petal.
+      // Amplitude is kept small so the shared flow field dominates the
+      // trajectory and the slip only adds individual life on top.
       const slipAngle = this.rand(0, TAU);
       this.slipDirXs[i] = Math.cos(slipAngle);
       this.slipDirZs[i] = Math.sin(slipAngle);
-      this.slipAmps[i] = this.rand(0.12, 0.34);
+      this.slipAmps[i] = this.rand(0.05, 0.12);
       this.slipFreqs[i] = this.rand(1.2, 2.6);
       this.slipPhases[i] = this.rand(0, TAU);
       this.rockAmps[i] = this.rand(0.35, 0.8);
@@ -1808,19 +1834,44 @@ class FallingPetalSystem {
     this.fallAges[i] = 0;
   }
 
+  // Smooth time-evolving velocity field shared by every petal. The
+  // horizontal part is the curl of a scalar fbm potential (via finite
+  // differences), so it is divergence-free: petals following it bunch into
+  // ribbons and arcs instead of scattering, and nearby petals sample nearly
+  // identical velocities. A second potential channel adds a smaller vertical
+  // updraft/downdraft pattern. Cost: 5 fbm2 calls (2 octaves) per petal.
+  private sampleFlow(
+    px: number,
+    pz: number,
+    windTime: number,
+    strength: number,
+  ) {
+    const t = windTime * 0.2;
+    const nx = px * FLOW_NOISE_SCALE + t * 0.9;
+    const nz = pz * FLOW_NOISE_SCALE - t * 0.55;
+    const e = FLOW_CURL_EPS;
+    const dPdx = fbm2(nx + e, nz, 2) - fbm2(nx - e, nz, 2);
+    const dPdz = fbm2(nx, nz + e, 2) - fbm2(nx, nz - e, 2);
+    const k = (FLOW_CURL_STRENGTH * strength) / (2 * e);
+    this.flowX = dPdz * k;
+    this.flowZ = -dPdx * k;
+    this.flowY =
+      (fbm2(nx + 37.2, nz - 21.7, 2) - 0.5) * FLOW_LIFT_STRENGTH * strength;
+  }
+
   update(dt: number, windTime = 0, windStrength = 1) {
     const wind = this.wind;
     const count = this.positions.length;
     // Same gust envelope as the branch/blossom wind shaders, so airborne
     // petals drift harder exactly when the canopy leans.
     const gust = arborGustEnvelope(windTime, 0) * windStrength;
-    // Detachment clusters into gusts: held petals barely age while the air
-    // is calm and shed in bursts when the envelope peaks.
-    const releaseRate = 0.22 + Math.max(0, gust - 0.55) * 4.5;
-    // Gust-coupled drift target the horizontal velocity relaxes toward
-    // (bounded, unlike raw acceleration).
-    const airX = wind.x * (0.5 + gust * 3.4);
-    const airZ = wind.z * (0.5 + gust * 3.4);
+    // Traveling gust front: a plane wave sweeping downwind. Each petal folds
+    // its own position into the phase, so both detachment and flow strength
+    // propagate through the tree as a visible front.
+    const dirX = this.windDirX;
+    const dirZ = this.windDirZ;
+    const invWaveLen = 1 / GUST_WAVE_LENGTH;
+    const wavePhaseT = windTime * GUST_WAVE_SPEED;
 
     for (let i = 0; i < count; i += 1) {
       const p = this.positions[i];
@@ -1828,17 +1879,55 @@ class FallingPetalSystem {
       const r = this.rotations[i];
       const state = this.states[i];
 
+      // 0..1 crest of the traveling front at this petal, squared to sharpen
+      // the leading edge, folded with the global gust envelope.
+      const wave =
+        0.5 +
+        0.5 *
+          Math.sin(
+            TAU * ((p.x * dirX + p.z * dirZ) * invWaveLen - wavePhaseT),
+          );
+      const gustHere = gust * (0.45 + 0.9 * wave * wave);
+
       if (state === PETAL_HELD) {
+        // Detachment rides the front: held petals barely age while the crest
+        // is elsewhere and shed in a sweep as it passes over their anchor.
+        const releaseRate = 0.14 + Math.max(0, gustHere - 0.5) * 5.5;
         this.timers[i] -= dt * releaseRate;
         if (this.timers[i] <= 0) this.release(i);
       } else if (state === PETAL_FALLING) {
         const t = (this.fallAges[i] += dt);
-        // Drag: relax toward this petal's terminal velocity and the gusty
-        // air stream (plus a small per-petal flutter) instead of integrating
-        // unbounded gravity.
-        v.y += (-this.vTerms[i] - v.y) * Math.min(1, 2.4 * dt);
-        const targetX = airX + Math.sin(windTime * 0.4 + i * 0.73) * 0.07;
-        const targetZ = airZ + Math.cos(windTime * 0.5 + i * 0.49) * 0.05;
+        // One shared flow field for the whole flock: base wind stream plus
+        // curl noise, both scaled by the local gust front.
+        this.sampleFlow(p.x, p.z, windTime, gustHere);
+        const airMul = 0.5 + gustHere * 3.4;
+        let targetX = wind.x * airMul + this.flowX;
+        let targetZ = wind.z * airMul + this.flowZ;
+        let targetY = -this.vTerms[i] + this.flowY;
+
+        // Gentle helix in the wake downwind of the trunk: petals passing
+        // through it corkscrew around the wind axis, so streams curve
+        // around the tree instead of shooting straight past it.
+        const dw = p.x * dirX + p.z * dirZ;
+        const lat = p.x * dirZ - p.z * dirX;
+        if (dw > 0.5 && dw < 7 && lat > -2.6 && lat < 2.6) {
+          const zone =
+            HELIX_STRENGTH *
+            gustHere *
+            smoothstep(0.5, 1.8, dw) *
+            (1 - smoothstep(4.5, 7, dw)) *
+            (1 - smoothstep(1.1, 2.6, Math.abs(lat)));
+          if (zone > 0.001) {
+            const helixPhase = dw * 1.1 - windTime * 1.6;
+            targetY += Math.sin(helixPhase) * zone;
+            targetX += dirZ * Math.cos(helixPhase) * zone;
+            targetZ -= dirX * Math.cos(helixPhase) * zone;
+          }
+        }
+
+        // Drag: relax toward the field velocity (same constants as before)
+        // instead of integrating unbounded gravity.
+        v.y += (targetY - v.y) * Math.min(1, 2.4 * dt);
         v.x += (targetX - v.x) * Math.min(1, 1.5 * dt);
         v.z += (targetZ - v.z) * Math.min(1, 1.5 * dt);
         p.addScaledVector(v, dt);
