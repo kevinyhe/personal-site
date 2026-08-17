@@ -6,7 +6,7 @@ const menuLinks = ["Work", "Info", "Contact"];
 export default function Home() {
   return (
     <HeroIntro>
-      <h1 className="sr-only">Luke Baffait - Creative Developer</h1>
+      <h1 className="sr-only">Kevin He - Creative Developer</h1>
 
       <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-6 text-[#f0f0f0] mix-blend-difference sm:p-12">
         <p
@@ -23,8 +23,8 @@ export default function Home() {
         <div className="flex-1" />
 
         <div className="flex flex-wrap items-baseline justify-between text-[clamp(3rem,15vw,13rem)] leading-[0.9]">
-          <span className="font-light tracking-[-0.05em]">Luke</span>
-          <span className="font-serif-display italic">Baffait.</span>
+          <span className="font-light tracking-[-0.05em]">Kevin</span>
+          <span className="font-serif-display italic">He.</span>
         </div>
 
         <div
