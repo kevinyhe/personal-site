@@ -1522,9 +1522,11 @@ function createFallingPetalGeometry() {
       const outline = sakuraPetalOutline(uu, vv);
       const x = outline.lateral * maxHalfWidth;
       const y = (outline.radial - 0.5) * petalLength;
+      // Slightly deeper lengthwise cup + lateral curl than a flat card, so a
+      // tumbling petal reads as a 3D shell as it rocks through the light.
       const z =
-        Math.sin(Math.PI * vv) * 0.02 +
-        outline.xu * outline.xu * 0.016 * (0.3 + vv * 0.7);
+        Math.sin(Math.PI * vv) * 0.028 +
+        outline.xu * outline.xu * 0.022 * (0.3 + vv * 0.7);
       positions.push(x, y, z);
       uvs.push(uu, vv);
       getPetalVertexColor(color, outline.xu, vv);
@@ -1559,34 +1561,63 @@ function createFallingPetalGeometry() {
   return geometry;
 }
 
+// Petal lifecycle: HELD (invisible at a blossom anchor, waiting for a gust
+// to shake it loose) -> FALLING (drag-limited descent with falling-leaf
+// side-slip and rocking) -> SETTLED (landed on the mound, brief fade, then
+// recycled to a new anchor). All per-petal parameters are precomputed at
+// construction; update() allocates nothing.
+const PETAL_HELD = 0;
+const PETAL_FALLING = 1;
+const PETAL_SETTLED = 2;
+
 class FallingPetalSystem {
   mesh: THREE.InstancedMesh;
   private rng: () => number;
   private lobes: CanopyLobe[];
+  private anchors: THREE.Vector3[] | null;
   private positions: THREE.Vector3[] = [];
   private velocities: THREE.Vector3[] = [];
   private rotations: THREE.Euler[] = [];
-  private spins: THREE.Vector3[] = [];
-  private scales: number[] = [];
+  private states: Uint8Array;
+  // HELD: remaining release delay (gust-scaled). SETTLED: remaining fade.
+  private timers: Float32Array;
+  private fallAges: Float32Array;
+  private vTerms: Float32Array;
+  private slipAmps: Float32Array;
+  private slipFreqs: Float32Array;
+  private slipPhases: Float32Array;
+  private slipDirXs: Float32Array;
+  private slipDirZs: Float32Array;
+  private rockAmps: Float32Array;
+  private tumbleRates: Float32Array;
+  private tiltX0s: Float32Array;
+  private tiltZ0s: Float32Array;
+  private yaw0s: Float32Array;
+  private fadeDurs: Float32Array;
+  private baseScales: Float32Array;
   private matrix = new THREE.Matrix4();
   private quat = new THREE.Quaternion();
   private scale = new THREE.Vector3();
   private color = new THREE.Color();
+  private tmp = new THREE.Vector3();
   private wind = new THREE.Vector3(0.16, 0, 0.05);
 
   constructor({
     count,
     lobes,
+    anchors,
     material,
     rng,
   }: {
     count: number;
     lobes: CanopyLobe[];
+    anchors?: THREE.Vector3[];
     material: THREE.Material;
     rng: () => number;
   }) {
     this.rng = rng;
     this.lobes = lobes;
+    this.anchors = anchors && anchors.length > 0 ? anchors : null;
     this.mesh = new THREE.InstancedMesh(
       createFallingPetalGeometry(),
       material,
@@ -1594,27 +1625,68 @@ class FallingPetalSystem {
     );
     this.mesh.frustumCulled = false;
 
+    this.states = new Uint8Array(count);
+    this.timers = new Float32Array(count);
+    this.fallAges = new Float32Array(count);
+    this.vTerms = new Float32Array(count);
+    this.slipAmps = new Float32Array(count);
+    this.slipFreqs = new Float32Array(count);
+    this.slipPhases = new Float32Array(count);
+    this.slipDirXs = new Float32Array(count);
+    this.slipDirZs = new Float32Array(count);
+    this.rockAmps = new Float32Array(count);
+    this.tumbleRates = new Float32Array(count);
+    this.tiltX0s = new Float32Array(count);
+    this.tiltZ0s = new Float32Array(count);
+    this.yaw0s = new Float32Array(count);
+    this.fadeDurs = new Float32Array(count);
+    this.baseScales = new Float32Array(count);
+
     for (let i = 0; i < count; i += 1) {
-      this.positions.push(this.randomSpawn(true));
-      this.velocities.push(this.randomVelocity());
-      this.rotations.push(
-        new THREE.Euler(
-          this.rand(0, TAU),
-          this.rand(0, TAU),
-          this.rand(0, TAU),
-        ),
-      );
-      this.spins.push(
-        new THREE.Vector3(
-          this.rand(-1.8, 1.8),
-          this.rand(-2.2, 2.2),
-          this.rand(-1.5, 1.5),
-        ),
-      );
+      this.positions.push(new THREE.Vector3());
+      this.velocities.push(new THREE.Vector3());
+      this.rotations.push(new THREE.Euler());
+      // Terminal fall speed: light petals drift down slowly, heavier ones
+      // a little faster. Drag relaxes v.y toward this instead of gravity
+      // accelerating without bound.
+      this.vTerms[i] = this.rand(0.35, 0.75);
+      // Falling-leaf side slip: lateral oscillation perpendicular to the
+      // descent, with its own direction, amplitude, and tempo per petal.
+      const slipAngle = this.rand(0, TAU);
+      this.slipDirXs[i] = Math.cos(slipAngle);
+      this.slipDirZs[i] = Math.sin(slipAngle);
+      this.slipAmps[i] = this.rand(0.12, 0.34);
+      this.slipFreqs[i] = this.rand(1.2, 2.6);
+      this.slipPhases[i] = this.rand(0, TAU);
+      this.rockAmps[i] = this.rand(0.35, 0.8);
+      this.tumbleRates[i] = this.rand(0.4, 1.3) * (this.rng() < 0.5 ? -1 : 1);
+      this.tiltX0s[i] = this.rand(-0.7, 0.7);
+      this.tiltZ0s[i] = this.rand(-0.7, 0.7);
+      this.yaw0s[i] = this.rand(0, TAU);
+      this.fadeDurs[i] = this.rand(0.8, 1.6);
       // Trimmed to stay size-coherent with the smaller ground carpet.
-      this.scales.push(this.rand(0.45, 0.95));
+      this.baseScales[i] = this.rand(0.45, 0.95);
       this.color.set(this.pickColor());
       this.mesh.setColorAt(i, this.color);
+
+      if (this.rng() < 0.6) {
+        // Pre-seed part of the flock mid-fall so the scene is not empty at
+        // load: drop each petal a random way down its own descent and shift
+        // it downwind by the drift it would have accumulated.
+        this.hold(i, 0);
+        this.release(i);
+        const p = this.positions[i];
+        const groundY = this.groundLocalY(p);
+        const drop = this.rng() * Math.max(0, p.y - groundY - 0.2);
+        const driftT = drop / this.vTerms[i];
+        this.fallAges[i] = driftT;
+        p.y -= drop;
+        p.x += this.wind.x * this.rand(0.6, 1.6) * driftT;
+        p.z += this.wind.z * this.rand(0.6, 1.6) * driftT;
+        this.velocities[i].y = -this.vTerms[i] * this.rand(0.6, 1);
+      } else {
+        this.hold(i, this.rand(0.2, 6));
+      }
     }
 
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
@@ -1630,29 +1702,72 @@ class FallingPetalSystem {
     return colors[Math.floor(this.rng() * colors.length)];
   }
 
-  private randomLobe() {
-    return this.lobes[Math.floor(this.rng() * this.lobes.length)];
+  // Petal positions are tree-group-local. The group is placed at (2.7, 0, 0)
+  // with scale (0.92, 1.05, 0.84) in generate() -- keep these in sync -- and
+  // getGroundHeight() works in world space, so convert both ways.
+  private groundLocalY(p: THREE.Vector3) {
+    return getGroundHeight(2.7 + p.x * 0.92, p.z * 0.84) / 1.05;
   }
 
-  private randomSpawn(initial = false) {
-    const lobe = this.randomLobe();
-    const local = randomPointInUnitSphere(this.rng, new THREE.Vector3());
-    local.multiplyScalar(0.75 + this.rng() * 0.35);
-    const p = new THREE.Vector3(
-      lobe.center.x + local.x * lobe.radius.x,
-      lobe.center.y + local.y * lobe.radius.y + this.rand(0.2, 0.8),
-      lobe.center.z + local.z * lobe.radius.z,
-    );
-    if (initial) p.y = this.rand(1.2, 8.4);
-    return p;
+  // Park the petal (hidden) at a fresh detachment point and arm its delay.
+  private hold(i: number, delay: number) {
+    const p = this.positions[i];
+    if (this.anchors) {
+      // Spawn from a real blossom cluster: nudged slightly outward from the
+      // trunk axis and downward, like a petal separating from a corolla.
+      const a = this.anchors[Math.floor(this.rng() * this.anchors.length)];
+      const radial = Math.hypot(a.x, a.z) || 1;
+      const out = this.rand(0.04, 0.2);
+      p.set(
+        a.x + (a.x / radial) * out + this.rand(-0.06, 0.06),
+        a.y - this.rand(0.02, 0.16),
+        a.z + (a.z / radial) * out + this.rand(-0.06, 0.06),
+      );
+    } else {
+      const lobe = this.lobes[Math.floor(this.rng() * this.lobes.length)];
+      const local = randomPointInUnitSphere(this.rng, this.tmp);
+      local.multiplyScalar(0.75 + this.rng() * 0.35);
+      p.set(
+        lobe.center.x + local.x * lobe.radius.x,
+        lobe.center.y + local.y * lobe.radius.y + this.rand(0.2, 0.8),
+        lobe.center.z + local.z * lobe.radius.z,
+      );
+    }
+    this.velocities[i].set(0, 0, 0);
+    this.states[i] = PETAL_HELD;
+    this.timers[i] = delay;
   }
 
-  private randomVelocity() {
-    return new THREE.Vector3(
-      this.rand(-0.03, 0.03),
-      this.rand(-0.32, -0.12),
-      this.rand(-0.03, 0.03),
+  private release(i: number) {
+    const p = this.positions[i];
+    const v = this.velocities[i];
+    // Gentle initial kick: outward from the trunk axis plus a slight drop.
+    const radial = Math.hypot(p.x, p.z) || 1;
+    const out = this.rand(0.02, 0.12);
+    v.set(
+      (p.x / radial) * out + this.rand(-0.03, 0.03),
+      this.rand(-0.12, -0.02),
+      (p.z / radial) * out + this.rand(-0.03, 0.03),
     );
+    this.states[i] = PETAL_FALLING;
+    this.fallAges[i] = 0;
+  }
+
+  private settle(i: number, groundY: number) {
+    this.positions[i].y = groundY + 0.015;
+    this.velocities[i].set(0, 0, 0);
+    // Lie roughly flat on the mound (geometry normal is +z; x-rotation of
+    // -90deg turns it up) with a random resting tilt and heading. YXZ order
+    // applies the flatten before the heading spin -- with the default XYZ
+    // the full-circle y component would tip the petal onto its edge.
+    this.rotations[i].set(
+      -Math.PI / 2 + this.rand(-0.35, 0.35),
+      this.rand(0, TAU),
+      this.rand(-0.25, 0.25),
+      "YXZ",
+    );
+    this.states[i] = PETAL_SETTLED;
+    this.timers[i] = this.fadeDurs[i];
   }
 
   update(dt: number, windTime = 0, windStrength = 1) {
@@ -1661,33 +1776,82 @@ class FallingPetalSystem {
     // Same gust envelope as the branch/blossom wind shaders, so airborne
     // petals drift harder exactly when the canopy leans.
     const gust = arborGustEnvelope(windTime, 0) * windStrength;
+    // Detachment clusters into gusts: held petals barely age while the air
+    // is calm and shed in bursts when the envelope peaks.
+    const releaseRate = 0.22 + Math.max(0, gust - 0.55) * 4.5;
+    // Gust-coupled drift target the horizontal velocity relaxes toward
+    // (bounded, unlike raw acceleration).
+    const airX = wind.x * (0.5 + gust * 3.4);
+    const airZ = wind.z * (0.5 + gust * 3.4);
 
     for (let i = 0; i < count; i += 1) {
       const p = this.positions[i];
       const v = this.velocities[i];
       const r = this.rotations[i];
-      const spin = this.spins[i];
+      const state = this.states[i];
 
-      v.y -= 0.22 * dt;
-      v.x +=
-        (wind.x * gust * 1.9 + Math.sin(windTime * 0.4 + i * 0.73) * 0.05) *
-        dt;
-      v.z +=
-        (wind.z * gust * 1.9 + Math.cos(windTime * 0.5 + i * 0.49) * 0.04) *
-        dt;
-      p.addScaledVector(v, dt);
+      if (state === PETAL_HELD) {
+        this.timers[i] -= dt * releaseRate;
+        if (this.timers[i] <= 0) this.release(i);
+      } else if (state === PETAL_FALLING) {
+        const t = (this.fallAges[i] += dt);
+        // Drag: relax toward this petal's terminal velocity and the gusty
+        // air stream (plus a small per-petal flutter) instead of integrating
+        // unbounded gravity.
+        v.y += (-this.vTerms[i] - v.y) * Math.min(1, 2.4 * dt);
+        const targetX = airX + Math.sin(windTime * 0.4 + i * 0.73) * 0.07;
+        const targetZ = airZ + Math.cos(windTime * 0.5 + i * 0.49) * 0.05;
+        v.x += (targetX - v.x) * Math.min(1, 1.5 * dt);
+        v.z += (targetZ - v.z) * Math.min(1, 1.5 * dt);
+        p.addScaledVector(v, dt);
 
-      r.x += spin.x * dt;
-      r.y += spin.y * dt;
-      r.z += spin.z * dt;
+        // Falling-leaf side slip perpendicular to the descent, with the
+        // rocking rotation phase-locked to the slip velocity and one slow
+        // tumble axis on top.
+        const phase = this.slipFreqs[i] * t + this.slipPhases[i];
+        const slipVel =
+          this.slipAmps[i] * this.slipFreqs[i] * Math.cos(phase);
+        p.x += this.slipDirXs[i] * slipVel * dt;
+        p.z += this.slipDirZs[i] * slipVel * dt;
+        const rock = this.rockAmps[i] * Math.cos(phase);
+        // Explicit order: Euler.set keeps the previous order otherwise, and
+        // settle() switches this euler to YXZ.
+        r.set(
+          this.tiltX0s[i] + rock * this.slipDirZs[i],
+          this.yaw0s[i] + this.tumbleRates[i] * t,
+          this.tiltZ0s[i] - rock * this.slipDirXs[i],
+          "XYZ",
+        );
 
-      if (p.y < -0.05 || Math.abs(p.x) > 11 || Math.abs(p.z) > 9) {
-        p.copy(this.randomSpawn(false));
-        v.copy(this.randomVelocity());
+        // Ground contact. The mound crests near y=2 world, so the height
+        // field only needs sampling once a petal is low enough to matter.
+        if (p.y < 2.2) {
+          const groundY = this.groundLocalY(p);
+          if (p.y <= groundY + 0.02) this.settle(i, groundY);
+        }
+        if (
+          this.states[i] === PETAL_FALLING &&
+          (Math.abs(p.x) > 11 || Math.abs(p.z) > 9 || p.y < -2.5)
+        ) {
+          this.hold(i, this.rand(0.4, 4.5));
+        }
+      } else {
+        // Settled: brief fade (scale shrink), then recycle to a new anchor.
+        this.timers[i] -= dt;
+        if (this.timers[i] <= 0) this.hold(i, this.rand(0.4, 4.5));
       }
 
+      const stateNow = this.states[i];
+      const s =
+        stateNow === PETAL_FALLING
+          ? this.baseScales[i] *
+            Math.min(1, 0.15 + this.fallAges[i] * 3)
+          : stateNow === PETAL_SETTLED
+            ? this.baseScales[i] *
+              Math.max(0, this.timers[i] / this.fadeDurs[i])
+            : 0;
+
       this.quat.setFromEuler(r);
-      const s = this.scales[i];
       this.scale.setScalar(s);
       this.matrix.compose(p, this.quat, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
@@ -3191,7 +3355,7 @@ class WeepingCherryGenerator {
   private buildPetals() {
     const count =
       this.options.petalCount ??
-      (this.quality === "low" ? 80 : this.quality === "medium" ? 140 : 220);
+      (this.quality === "low" ? 100 : this.quality === "medium" ? 180 : 280);
     if (count <= 0) return;
     const material = new THREE.MeshStandardMaterial({
       color: 0xffe3ed,
@@ -3202,9 +3366,25 @@ class WeepingCherryGenerator {
       roughness: 0.65,
       vertexColors: true,
     });
+    // Detachment anchors sampled from the real blossom instances (group-local
+    // positions), so loose petals materialize at actual cluster points and
+    // automatically track any change in blossom density. Lobes remain the
+    // fallback when no blossoms were built.
+    const anchors: THREE.Vector3[] = [];
+    const blossoms = this.blossomMesh;
+    if (blossoms && blossoms.count > 0) {
+      const anchorMatrix = new THREE.Matrix4();
+      const sampleCount = Math.min(blossoms.count, count * 2);
+      for (let i = 0; i < sampleCount; i += 1) {
+        const index = Math.floor(this.rng() * blossoms.count);
+        blossoms.getMatrixAt(index, anchorMatrix);
+        anchors.push(new THREE.Vector3().setFromMatrixPosition(anchorMatrix));
+      }
+    }
     this.petals = new FallingPetalSystem({
       count,
       lobes: this.lobes,
+      anchors,
       material,
       rng: this.rng,
     });
