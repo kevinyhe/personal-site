@@ -1,0 +1,4330 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "layout.tsx",
+      "file_type": "code",
+      "source_file": "app/layout.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "app_layout",
+      "community": 19,
+      "norm_label": "layout.tsx"
+    },
+    {
+      "label": "instrumentSerif",
+      "file_type": "code",
+      "source_file": "app/layout.tsx",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "app_layout_instrumentserif",
+      "community": 19,
+      "norm_label": "instrumentserif"
+    },
+    {
+      "label": "metadata",
+      "file_type": "code",
+      "source_file": "app/layout.tsx",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "app_layout_metadata",
+      "community": 19,
+      "norm_label": "metadata"
+    },
+    {
+      "label": "RootLayout()",
+      "file_type": "code",
+      "source_file": "app/layout.tsx",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "app_layout_rootlayout",
+      "community": 19,
+      "norm_label": "rootlayout()"
+    },
+    {
+      "label": "page.tsx",
+      "file_type": "code",
+      "source_file": "app/page.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "app_page",
+      "community": 34,
+      "norm_label": "page.tsx"
+    },
+    {
+      "label": "Home()",
+      "file_type": "code",
+      "source_file": "app/page.tsx",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "app_page_home",
+      "community": 34,
+      "norm_label": "home()"
+    },
+    {
+      "label": "BareThreeCanvas.tsx",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "components_barethreecanvas",
+      "community": 34,
+      "norm_label": "barethreecanvas.tsx"
+    },
+    {
+      "label": "UP",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_up",
+      "community": 34,
+      "norm_label": "up"
+    },
+    {
+      "label": "OPEN_FLOWER_COUNT",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_open_flower_count",
+      "community": 34,
+      "norm_label": "open_flower_count"
+    },
+    {
+      "label": "LOOSE_BLOSSOM_PETAL_COUNT",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_loose_blossom_petal_count",
+      "community": 34,
+      "norm_label": "loose_blossom_petal_count"
+    },
+    {
+      "label": "BUD_COUNT",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_bud_count",
+      "community": 34,
+      "norm_label": "bud_count"
+    },
+    {
+      "label": "WeightedItem",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L26",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_weighteditem",
+      "community": 34,
+      "norm_label": "weighteditem"
+    },
+    {
+      "label": "BlossomAnchor",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_blossomanchor",
+      "community": 34,
+      "norm_label": "blossomanchor"
+    },
+    {
+      "label": "BlossomCluster",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L40",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_blossomcluster",
+      "community": 34,
+      "norm_label": "blossomcluster"
+    },
+    {
+      "label": "BranchPath",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L48",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_branchpath",
+      "community": 34,
+      "norm_label": "branchpath"
+    },
+    {
+      "label": "FallingPetal",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L57",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_fallingpetal",
+      "community": 34,
+      "norm_label": "fallingpetal"
+    },
+    {
+      "label": "createSeededRandom()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L76",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createseededrandom",
+      "community": 34,
+      "norm_label": "createseededrandom()"
+    },
+    {
+      "label": "rng",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L85",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_rng",
+      "community": 34,
+      "norm_label": "rng"
+    },
+    {
+      "label": "rand()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L87",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_rand",
+      "community": 34,
+      "norm_label": "rand()"
+    },
+    {
+      "label": "createWeightedPicker()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L91",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createweightedpicker",
+      "community": 34,
+      "norm_label": "createweightedpicker()"
+    },
+    {
+      "label": "fract()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L127",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_fract",
+      "community": 34,
+      "norm_label": "fract()"
+    },
+    {
+      "label": "fade()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L131",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_fade",
+      "community": 34,
+      "norm_label": "fade()"
+    },
+    {
+      "label": "hash3()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L135",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_hash3",
+      "community": 34,
+      "norm_label": "hash3()"
+    },
+    {
+      "label": "noise3()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L139",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_noise3",
+      "community": 34,
+      "norm_label": "noise3()"
+    },
+    {
+      "label": "fbm3()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L176",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_fbm3",
+      "community": 34,
+      "norm_label": "fbm3()"
+    },
+    {
+      "label": "randomInSphereTo()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L192",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_randominsphereto",
+      "community": 34,
+      "norm_label": "randominsphereto()"
+    },
+    {
+      "label": "randomDirectionInCone()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L200",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_randomdirectionincone",
+      "community": 34,
+      "norm_label": "randomdirectionincone()"
+    },
+    {
+      "label": "createBlossomClusters()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L217",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createblossomclusters",
+      "community": 34,
+      "norm_label": "createblossomclusters()"
+    },
+    {
+      "label": "createPetalGeometry()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L254",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createpetalgeometry",
+      "community": 34,
+      "norm_label": "createpetalgeometry()"
+    },
+    {
+      "label": "createBudGeometry()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L316",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createbudgeometry",
+      "community": 34,
+      "norm_label": "createbudgeometry()"
+    },
+    {
+      "label": "createTree()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L365",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_createtree",
+      "community": 34,
+      "norm_label": "createtree()"
+    },
+    {
+      "label": "disposeScene()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L861",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_disposescene",
+      "community": 34,
+      "norm_label": "disposescene()"
+    },
+    {
+      "label": "BareThreeCanvas()",
+      "file_type": "code",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L892",
+      "_origin": "ast",
+      "id": "components_barethreecanvas_barethreecanvas",
+      "community": 34,
+      "norm_label": "barethreecanvas()"
+    },
+    {
+      "label": "eslint.config.mjs",
+      "file_type": "code",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "eslint_config",
+      "community": 12,
+      "norm_label": "eslint.config.mjs"
+    },
+    {
+      "label": "__filename",
+      "file_type": "code",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "eslint_config_filename",
+      "community": 12,
+      "norm_label": "__filename"
+    },
+    {
+      "label": "__dirname",
+      "file_type": "code",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "eslint_config_dirname",
+      "community": 12,
+      "norm_label": "__dirname"
+    },
+    {
+      "label": "compat",
+      "file_type": "code",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "eslint_config_compat",
+      "community": 12,
+      "norm_label": "compat"
+    },
+    {
+      "label": "eslintConfig",
+      "file_type": "code",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "eslint_config_eslintconfig",
+      "community": 12,
+      "norm_label": "eslintconfig"
+    },
+    {
+      "label": "next-env.d.ts",
+      "file_type": "code",
+      "source_file": "next-env.d.ts",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "next_env_d",
+      "community": 32,
+      "norm_label": "next-env.d.ts"
+    },
+    {
+      "label": "next.config.ts",
+      "file_type": "code",
+      "source_file": "next.config.ts",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "next_config",
+      "community": 29,
+      "norm_label": "next.config.ts"
+    },
+    {
+      "label": "nextConfig",
+      "file_type": "code",
+      "source_file": "next.config.ts",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "next_config_nextconfig",
+      "community": 29,
+      "norm_label": "nextconfig"
+    },
+    {
+      "label": "package.json",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_json",
+      "community": 1,
+      "norm_label": "package.json"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_name",
+      "community": 1,
+      "norm_label": "name"
+    },
+    {
+      "label": "version",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_version",
+      "community": 1,
+      "norm_label": "version"
+    },
+    {
+      "label": "private",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_private",
+      "community": 1,
+      "norm_label": "private"
+    },
+    {
+      "label": "scripts",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "community": 1,
+      "norm_label": "scripts"
+    },
+    {
+      "label": "dev",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts_dev",
+      "community": 1,
+      "norm_label": "dev"
+    },
+    {
+      "label": "build",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts_build",
+      "community": 1,
+      "norm_label": "build"
+    },
+    {
+      "label": "start",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts_start",
+      "community": 1,
+      "norm_label": "start"
+    },
+    {
+      "label": "lint",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts_lint",
+      "community": 1,
+      "norm_label": "lint"
+    },
+    {
+      "label": "typecheck",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_scripts_typecheck",
+      "community": 1,
+      "norm_label": "typecheck"
+    },
+    {
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "community": 1,
+      "norm_label": "dependencies"
+    },
+    {
+      "label": "@types/three",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L13",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies_types_three",
+      "community": 1,
+      "norm_label": "@types/three"
+    },
+    {
+      "label": "next",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies_next",
+      "community": 1,
+      "norm_label": "next"
+    },
+    {
+      "label": "react",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies_react",
+      "community": 1,
+      "norm_label": "react"
+    },
+    {
+      "label": "react-dom",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies_react_dom",
+      "community": 1,
+      "norm_label": "react-dom"
+    },
+    {
+      "label": "three",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L17",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_dependencies_three",
+      "community": 1,
+      "norm_label": "three"
+    },
+    {
+      "label": "devDependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "community": 5,
+      "norm_label": "devdependencies"
+    },
+    {
+      "label": "@eslint/eslintrc",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L20",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint_eslintrc",
+      "community": 5,
+      "norm_label": "@eslint/eslintrc"
+    },
+    {
+      "label": "@types/node",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_node",
+      "community": 5,
+      "norm_label": "@types/node"
+    },
+    {
+      "label": "@types/react",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L22",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_react",
+      "community": 5,
+      "norm_label": "@types/react"
+    },
+    {
+      "label": "@types/react-dom",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L23",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_react_dom",
+      "community": 5,
+      "norm_label": "@types/react-dom"
+    },
+    {
+      "label": "autoprefixer",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L24",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_autoprefixer",
+      "community": 5,
+      "norm_label": "autoprefixer"
+    },
+    {
+      "label": "eslint",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint",
+      "community": 5,
+      "norm_label": "eslint"
+    },
+    {
+      "label": "eslint-config-next",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L26",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint_config_next",
+      "community": 5,
+      "norm_label": "eslint-config-next"
+    },
+    {
+      "label": "playwright",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L27",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_playwright",
+      "community": 5,
+      "norm_label": "playwright"
+    },
+    {
+      "label": "postcss",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_postcss",
+      "community": 5,
+      "norm_label": "postcss"
+    },
+    {
+      "label": "tailwindcss",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L29",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_tailwindcss",
+      "community": 5,
+      "norm_label": "tailwindcss"
+    },
+    {
+      "label": "typescript",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L30",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_package_devdependencies_typescript",
+      "community": 5,
+      "norm_label": "typescript"
+    },
+    {
+      "label": "postcss.config.mjs",
+      "file_type": "code",
+      "source_file": "postcss.config.mjs",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "postcss_config",
+      "community": 30,
+      "norm_label": "postcss.config.mjs"
+    },
+    {
+      "label": "config",
+      "file_type": "code",
+      "source_file": "postcss.config.mjs",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "postcss_config_config",
+      "community": 30,
+      "norm_label": "config"
+    },
+    {
+      "label": "tailwind.config.ts",
+      "file_type": "code",
+      "source_file": "tailwind.config.ts",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "tailwind_config",
+      "community": 31,
+      "norm_label": "tailwind.config.ts"
+    },
+    {
+      "label": "config",
+      "file_type": "code",
+      "source_file": "tailwind.config.ts",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "tailwind_config_config",
+      "community": 31,
+      "norm_label": "config"
+    },
+    {
+      "label": "tsconfig.json",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_json",
+      "community": 0,
+      "norm_label": "tsconfig.json"
+    },
+    {
+      "label": "compilerOptions",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "community": 0,
+      "norm_label": "compileroptions"
+    },
+    {
+      "label": "target",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_target",
+      "community": 0,
+      "norm_label": "target"
+    },
+    {
+      "label": "lib",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_lib",
+      "community": 0,
+      "norm_label": "lib"
+    },
+    {
+      "label": "allowJs",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_allowjs",
+      "community": 0,
+      "norm_label": "allowjs"
+    },
+    {
+      "label": "skipLibCheck",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_skiplibcheck",
+      "community": 0,
+      "norm_label": "skiplibcheck"
+    },
+    {
+      "label": "strict",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_strict",
+      "community": 0,
+      "norm_label": "strict"
+    },
+    {
+      "label": "noEmit",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_noemit",
+      "community": 0,
+      "norm_label": "noemit"
+    },
+    {
+      "label": "esModuleInterop",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_esmoduleinterop",
+      "community": 0,
+      "norm_label": "esmoduleinterop"
+    },
+    {
+      "label": "module",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_module",
+      "community": 0,
+      "norm_label": "module"
+    },
+    {
+      "label": "moduleResolution",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_moduleresolution",
+      "community": 0,
+      "norm_label": "moduleresolution"
+    },
+    {
+      "label": "resolveJsonModule",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_resolvejsonmodule",
+      "community": 0,
+      "norm_label": "resolvejsonmodule"
+    },
+    {
+      "label": "isolatedModules",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L13",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_isolatedmodules",
+      "community": 0,
+      "norm_label": "isolatedmodules"
+    },
+    {
+      "label": "jsx",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_jsx",
+      "community": 0,
+      "norm_label": "jsx"
+    },
+    {
+      "label": "incremental",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_incremental",
+      "community": 0,
+      "norm_label": "incremental"
+    },
+    {
+      "label": "plugins",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_plugins",
+      "community": 0,
+      "norm_label": "plugins"
+    },
+    {
+      "label": "paths",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_paths",
+      "community": 0,
+      "norm_label": "paths"
+    },
+    {
+      "label": "@/*",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L22",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_paths",
+      "community": 0,
+      "norm_label": "@/*"
+    },
+    {
+      "label": "include",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_include",
+      "community": 0,
+      "norm_label": "include"
+    },
+    {
+      "label": "exclude",
+      "file_type": "code",
+      "source_file": "tsconfig.json",
+      "source_location": "L26",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_tsconfig_exclude",
+      "community": 0,
+      "norm_label": "exclude"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": ".claude/CLAUDE.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_claude_md",
+      "community": 24,
+      "norm_label": "claude.md"
+    },
+    {
+      "label": "graphify",
+      "file_type": "document",
+      "source_file": ".claude/CLAUDE.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_claude_graphify",
+      "community": 24,
+      "norm_label": "graphify"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_md",
+      "community": 4,
+      "norm_label": "skill.md"
+    },
+    {
+      "label": "/graphify",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "community": 4,
+      "norm_label": "/graphify"
+    },
+    {
+      "label": "Usage",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_usage",
+      "community": 4,
+      "norm_label": "usage"
+    },
+    {
+      "label": "What graphify is for",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L45",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_graphify_is_for",
+      "community": 4,
+      "norm_label": "what graphify is for"
+    },
+    {
+      "label": "What You Must Do When Invoked",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L49",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "community": 2,
+      "norm_label": "what you must do when invoked"
+    },
+    {
+      "label": "Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L61",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths",
+      "community": 2,
+      "norm_label": "step 0 - github repos and multi-path merge (only if a url or several paths)"
+    },
+    {
+      "label": "Step 1 - Ensure graphify is installed",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L65",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_1_ensure_graphify_is_installed",
+      "community": 2,
+      "norm_label": "step 1 - ensure graphify is installed"
+    },
+    {
+      "label": "Step 2 - Detect files",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L129",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_2_detect_files",
+      "community": 2,
+      "norm_label": "step 2 - detect files"
+    },
+    {
+      "label": "Step 2.5 - Video and audio (only if video files detected)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L166",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected",
+      "community": 2,
+      "norm_label": "step 2.5 - video and audio (only if video files detected)"
+    },
+    {
+      "label": "Step 3 - Extract entities and relationships",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L170",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "community": 2,
+      "norm_label": "step 3 - extract entities and relationships"
+    },
+    {
+      "label": "Part A - Structural extraction for code files",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L189",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_a_structural_extraction_for_code_files",
+      "community": 2,
+      "norm_label": "part a - structural extraction for code files"
+    },
+    {
+      "label": "Part B - Semantic extraction (parallel subagents)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L215",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_b_semantic_extraction_parallel_subagents",
+      "community": 2,
+      "norm_label": "part b - semantic extraction (parallel subagents)"
+    },
+    {
+      "label": "Part C - Merge AST + semantic into final extraction",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L375",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_c_merge_ast_semantic_into_final_extraction",
+      "community": 2,
+      "norm_label": "part c - merge ast + semantic into final extraction"
+    },
+    {
+      "label": "Step 4 - Build graph, cluster, analyze, generate outputs",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L409",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs",
+      "community": 2,
+      "norm_label": "step 4 - build graph, cluster, analyze, generate outputs"
+    },
+    {
+      "label": "Step 4.5 - Graph health check (read-only integrity gate)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L472",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_4_5_graph_health_check_read_only_integrity_gate",
+      "community": 2,
+      "norm_label": "step 4.5 - graph health check (read-only integrity gate)"
+    },
+    {
+      "label": "Step 5 - Label communities",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L498",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_5_label_communities",
+      "community": 2,
+      "norm_label": "step 5 - label communities"
+    },
+    {
+      "label": "Step 6 - Generate Obsidian vault (opt-in) + HTML",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L539",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_6_generate_obsidian_vault_opt_in_html",
+      "community": 2,
+      "norm_label": "step 6 - generate obsidian vault (opt-in) + html"
+    },
+    {
+      "label": "Steps 6b-8 - Wiki, Neo4j, FalkorDB, SVG, GraphML, MCP, benchmark (only on their flags)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L559",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags",
+      "community": 2,
+      "norm_label": "steps 6b-8 - wiki, neo4j, falkordb, svg, graphml, mcp, benchmark (only on their flags)"
+    },
+    {
+      "label": "Step 9 - Save manifest, update cost tracker, clean up, and report",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L565",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report",
+      "community": 2,
+      "norm_label": "step 9 - save manifest, update cost tracker, clean up, and report"
+    },
+    {
+      "label": "Interpreter guard for subcommands",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L645",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_interpreter_guard_for_subcommands",
+      "community": 4,
+      "norm_label": "interpreter guard for subcommands"
+    },
+    {
+      "label": "For --update and --cluster-only",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L663",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_update_and_cluster_only",
+      "community": 4,
+      "norm_label": "for --update and --cluster-only"
+    },
+    {
+      "label": "For /graphify query",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L669",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_graphify_query",
+      "community": 4,
+      "norm_label": "for /graphify query"
+    },
+    {
+      "label": "For /graphify add and --watch",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L681",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_graphify_add_and_watch",
+      "community": 4,
+      "norm_label": "for /graphify add and --watch"
+    },
+    {
+      "label": "For the commit hook and native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L687",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_the_commit_hook_and_native_claude_md_integration",
+      "community": 4,
+      "norm_label": "for the commit hook and native claude.md integration"
+    },
+    {
+      "label": "Troubleshooting",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L693",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_troubleshooting",
+      "community": 4,
+      "norm_label": "troubleshooting"
+    },
+    {
+      "label": "PowerShell 5.1: Vertical scrolling stops working",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L695",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_powershell_5_1_vertical_scrolling_stops_working",
+      "community": 4,
+      "norm_label": "powershell 5.1: vertical scrolling stops working"
+    },
+    {
+      "label": "Honesty Rules",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L706",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_honesty_rules",
+      "community": 4,
+      "norm_label": "honesty rules"
+    },
+    {
+      "label": "add-watch.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_md",
+      "community": 11,
+      "norm_label": "add-watch.md"
+    },
+    {
+      "label": "graphify reference: add a URL and watch a folder",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "community": 11,
+      "norm_label": "graphify reference: add a url and watch a folder"
+    },
+    {
+      "label": "For /graphify add",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_for_graphify_add",
+      "community": 11,
+      "norm_label": "for /graphify add"
+    },
+    {
+      "label": "For --watch",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_for_watch",
+      "community": 11,
+      "norm_label": "for --watch"
+    },
+    {
+      "label": "exports.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_md",
+      "community": 7,
+      "norm_label": "exports.md"
+    },
+    {
+      "label": "graphify reference: extra exports and benchmark",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "community": 7,
+      "norm_label": "graphify reference: extra exports and benchmark"
+    },
+    {
+      "label": "Step 6b - Wiki (only if --wiki flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_6b_wiki_only_if_wiki_flag",
+      "community": 7,
+      "norm_label": "step 6b - wiki (only if --wiki flag)"
+    },
+    {
+      "label": "Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag",
+      "community": 7,
+      "norm_label": "step 7 - neo4j export (only if --neo4j or --neo4j-push flag)"
+    },
+    {
+      "label": "Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag",
+      "community": 7,
+      "norm_label": "step 7a - falkordb export (only if --falkordb or --falkordb-push flag)"
+    },
+    {
+      "label": "Step 7b - SVG export (only if --svg flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7b_svg_export_only_if_svg_flag",
+      "community": 7,
+      "norm_label": "step 7b - svg export (only if --svg flag)"
+    },
+    {
+      "label": "Step 7c - GraphML export (only if --graphml flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L53",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7c_graphml_export_only_if_graphml_flag",
+      "community": 7,
+      "norm_label": "step 7c - graphml export (only if --graphml flag)"
+    },
+    {
+      "label": "Step 7d - MCP server (only if --mcp flag)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L59",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7d_mcp_server_only_if_mcp_flag",
+      "community": 7,
+      "norm_label": "step 7d - mcp server (only if --mcp flag)"
+    },
+    {
+      "label": "Step 8 - Token reduction benchmark (only if total_words > 5000)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L79",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000",
+      "community": 7,
+      "norm_label": "step 8 - token reduction benchmark (only if total_words > 5000)"
+    },
+    {
+      "label": "extraction-spec.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_extraction_spec_md",
+      "community": 26,
+      "norm_label": "extraction-spec.md"
+    },
+    {
+      "label": "graphify reference: extraction subagent prompt",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_extraction_spec_graphify_reference_extraction_subagent_prompt",
+      "community": 26,
+      "norm_label": "graphify reference: extraction subagent prompt"
+    },
+    {
+      "label": "github-and-merge.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_md",
+      "community": 18,
+      "norm_label": "github-and-merge.md"
+    },
+    {
+      "label": "graphify reference: GitHub clone and cross-repo merge",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "community": 18,
+      "norm_label": "graphify reference: github clone and cross-repo merge"
+    },
+    {
+      "label": "Step 0 - Clone GitHub repo(s) (only if a GitHub URL was given)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/github-and-merge.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given",
+      "community": 18,
+      "norm_label": "step 0 - clone github repo(s) (only if a github url was given)"
+    },
+    {
+      "label": "hooks.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_md",
+      "community": 13,
+      "norm_label": "hooks.md"
+    },
+    {
+      "label": "graphify reference: commit hook and native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "community": 13,
+      "norm_label": "graphify reference: commit hook and native claude.md integration"
+    },
+    {
+      "label": "For git commit hook",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_for_git_commit_hook",
+      "community": 13,
+      "norm_label": "for git commit hook"
+    },
+    {
+      "label": "For native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_for_native_claude_md_integration",
+      "community": 13,
+      "norm_label": "for native claude.md integration"
+    },
+    {
+      "label": "query.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_md",
+      "community": 9,
+      "norm_label": "query.md"
+    },
+    {
+      "label": "graphify reference: query, path, explain",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "community": 9,
+      "norm_label": "graphify reference: query, path, explain"
+    },
+    {
+      "label": "Step 0 \u2014 Constrained query expansion (REQUIRED before traversal)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L23",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_step_0_constrained_query_expansion_required_before_traversal",
+      "community": 9,
+      "norm_label": "step 0 \u2014 constrained query expansion (required before traversal)"
+    },
+    {
+      "label": "Step 1 \u2014 Traversal",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L61",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_step_1_traversal",
+      "community": 9,
+      "norm_label": "step 1 \u2014 traversal"
+    },
+    {
+      "label": "For /graphify path",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L186",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_for_graphify_path",
+      "community": 9,
+      "norm_label": "for /graphify path"
+    },
+    {
+      "label": "For /graphify explain",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L254",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_for_graphify_explain",
+      "community": 9,
+      "norm_label": "for /graphify explain"
+    },
+    {
+      "label": "transcribe.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_md",
+      "community": 20,
+      "norm_label": "transcribe.md"
+    },
+    {
+      "label": "graphify reference: transcribe video and audio",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "community": 20,
+      "norm_label": "graphify reference: transcribe video and audio"
+    },
+    {
+      "label": "Step 2.5 - Transcribe video / audio files (only if video files detected)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected",
+      "community": 20,
+      "norm_label": "step 2.5 - transcribe video / audio files (only if video files detected)"
+    },
+    {
+      "label": "update.md",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_md",
+      "community": 14,
+      "norm_label": "update.md"
+    },
+    {
+      "label": "graphify reference: incremental update and cluster-only",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "community": 14,
+      "norm_label": "graphify reference: incremental update and cluster-only"
+    },
+    {
+      "label": "For --update (incremental re-extraction)",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_for_update_incremental_re_extraction",
+      "community": 14,
+      "norm_label": "for --update (incremental re-extraction)"
+    },
+    {
+      "label": "For --cluster-only",
+      "file_type": "document",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L184",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_for_cluster_only",
+      "community": 14,
+      "norm_label": "for --cluster-only"
+    },
+    {
+      "label": "SKILL.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_md",
+      "community": 6,
+      "norm_label": "skill.md"
+    },
+    {
+      "label": "/graphify",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "community": 6,
+      "norm_label": "/graphify"
+    },
+    {
+      "label": "Usage",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_usage",
+      "community": 6,
+      "norm_label": "usage"
+    },
+    {
+      "label": "What graphify is for",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L45",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_graphify_is_for",
+      "community": 6,
+      "norm_label": "what graphify is for"
+    },
+    {
+      "label": "What You Must Do When Invoked",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L49",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "community": 3,
+      "norm_label": "what you must do when invoked"
+    },
+    {
+      "label": "Step 0 - GitHub repos and multi-path merge (only if a URL or several paths)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L61",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths",
+      "community": 3,
+      "norm_label": "step 0 - github repos and multi-path merge (only if a url or several paths)"
+    },
+    {
+      "label": "Step 1 - Ensure graphify is installed",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L65",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_1_ensure_graphify_is_installed",
+      "community": 3,
+      "norm_label": "step 1 - ensure graphify is installed"
+    },
+    {
+      "label": "Step 2 - Detect files",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L107",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_2_detect_files",
+      "community": 3,
+      "norm_label": "step 2 - detect files"
+    },
+    {
+      "label": "Step 2.5 - Video and audio (only if video files detected)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L144",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected",
+      "community": 3,
+      "norm_label": "step 2.5 - video and audio (only if video files detected)"
+    },
+    {
+      "label": "Step 3 - Extract entities and relationships",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L148",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "community": 3,
+      "norm_label": "step 3 - extract entities and relationships"
+    },
+    {
+      "label": "Part A - Structural extraction for code files",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L167",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_a_structural_extraction_for_code_files",
+      "community": 3,
+      "norm_label": "part a - structural extraction for code files"
+    },
+    {
+      "label": "Part B - Semantic extraction (parallel subagents)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L193",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_b_semantic_extraction_parallel_subagents",
+      "community": 3,
+      "norm_label": "part b - semantic extraction (parallel subagents)"
+    },
+    {
+      "label": "Part C - Merge AST + semantic into final extraction",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L350",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_c_merge_ast_semantic_into_final_extraction",
+      "community": 3,
+      "norm_label": "part c - merge ast + semantic into final extraction"
+    },
+    {
+      "label": "Step 4 - Build graph, cluster, analyze, generate outputs",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L384",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs",
+      "community": 3,
+      "norm_label": "step 4 - build graph, cluster, analyze, generate outputs"
+    },
+    {
+      "label": "Step 4.5 - Graph health check (read-only integrity gate)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L447",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_4_5_graph_health_check_read_only_integrity_gate",
+      "community": 3,
+      "norm_label": "step 4.5 - graph health check (read-only integrity gate)"
+    },
+    {
+      "label": "Step 5 - Label communities",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L473",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_5_label_communities",
+      "community": 3,
+      "norm_label": "step 5 - label communities"
+    },
+    {
+      "label": "Step 6 - Generate Obsidian vault (opt-in) + HTML",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L514",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_6_generate_obsidian_vault_opt_in_html",
+      "community": 3,
+      "norm_label": "step 6 - generate obsidian vault (opt-in) + html"
+    },
+    {
+      "label": "Steps 6b-8 - Wiki, Neo4j, FalkorDB, SVG, GraphML, MCP, benchmark (only on their flags)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L534",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags",
+      "community": 3,
+      "norm_label": "steps 6b-8 - wiki, neo4j, falkordb, svg, graphml, mcp, benchmark (only on their flags)"
+    },
+    {
+      "label": "Step 9 - Save manifest, update cost tracker, clean up, and report",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L540",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report",
+      "community": 3,
+      "norm_label": "step 9 - save manifest, update cost tracker, clean up, and report"
+    },
+    {
+      "label": "Interpreter guard for subcommands",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L620",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_interpreter_guard_for_subcommands",
+      "community": 6,
+      "norm_label": "interpreter guard for subcommands"
+    },
+    {
+      "label": "For --update and --cluster-only",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L638",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_update_and_cluster_only",
+      "community": 6,
+      "norm_label": "for --update and --cluster-only"
+    },
+    {
+      "label": "For /graphify query",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L644",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_graphify_query",
+      "community": 6,
+      "norm_label": "for /graphify query"
+    },
+    {
+      "label": "For /graphify add and --watch",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L656",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_graphify_add_and_watch",
+      "community": 6,
+      "norm_label": "for /graphify add and --watch"
+    },
+    {
+      "label": "For the commit hook and native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L662",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_the_commit_hook_and_native_claude_md_integration",
+      "community": 6,
+      "norm_label": "for the commit hook and native claude.md integration"
+    },
+    {
+      "label": "Honesty Rules",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L668",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_honesty_rules",
+      "community": 6,
+      "norm_label": "honesty rules"
+    },
+    {
+      "label": "add-watch.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_md",
+      "community": 15,
+      "norm_label": "add-watch.md"
+    },
+    {
+      "label": "graphify reference: add a URL and watch a folder",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "community": 15,
+      "norm_label": "graphify reference: add a url and watch a folder"
+    },
+    {
+      "label": "For /graphify add",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_for_graphify_add",
+      "community": 15,
+      "norm_label": "for /graphify add"
+    },
+    {
+      "label": "For --watch",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_for_watch",
+      "community": 15,
+      "norm_label": "for --watch"
+    },
+    {
+      "label": "exports.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_md",
+      "community": 8,
+      "norm_label": "exports.md"
+    },
+    {
+      "label": "graphify reference: extra exports and benchmark",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "community": 8,
+      "norm_label": "graphify reference: extra exports and benchmark"
+    },
+    {
+      "label": "Step 6b - Wiki (only if --wiki flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_6b_wiki_only_if_wiki_flag",
+      "community": 8,
+      "norm_label": "step 6b - wiki (only if --wiki flag)"
+    },
+    {
+      "label": "Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag",
+      "community": 8,
+      "norm_label": "step 7 - neo4j export (only if --neo4j or --neo4j-push flag)"
+    },
+    {
+      "label": "Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag",
+      "community": 8,
+      "norm_label": "step 7a - falkordb export (only if --falkordb or --falkordb-push flag)"
+    },
+    {
+      "label": "Step 7b - SVG export (only if --svg flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L47",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7b_svg_export_only_if_svg_flag",
+      "community": 8,
+      "norm_label": "step 7b - svg export (only if --svg flag)"
+    },
+    {
+      "label": "Step 7c - GraphML export (only if --graphml flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L53",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7c_graphml_export_only_if_graphml_flag",
+      "community": 8,
+      "norm_label": "step 7c - graphml export (only if --graphml flag)"
+    },
+    {
+      "label": "Step 7d - MCP server (only if --mcp flag)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L59",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7d_mcp_server_only_if_mcp_flag",
+      "community": 8,
+      "norm_label": "step 7d - mcp server (only if --mcp flag)"
+    },
+    {
+      "label": "Step 8 - Token reduction benchmark (only if total_words > 5000)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L79",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000",
+      "community": 8,
+      "norm_label": "step 8 - token reduction benchmark (only if total_words > 5000)"
+    },
+    {
+      "label": "extraction-spec.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_extraction_spec_md",
+      "community": 27,
+      "norm_label": "extraction-spec.md"
+    },
+    {
+      "label": "graphify reference: extraction subagent prompt (compact)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_extraction_spec_graphify_reference_extraction_subagent_prompt_compact",
+      "community": 27,
+      "norm_label": "graphify reference: extraction subagent prompt (compact)"
+    },
+    {
+      "label": "github-and-merge.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_md",
+      "community": 21,
+      "norm_label": "github-and-merge.md"
+    },
+    {
+      "label": "graphify reference: GitHub clone and cross-repo merge",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "community": 21,
+      "norm_label": "graphify reference: github clone and cross-repo merge"
+    },
+    {
+      "label": "Step 0 - Clone GitHub repo(s) (only if a GitHub URL was given)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/github-and-merge.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given",
+      "community": 21,
+      "norm_label": "step 0 - clone github repo(s) (only if a github url was given)"
+    },
+    {
+      "label": "hooks.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_md",
+      "community": 16,
+      "norm_label": "hooks.md"
+    },
+    {
+      "label": "graphify reference: commit hook and native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "community": 16,
+      "norm_label": "graphify reference: commit hook and native claude.md integration"
+    },
+    {
+      "label": "For git commit hook",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_for_git_commit_hook",
+      "community": 16,
+      "norm_label": "for git commit hook"
+    },
+    {
+      "label": "For native CLAUDE.md integration",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L21",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_for_native_claude_md_integration",
+      "community": 16,
+      "norm_label": "for native claude.md integration"
+    },
+    {
+      "label": "query.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_md",
+      "community": 10,
+      "norm_label": "query.md"
+    },
+    {
+      "label": "graphify reference: query, path, explain",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "community": 10,
+      "norm_label": "graphify reference: query, path, explain"
+    },
+    {
+      "label": "Step 0 \u2014 Constrained query expansion (REQUIRED before traversal)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L23",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_step_0_constrained_query_expansion_required_before_traversal",
+      "community": 10,
+      "norm_label": "step 0 \u2014 constrained query expansion (required before traversal)"
+    },
+    {
+      "label": "Step 1 \u2014 Traversal",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L61",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_step_1_traversal",
+      "community": 10,
+      "norm_label": "step 1 \u2014 traversal"
+    },
+    {
+      "label": "For /graphify path",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L186",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_for_graphify_path",
+      "community": 10,
+      "norm_label": "for /graphify path"
+    },
+    {
+      "label": "For /graphify explain",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L254",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_for_graphify_explain",
+      "community": 10,
+      "norm_label": "for /graphify explain"
+    },
+    {
+      "label": "transcribe.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_md",
+      "community": 22,
+      "norm_label": "transcribe.md"
+    },
+    {
+      "label": "graphify reference: transcribe video and audio",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "community": 22,
+      "norm_label": "graphify reference: transcribe video and audio"
+    },
+    {
+      "label": "Step 2.5 - Transcribe video / audio files (only if video files detected)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/transcribe.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected",
+      "community": 22,
+      "norm_label": "step 2.5 - transcribe video / audio files (only if video files detected)"
+    },
+    {
+      "label": "update.md",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_md",
+      "community": 17,
+      "norm_label": "update.md"
+    },
+    {
+      "label": "graphify reference: incremental update and cluster-only",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "community": 17,
+      "norm_label": "graphify reference: incremental update and cluster-only"
+    },
+    {
+      "label": "For --update (incremental re-extraction)",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_for_update_incremental_re_extraction",
+      "community": 17,
+      "norm_label": "for --update (incremental re-extraction)"
+    },
+    {
+      "label": "For --cluster-only",
+      "file_type": "document",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L184",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_for_cluster_only",
+      "community": 17,
+      "norm_label": "for --cluster-only"
+    },
+    {
+      "label": "AGENTS.md",
+      "file_type": "document",
+      "source_file": "AGENTS.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_agents_md",
+      "community": 23,
+      "norm_label": "agents.md"
+    },
+    {
+      "label": "graphify",
+      "file_type": "document",
+      "source_file": "AGENTS.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_agents_graphify",
+      "community": 23,
+      "norm_label": "graphify"
+    },
+    {
+      "label": "CLAUDE.md",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_md",
+      "community": 25,
+      "norm_label": "claude.md"
+    },
+    {
+      "label": "graphify",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "c_users_kevin_documents_neutron_star_render_claude_graphify",
+      "community": 25,
+      "norm_label": "graphify"
+    }
+  ],
+  "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/layout.tsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "app_layout",
+      "target": "app_layout_instrumentserif",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/layout.tsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "app_layout",
+      "target": "app_layout_metadata",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/layout.tsx",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "app_layout",
+      "target": "app_layout_rootlayout",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/page.tsx",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "app_page",
+      "target": "app_page_home",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/page.tsx",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "app_page",
+      "target": "components_barethreecanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "app/page.tsx",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "app_page",
+      "target": "components_barethreecanvas_barethreecanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L892",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_barethreecanvas",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L31",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_blossomanchor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L40",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_blossomcluster",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L48",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_branchpath",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_bud_count",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L217",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createblossomclusters",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L316",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createbudgeometry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createpetalgeometry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createseededrandom",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L365",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createtree",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L91",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_createweightedpicker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L861",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_disposescene",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L131",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_fade",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L57",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_fallingpetal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L176",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_fbm3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L127",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_fract",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L135",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_hash3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_loose_blossom_petal_count",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L139",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_noise3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_open_flower_count",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L87",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_rand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L200",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_randomdirectionincone",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L192",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_randominsphereto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L85",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_rng",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_up",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "components_barethreecanvas",
+      "target": "components_barethreecanvas_weighteditem",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L88",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_rand",
+      "target": "components_barethreecanvas_rng",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L206",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_randomdirectionincone",
+      "target": "components_barethreecanvas_rng",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L231",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createblossomclusters",
+      "target": "components_barethreecanvas_rand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L726",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_rand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L194",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_randominsphereto",
+      "target": "components_barethreecanvas_rand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L223",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createblossomclusters",
+      "target": "components_barethreecanvas_createweightedpicker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L667",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_createweightedpicker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L136",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_hash3",
+      "target": "components_barethreecanvas_fract",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L146",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_noise3",
+      "target": "components_barethreecanvas_fade",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L151",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_noise3",
+      "target": "components_barethreecanvas_hash3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L183",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_fbm3",
+      "target": "components_barethreecanvas_noise3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L268",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createpetalgeometry",
+      "target": "components_barethreecanvas_fbm3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L230",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createblossomclusters",
+      "target": "components_barethreecanvas_randominsphereto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L726",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_randominsphereto",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L666",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_createblossomclusters",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L663",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_createpetalgeometry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "components/BareThreeCanvas.tsx",
+      "source_location": "L664",
+      "weight": 1.0,
+      "source": "components_barethreecanvas_createtree",
+      "target": "components_barethreecanvas_createbudgeometry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "eslint_config",
+      "target": "eslint_config_compat",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "eslint_config",
+      "target": "eslint_config_dirname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "eslint_config",
+      "target": "eslint_config_eslintconfig",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "eslint.config.mjs",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "eslint_config",
+      "target": "eslint_config_filename",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "next.config.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "next_config",
+      "target": "next_config_nextconfig",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L19",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_name",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_private",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_json",
+      "target": "c_users_kevin_documents_neutron_star_render_package_version",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts_build",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts_dev",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L9",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts_lint",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts_start",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_scripts",
+      "target": "c_users_kevin_documents_neutron_star_render_package_scripts_typecheck",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies_next",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies_react",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L16",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies_react_dom",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L17",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies_three",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L13",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_dependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_dependencies_types_three",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L24",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_autoprefixer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L25",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint_config_next",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_eslint_eslintrc",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L27",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_playwright",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L28",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_postcss",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L29",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_tailwindcss",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_node",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_react",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L23",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_types_react_dom",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "package.json",
+      "source_location": "L30",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_package_devdependencies",
+      "target": "c_users_kevin_documents_neutron_star_render_package_devdependencies_typescript",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "postcss.config.mjs",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "postcss_config",
+      "target": "postcss_config_config",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tailwind.config.ts",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "tailwind_config",
+      "target": "tailwind_config_config",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_json",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_json",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_exclude",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L25",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_json",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_include",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_allowjs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L9",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_esmoduleinterop",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_incremental",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L13",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_isolatedmodules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_jsx",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_lib",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_module",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_moduleresolution",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_noemit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_paths",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L16",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_plugins",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_resolvejsonmodule",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_skiplibcheck",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_strict",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_target",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tsconfig.json",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_tsconfig_compileroptions_paths",
+      "target": "c_users_kevin_documents_neutron_star_render_tsconfig_paths",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/CLAUDE.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_claude_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_claude_graphify",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L681",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_graphify_add_and_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L669",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_graphify_query",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L687",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_the_commit_hook_and_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L663",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_for_update_and_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L706",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_honesty_rules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L645",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_interpreter_guard_for_subcommands",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L693",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_troubleshooting",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_usage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_graphify_is_for",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L49",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_1_ensure_graphify_is_installed",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L166",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L129",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_2_detect_files",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L170",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L472",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_4_5_graph_health_check_read_only_integrity_gate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L409",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L498",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_5_label_communities",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L539",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_6_generate_obsidian_vault_opt_in_html",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L565",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L559",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L189",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_a_structural_extraction_for_code_files",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L215",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_b_semantic_extraction_parallel_subagents",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L375",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_part_c_merge_ast_semantic_into_final_extraction",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/SKILL.md",
+      "source_location": "L695",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_troubleshooting",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_skill_powershell_5_1_vertical_scrolling_stops_working",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_for_graphify_add",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/add-watch.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_add_watch_for_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_6b_wiki_only_if_wiki_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7b_svg_export_only_if_svg_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7c_graphml_export_only_if_graphml_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L59",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_7d_mcp_server_only_if_mcp_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/exports.md",
+      "source_location": "L79",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_extraction_spec_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_extraction_spec_graphify_reference_extraction_subagent_prompt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/github-and-merge.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_for_git_commit_hook",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/hooks.md",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_hooks_for_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_for_graphify_explain",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L186",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_for_graphify_path",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L23",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_step_0_constrained_query_expansion_required_before_traversal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/query.md",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_query_step_1_traversal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/transcribe.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L184",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_for_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".claude/skills/graphify/references/update.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_skills_graphify_references_update_for_update_incremental_re_extraction",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L656",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_graphify_add_and_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L644",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_graphify_query",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L662",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_the_commit_hook_and_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L638",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_for_update_and_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L668",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_honesty_rules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L620",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_interpreter_guard_for_subcommands",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_usage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_graphify_is_for",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L49",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_graphify",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_1_ensure_graphify_is_installed",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L144",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_2_detect_files",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L148",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L447",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_4_5_graph_health_check_read_only_integrity_gate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L384",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L473",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_5_label_communities",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L514",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_6_generate_obsidian_vault_opt_in_html",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L540",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L534",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_what_you_must_do_when_invoked",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L167",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_a_structural_extraction_for_code_files",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L193",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_b_semantic_extraction_parallel_subagents",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/SKILL.md",
+      "source_location": "L350",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_step_3_extract_entities_and_relationships",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_skill_part_c_merge_ast_semantic_into_final_extraction",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_for_graphify_add",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/add-watch.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_add_watch_for_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_6b_wiki_only_if_wiki_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L15",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7b_svg_export_only_if_svg_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7c_graphml_export_only_if_graphml_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L59",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_7d_mcp_server_only_if_mcp_flag",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/exports.md",
+      "source_location": "L79",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_graphify_reference_extra_exports_and_benchmark",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/extraction-spec.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_extraction_spec_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_extraction_spec_graphify_reference_extraction_subagent_prompt_compact",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/github-and-merge.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/github-and-merge.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_for_git_commit_hook",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/hooks.md",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_hooks_for_native_claude_md_integration",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_for_graphify_explain",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L186",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_for_graphify_path",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L23",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_step_0_constrained_query_expansion_required_before_traversal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/query.md",
+      "source_location": "L61",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_graphify_reference_query_path_explain",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_query_step_1_traversal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/transcribe.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/transcribe.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_graphify_reference_transcribe_video_and_audio",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_md",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L184",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_for_cluster_only",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": ".codex/skills/graphify/references/update.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_graphify_reference_incremental_update_and_cluster_only",
+      "target": "c_users_kevin_documents_neutron_star_render_codex_skills_graphify_references_update_for_update_incremental_re_extraction",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "AGENTS.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_agents_md",
+      "target": "c_users_kevin_documents_neutron_star_render_agents_graphify",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "c_users_kevin_documents_neutron_star_render_claude_md",
+      "target": "c_users_kevin_documents_neutron_star_render_claude_graphify",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "built_at_commit": "6f0733fc214182b577f8477bf5190771220ff814"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Compile-Only Verification"
+  short_description: "Prefer lint and build over viewport checks"
+  default_prompt: "Use $compile-only-verification to verify code changes with compiler-oriented checks only."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Preserve Typography"
+  short_description: "Guardrails for typography-safe edits"
+  default_prompt: "Use $preserve-typography to make frontend changes without modifying fonts, font classes, or type scale."

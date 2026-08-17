@@ -1,0 +1,357 @@
+{
+  ".claude/settings.json": {
+    "mtime": 1783026120.5367064,
+    "ast_hash": "6743b3e1a4b443f838e37cfe489e7c85",
+    "semantic_hash": ""
+  },
+  ".codex/hooks.json": {
+    "mtime": 1783026112.3489888,
+    "ast_hash": "6743b3e1a4b443f838e37cfe489e7c85",
+    "semantic_hash": ""
+  },
+  "app/layout.tsx": {
+    "mtime": 1783026416.1694262,
+    "ast_hash": "902e8d282a87767ab2b1ef01bfe292c1",
+    "semantic_hash": ""
+  },
+  "app/page.tsx": {
+    "mtime": 1783031011.5091286,
+    "ast_hash": "a8f780b176b7f8e13650fa2791743c7d",
+    "semantic_hash": ""
+  },
+  "components/NeutronHeroBackground.tsx": {
+    "mtime": 1783054510.1802802,
+    "ast_hash": "81f639f1f15932681431c49d0ed08fe2",
+    "semantic_hash": ""
+  },
+  "eslint.config.mjs": {
+    "mtime": 1783028164.5938468,
+    "ast_hash": "03fb6ce5965b24cae22bab8bf380eaca",
+    "semantic_hash": ""
+  },
+  "next-env.d.ts": {
+    "mtime": 1783027039.1411712,
+    "ast_hash": "ba64ff7d54714a8f64db89b1003207d8",
+    "semantic_hash": ""
+  },
+  "next.config.ts": {
+    "mtime": 1783026408.237583,
+    "ast_hash": "daad32b4de0b92afe04301ebf0a6cc76",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1783027211.8404703,
+    "ast_hash": "6aab70e75ea796f94e74bbd4b615185b",
+    "semantic_hash": ""
+  },
+  "postcss.config.mjs": {
+    "mtime": 1783026409.5196707,
+    "ast_hash": "d3fd1d29b05a09ff76b595a70e1e7d50",
+    "semantic_hash": ""
+  },
+  "tailwind.config.ts": {
+    "mtime": 1783026410.7192836,
+    "ast_hash": "0c8df83d16d448ceb9e0bf3788412e4c",
+    "semantic_hash": ""
+  },
+  "tsconfig.json": {
+    "mtime": 1783026411.9470441,
+    "ast_hash": "e9e0029aaba1829710839639683fca36",
+    "semantic_hash": ""
+  },
+  ".claude/CLAUDE.md": {
+    "mtime": 1783022724.2164726,
+    "ast_hash": "c232166e6492ba1ed955030b16979b05",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/SKILL.md": {
+    "mtime": 1783022746.8782468,
+    "ast_hash": "bb2bef44114226a8aec2c47c3b3c170e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/add-watch.md": {
+    "mtime": 1783022569.0734174,
+    "ast_hash": "d59d027fe449f06aa03905a01184e779",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/exports.md": {
+    "mtime": 1783022569.0749907,
+    "ast_hash": "9da2a2152e60a22f07f05fed5158f287",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/extraction-spec.md": {
+    "mtime": 1783022569.0765643,
+    "ast_hash": "42fef56a01698118f7fd722acdadea34",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/github-and-merge.md": {
+    "mtime": 1783022569.0796835,
+    "ast_hash": "cde13df085e4c492aeb7ba298a996d0d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/hooks.md": {
+    "mtime": 1783022569.080768,
+    "ast_hash": "3f545db6ce646650bb9de588f5512a27",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/query.md": {
+    "mtime": 1783022569.082371,
+    "ast_hash": "9e5aadc2c57ab561bc56600fcfa70735",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/transcribe.md": {
+    "mtime": 1783022569.0834656,
+    "ast_hash": "67b6a5fa6c0974e18f60db9f8932fbd8",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/update.md": {
+    "mtime": 1783022569.089687,
+    "ast_hash": "c698309979460d0f02ba616417844399",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/SKILL.md": {
+    "mtime": 1783022761.0174465,
+    "ast_hash": "21f78a7f96e2f9aecc0f7afc053bd3cc",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/add-watch.md": {
+    "mtime": 1783022568.852216,
+    "ast_hash": "d59d027fe449f06aa03905a01184e779",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/exports.md": {
+    "mtime": 1783022568.8538601,
+    "ast_hash": "9da2a2152e60a22f07f05fed5158f287",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/extraction-spec.md": {
+    "mtime": 1783022568.8554342,
+    "ast_hash": "bf895ec4d4e40f5f66f7d31c2a9bd4a7",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/github-and-merge.md": {
+    "mtime": 1783022568.8822255,
+    "ast_hash": "cde13df085e4c492aeb7ba298a996d0d",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/hooks.md": {
+    "mtime": 1783022568.8839848,
+    "ast_hash": "3f545db6ce646650bb9de588f5512a27",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/query.md": {
+    "mtime": 1783022568.887177,
+    "ast_hash": "9e5aadc2c57ab561bc56600fcfa70735",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/transcribe.md": {
+    "mtime": 1783022568.887177,
+    "ast_hash": "67b6a5fa6c0974e18f60db9f8932fbd8",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/update.md": {
+    "mtime": 1783022568.8897657,
+    "ast_hash": "c698309979460d0f02ba616417844399",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1783022761.0205526,
+    "ast_hash": "21ceb6533048be51308e69e7b74a35cf",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1783022724.2169807,
+    "ast_hash": "8a6643a420fdad6bfb583523bc6cef16",
+    "semantic_hash": ""
+  },
+  "artifacts/neutron-desktop.png": {
+    "mtime": 1783028303.7547982,
+    "ast_hash": "dd3582dee176267b40e93743a66bd7a9",
+    "semantic_hash": ""
+  },
+  "artifacts/neutron-mobile.png": {
+    "mtime": 1783028308.0484288,
+    "ast_hash": "c09187014fa828ae5874adcd16f2a53a",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop-2.png": {
+    "mtime": 1783033628.4541602,
+    "ast_hash": "77396351991db7fec6981e129893b309",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop-final.png": {
+    "mtime": 1783034028.503209,
+    "ast_hash": "b0a8ee8b7119f95e39621298c4d5e71f",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop-prod.png": {
+    "mtime": 1783034225.994871,
+    "ast_hash": "ac64790f06fb3a4263cd0a74ad308bfa",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop.png": {
+    "mtime": 1783033497.9483361,
+    "ast_hash": "67f109d951ec6e352b56a54ba166b227",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile-2.png": {
+    "mtime": 1783033630.8873763,
+    "ast_hash": "9846c1a889a052ca203a51bcc130dee1",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile-final.png": {
+    "mtime": 1783034049.0690374,
+    "ast_hash": "b72b11a0ed64764ce551a3e40b9734dd",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile-prod.png": {
+    "mtime": 1783034248.8110375,
+    "ast_hash": "df2ed3eee0aa9409a18747d48cca7dd6",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile.png": {
+    "mtime": 1783033523.2805603,
+    "ast_hash": "eee21822102cbfa6911a71e1cf0a9a7d",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop-tuned-prod.png": {
+    "mtime": 1783035334.9111242,
+    "ast_hash": "0f9d657659c5fb9fb8c1fcee9d7372fb",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/desktop-tuned.png": {
+    "mtime": 1783035113.424683,
+    "ast_hash": "bfd48f24ebdfede91d9054e71ce1b790",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile-tuned-prod.png": {
+    "mtime": 1783035344.5454679,
+    "ast_hash": "d95886d5fec55b23cb35c5a9c7d72717",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/mobile-tuned.png": {
+    "mtime": 1783035125.049112,
+    "ast_hash": "c097e69d5179f8c025c0e3e44fddac90",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-jets-desktop-prod-2.png": {
+    "mtime": 1783036762.5800283,
+    "ast_hash": "3348375b82983f450e8b26b984ba8f82",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-jets-desktop-prod.png": {
+    "mtime": 1783036617.9990833,
+    "ast_hash": "af60bcbf336f16fbbdf711578ea9f0ba",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-jets-mobile-prod-2.png": {
+    "mtime": 1783036765.2682326,
+    "ast_hash": "94c5844e99a1cb415927461c5d5a1072",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-jets-mobile-prod.png": {
+    "mtime": 1783036620.3409646,
+    "ast_hash": "6a03ed82efb6e15b15d97991d2701974",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-updated-desktop.png": {
+    "mtime": 1783038596.969654,
+    "ast_hash": "1ef5447351828d6c4bc4510511cc314d",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-updated-mobile.png": {
+    "mtime": 1783038603.243637,
+    "ast_hash": "4ac723e695e8319dec3940140241f746",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dramatic-jets-desktop.png": {
+    "mtime": 1783039552.0116441,
+    "ast_hash": "8caf1f5c710188a6cc3801927beba409",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dramatic-jets-mobile.png": {
+    "mtime": 1783039560.1566234,
+    "ast_hash": "5a299b223f4bbef808bf157412ef30aa",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dust-jets-desktop.png": {
+    "mtime": 1783039245.9870913,
+    "ast_hash": "2a432ab7d6450fdefe3e9661abb1d6fd",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dust-jets-final-desktop.png": {
+    "mtime": 1783039425.7244606,
+    "ast_hash": "6920c4b6c44d91b8f9f0a6eb70531529",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dust-jets-final-mobile.png": {
+    "mtime": 1783039433.6858635,
+    "ast_hash": "7fee657be27a8aba108ff8e5fa6600cf",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-dust-jets-mobile.png": {
+    "mtime": 1783039271.0417354,
+    "ast_hash": "ea487317fd1a49767a550b344472e040",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-reference-clouds-desktop-a.png": {
+    "mtime": 1783052932.9019186,
+    "ast_hash": "770d86f9618ec3e4b2d3d2c6d8fa16ae",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-reference-clouds-desktop-b.png": {
+    "mtime": 1783052945.7466173,
+    "ast_hash": "920a529287548284fcdebf310e23a5f1",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-reference-clouds-final-desktop.png": {
+    "mtime": 1783053115.3571258,
+    "ast_hash": "7f9f2da3d78ff9b279b8dadafb3ed264",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-reference-clouds-final-mobile.png": {
+    "mtime": 1783053127.5858335,
+    "ast_hash": "dde2afb5e0a3caccd2368fb7a7f11196",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-reference-clouds-mobile.png": {
+    "mtime": 1783052955.3783815,
+    "ast_hash": "6f6eaabe016964f1511207607a58a21a",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-glass-hexagram-desktop.png": {
+    "mtime": 1783054407.6124015,
+    "ast_hash": "34cafc70bed6d8ee42d30a04259c6671",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-glass-hexagram-final-desktop.png": {
+    "mtime": 1783054610.3807194,
+    "ast_hash": "fe31f286e99942bbcc78ff56bcc83323",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-glass-hexagram-final-mobile.png": {
+    "mtime": 1783054623.9011254,
+    "ast_hash": "23431b744b6532b157d8293221cbac6c",
+    "semantic_hash": ""
+  },
+  "tmp-visual-checks/neutron-glass-hexagram-mobile.png": {
+    "mtime": 1783054419.376966,
+    "ast_hash": "54f13e957a6906c46a67ffd5083b6e04",
+    "semantic_hash": ""
+  },
+  "components/HexagonLogoOverlay.tsx": {
+    "mtime": 1783055492.6019068,
+    "ast_hash": "fcaf049b3defc43fc393dbc4160b5957",
+    "semantic_hash": ""
+  },
+  "components/KaleidoscopeControls.tsx": {
+    "mtime": 1783055493.3815396,
+    "ast_hash": "4e2e59ebac50fd8ffe23de187bbff6e1",
+    "semantic_hash": ""
+  },
+  "components/three/FullPageKaleidoscopeOverlay.tsx": {
+    "mtime": 1783055745.5877538,
+    "ast_hash": "b91346366bd528c515d5054cc424e599",
+    "semantic_hash": ""
+  }
+}
