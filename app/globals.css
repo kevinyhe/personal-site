@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --arbor-vh: 1vh;
+  --arbor-vw: 1vw;
+  --arbor-screen-h: 100vh;
+  --arbor-screen-w: 100vw;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --arbor-vh: 1dvh;
+    --arbor-vw: 1dvw;
+    --arbor-screen-h: 100dvh;
+    --arbor-screen-w: 100dvw;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  background: #0a0a0a;
+  color: #f0f0f0;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+canvas {
+  display: block;
+  height: var(--arbor-screen-h);
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  width: var(--arbor-screen-w);
+  z-index: 0;
+}
+
+/* Hero items start hidden so nothing flashes before GSAP takes over. */
+[data-hero-animate] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-hero-animate] {
+    opacity: 1;
+  }
+}
+
+::selection {
+  background: rgba(240, 240, 240, 0.24);
+}
