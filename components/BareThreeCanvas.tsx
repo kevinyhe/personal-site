@@ -26,7 +26,7 @@ const HERO_CAMERA_FOV = 42;
 // round dots (ordered dither), like the reference site's dot-matrix render.
 // Cell edge in CSS px — multiplied by the render pixel ratio at runtime, so
 // dots read ~3-5 screen px. "low" quality bumps it one step larger.
-const HALFTONE_CELL_CSS_PX = 3.5;
+const HALFTONE_CELL_CSS_PX = 7;
 // 0..1 mix of dithered over the smooth render; below 1 a hint of the smooth
 // image survives under the dots.
 const HALFTONE_STRENGTH = 0.85;
