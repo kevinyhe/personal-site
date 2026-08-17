@@ -31,18 +31,27 @@ export default function Home() {
 
         <div className="flex-1" />
 
-        {/* Sized to the viewport's limiting axis: two stacked lines must
-            clear the tagline, hairline and bar without overflowing. */}
-        <div
-          className="flex flex-col text-[clamp(4rem,min(26vw,43vh),24rem)] leading-[0.82]"
-          style={{ textShadow: "0 2px 34px rgba(10,10,10,0.6), 0 0 8px rgba(10,10,10,0.35)" }}
-        >
-          <span className="self-start font-light tracking-[-0.05em]">
-            Kevin
-          </span>
-          <span className="-mt-[0.1em] self-end font-serif-display italic">
-            He.
-          </span>
+        {/* Poster lockup, out of normal flow so its height can never push the
+            hairline/bar off-screen. The zero-height wrapper sits just above
+            the hairline; the name hangs upward from it. Font-size solves
+            "Kevin" ink width (2.165em measured) == content width, and the
+            negative side margins trim measured glyph sidebearings so ink, not
+            the em box, is flush with the padding edges. */}
+        <div className="relative">
+          <div
+            className="absolute inset-x-0 bottom-0 flex flex-col text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:-bottom-6 sm:text-[clamp(4rem,min(calc((100vw_-_96px)/2.165),72vh),54rem)]"
+            style={{ textShadow: "0 2px 34px rgba(10,10,10,0.6), 0 0 8px rgba(10,10,10,0.35)" }}
+          >
+            <span className="ml-[-0.095em] self-start font-light tracking-[-0.05em]">
+              Kevin
+            </span>
+            {/* Half-size line: two full-width lines cannot fit the viewport
+                height, so He. tucks into the empty band under Kevin's
+                baseline instead of colliding with its letters. */}
+            <span className="mr-[-0.1em] mt-[-0.34em] self-end text-[0.52em] font-serif-display italic">
+              He.
+            </span>
+          </div>
         </div>
 
         <div
