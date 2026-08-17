@@ -1,16 +1,16 @@
 # Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~49,092 words
+- 61 files · ~49,778 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 544 nodes · 761 edges · 48 communities (33 shown, 15 thin omitted)
+- 545 nodes · 765 edges · 53 communities (37 shown, 16 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9b5d9d44`
+- Built from commit: `b99c60a2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,9 +20,11 @@
 - What You Must Do When Invoked
 - What You Must Do When Invoked
 - What You Must Do When Invoked
+- WeepingCherryTreeCanvas
 - devDependencies
 - /graphify
 - graphify reference: extra exports and benchmark
+- clamp01
 - graphify reference: query, path, explain
 - graphify reference: query, path, explain
 - eslint.config.mjs
@@ -41,10 +43,13 @@
 - CLAUDE.md
 - CLAUDE.md
 - extraction-spec.md
+- .update
 - next.config.ts
 - postcss.config.mjs
 - tailwind.config.ts
 - next-env.d.ts
+- .append
+- createSakuraBlossomGeometry
 - compress.py
 - validate.py
 - README.md
@@ -70,9 +75,9 @@
 4. `compilerOptions` - 16 edges
 5. `validate()` - 14 edges
 6. `compress_file()` - 12 edges
-7. `What You Must Do When Invoked` - 12 edges
+7. `smoothstep()` - 12 edges
 8. `What You Must Do When Invoked` - 12 edges
-9. `smoothstep()` - 11 edges
+9. `What You Must Do When Invoked` - 12 edges
 10. `WeepingCherryTreeCanvas()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -90,7 +95,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (48 total, 15 thin omitted)
+## Communities (53 total, 16 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -109,8 +114,12 @@ Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 4 - "What You Must Do When Invoked"
-Cohesion: 0.15
-Nodes (6): Branch, getBranchFrame(), lerp(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
+Cohesion: 0.13
+Nodes (8): applyBlossomWind(), Branch, createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
+
+### Community 5 - "WeepingCherryTreeCanvas"
+Cohesion: 0.20
+Nodes (12): dampSpring(), disposeMaterialTextures(), easeOutCubic(), makeRng(), resolveSceneQuality(), WeepingCherryTreeCanvas(), addViewportChangeListener(), getViewportHeight() (+4 more)
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -123,6 +132,10 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 ### Community 8 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
+
+### Community 9 - "clamp01"
+Cohesion: 0.36
+Nodes (9): clamp01(), createBarkTextures(), getBranchWindVectors(), getLimbWindAmplitude(), getTwigWindAmplitude(), getTwigWindFlutter(), getWindFlutterRamp(), getWindRamp() (+1 more)
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -163,6 +176,14 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 ### Community 19 - "layout.tsx"
 Cohesion: 0.40
 Nodes (3): instrumentSerif, inter, metadata
+
+### Community 33 - ".append"
+Cohesion: 0.36
+Nodes (3): applyBranchWind(), BranchGeometryBuilder, OccupiedPoint
+
+### Community 34 - "createSakuraBlossomGeometry"
+Cohesion: 0.67
+Nodes (4): createFallingPetalGeometry(), createSakuraBlossomGeometry(), getPetalVertexColor(), sakuraPetalOutline()
 
 ### Community 35 - "compress.py"
 Cohesion: 0.12
@@ -209,8 +230,8 @@ Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.05
-Nodes (58): applyBlossomWind(), applyBranchWind(), arborGustEnvelope(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame (+50 more)
+Cohesion: 0.08
+Nodes (26): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchWindUniforms, BranchWindVectors, CanopyLobe (+18 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -223,12 +244,12 @@ Nodes (3): menuLinks, socialLinks, HeroIntroProps
 ## Knowledge Gaps
 - **256 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+251 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `smoothstep`?**
+- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `.append`, `smoothstep`, `WeepingCherryTreeCanvas`, `clamp01`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `compilerOptions` to `package.json`?**
   _High betweenness centrality (0.008) - this node is a cross-community bridge._

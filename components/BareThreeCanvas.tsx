@@ -13,12 +13,13 @@ const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 // Hero composition: the tree floats alone in a near-black void. The camera
 // target sits on the tree axis (world x ~2.6) so the canopy reads
-// near-centered with headroom above the crown; the darkened trunk base and
-// empty void fill the bottom ~22% of the viewport so the name reads over
-// calm darkness rather than moving canopy.
-const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 6.15, 16.4);
-const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 10.9, 18.0);
-const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 4.6, 0);
+// near-centered. The frame's bottom edge at the trunk plane sits at world
+// y ~0.55, so the trunk (base at y=0) rises out of the bottom of the
+// viewport instead of ending mid-air, and the crown keeps ~15% headroom
+// below the top edge.
+const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 8.35, 15.6);
+const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 12.9, 17.2);
+const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
 
 type BareThreeCanvasProps = {
@@ -160,6 +161,9 @@ type BlossomPlacement = {
   wind2: [number, number, number, number];
   revealT: number;
   color: THREE.Color;
+  // Per-instance multiplier on the material's emissive lift, so clusters
+  // glow unevenly instead of as one flat pink mass.
+  emissive: number;
   phase: number;
   flutter: number;
 };
@@ -584,10 +588,11 @@ class BranchGeometryBuilder {
         this.windParams2.push(...wind.wind2);
 
         // Vertex color is a multiplier on the bark map: white everywhere
-        // except near the trunk base, where it ramps toward black so the
-        // tree melts into the void instead of ending in a hard cut. Low
-        // drooping strand tips pick up the same fade.
-        const baseFade = 0.03 + 0.97 * smoothstep(-0.05, 1.15, this.point.y);
+        // except the last stretch of trunk below the frame's bottom edge
+        // (world y ~0.55, local ~0.52), where it ramps toward black so the
+        // off-screen cut end melts into the void. On screen this reads as
+        // only a subtle darkening right at the frame edge.
+        const baseFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.point.y);
         this.barkColor.setScalar(baseFade);
         this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
       }
@@ -619,8 +624,8 @@ class BranchGeometryBuilder {
       this.windParams1.push(...capWind.wind1);
       this.windParams2.push(...capWind.wind2);
       // Same void fade as the ring vertices: the trunk's bottom cap sits at
-      // y=0 and reads near-black.
-      const capFade = 0.03 + 0.97 * smoothstep(-0.05, 1.15, this.center.y);
+      // y=0, below the frame edge, and reads near-black.
+      const capFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.center.y);
       this.barkColor.setScalar(capFade);
       this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
 
@@ -848,6 +853,8 @@ function applyBlossomWind(
         attribute float blossomPhase;
         attribute float blossomFlutter;
         attribute float blossomRevealT;
+        attribute float blossomEmissive;
+        varying float vBlossomEmissive;
         uniform float uBlossomGrowth;
       ` +
       WIND_SHADER_CHUNK +
@@ -858,6 +865,7 @@ function applyBlossomWind(
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
       `#include <begin_vertex>
+      vBlossomEmissive = blossomEmissive;
       // Intro grow reveal: each flower scales in from its spur point (the
       // geometry origin sits on the twig), staggered by blossomRevealT.
       float blossomReveal =
@@ -915,9 +923,21 @@ function applyBlossomWind(
       gl_Position = projectionMatrix * mvPosition;
       `,
     );
+
+    // Per-instance emissive multiplier: instanceColor only scales the
+    // diffuse term, so uneven glow needs its own attribute in the emissive
+    // path.
+    shader.fragmentShader =
+      "varying float vBlossomEmissive;\n" + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <emissivemap_fragment>",
+      `#include <emissivemap_fragment>
+      totalEmissiveRadiance *= vBlossomEmissive;
+      `,
+    );
   };
 
-  material.customProgramCacheKey = () => "blossom-wind-v8";
+  material.customProgramCacheKey = () => "blossom-wind-v9";
 }
 
 // Sakura palette shared by attached blossoms and falling petals:
@@ -932,6 +952,32 @@ const PEDICEL_BASE_COLOR = new THREE.Color("#6f7b4c");
 const PEDICEL_TIP_COLOR = new THREE.Color("#7d5560");
 const STAMEN_FILAMENT_COLOR = new THREE.Color("#f6dce4");
 const STAMEN_ANTHER_COLOR = new THREE.Color("#edd28c");
+
+// Per-instance tint ramp shared by attached flowers and falling petals:
+// near-white through soft pink to deeper rose, weighted toward pale, with
+// independent saturation/lightness jitter on top. Multiplies the baked
+// vertex-color gradient via instanceColor. Build-time only (no per-frame
+// calls); lerpColors/offsetHSL mutate in place, so nothing is allocated.
+const BLOSSOM_TINT_PALE = new THREE.Color("#fff4f6");
+const BLOSSOM_TINT_SOFT = new THREE.Color("#f8c8d6");
+const BLOSSOM_TINT_ROSE = new THREE.Color("#ee9dbb");
+
+function sampleBlossomTint(rng: () => number, target: THREE.Color) {
+  // pow-curve weighting: most draws land near 0 (pale), the tail reaches
+  // the deeper rose end.
+  const t = Math.pow(rng(), 2.1);
+  if (t < 0.5) {
+    target.lerpColors(BLOSSOM_TINT_PALE, BLOSSOM_TINT_SOFT, t * 2);
+  } else {
+    target.lerpColors(BLOSSOM_TINT_SOFT, BLOSSOM_TINT_ROSE, (t - 0.5) * 2);
+  }
+  target.offsetHSL(
+    (rng() * 2 - 1) * 0.011,
+    -0.08 + rng() * 0.18,
+    -0.05 + rng() * 0.09,
+  );
+  return target;
+}
 
 // Obcordate petal outline: narrow claw at the base, widest ~70% out, rounded
 // tip lobes with a notch cleft at the center. uu in [0,1] across the petal,
@@ -979,7 +1025,9 @@ const BLOSSOM_PEDICEL_LENGTH = 0.55;
 // calyx, five overlapping cupped/ruffled obcordate petals, a small
 // magenta-crimson center disc and five stamen quads. Radial color gradient
 // is baked as vertex colors so the standard material shades it directly.
-function createSakuraBlossomGeometry() {
+// `openness` < 1 builds a half-open variant: shorter, narrower petals cupped
+// steeply toward the axis, stamens still hidden inside.
+function createSakuraBlossomGeometry(openness = 1) {
   const positions: number[] = [];
   const colors: number[] = [];
   const uvs: number[] = [];
@@ -1071,9 +1119,12 @@ function createSakuraBlossomGeometry() {
   // so the overlaps layer instead of z-fighting.
   const petalRows = 4;
   const petalCols = 4;
-  const petalLength = 0.5;
+  const petalLength = 0.5 * lerp(0.78, 1, openness);
   const petalRootRadius = 0.055;
-  const petalMaxHalfWidth = 0.27;
+  const petalMaxHalfWidth = 0.27 * lerp(0.78, 1, openness);
+  // Extra lengthwise cup for half-open corollas: petal tips fold up toward
+  // the flower axis instead of lying flat.
+  const cupStrength = 0.11 + 0.52 * (1 - openness);
   for (let p = 0; p < 5; p += 1) {
     const angle = (p / 5) * TAU + 0.31;
     const lengthVar = rand(0.94, 1.06);
@@ -1094,7 +1145,7 @@ function createSakuraBlossomGeometry() {
         const outline = sakuraPetalOutline(uu, vv);
         const r = petalRootRadius + petalLength * lengthVar * outline.radial;
         const s = outline.lateral * petalMaxHalfWidth * widthVar;
-        const cupLength = 0.11 * vv * vv;
+        const cupLength = cupStrength * vv * vv;
         const cupAcross =
           outline.xu * outline.xu * 0.045 * (0.25 + vv * 0.75);
         const ruffle =
@@ -1150,8 +1201,9 @@ function createSakuraBlossomGeometry() {
   }
 
   // Stamen suggestion: five tiny quads leaning out between the petals,
-  // pale filaments with soft yellow anther tips.
-  for (let s = 0; s < 5; s += 1) {
+  // pale filaments with soft yellow anther tips. A half-open corolla still
+  // furls over its stamens, so they are skipped there.
+  for (let s = 0; s < (openness > 0.75 ? 5 : 0); s += 1) {
     const a = (s / 5) * TAU + 0.31 + TAU / 10 + rand(-0.12, 0.12);
     const dirX = Math.cos(a);
     const dirY = Math.sin(a);
@@ -1327,6 +1379,86 @@ function createSakuraBudGeometry() {
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+// Small procedural petal-surface texture shared by attached blossoms and
+// falling petals, mapped through the existing petal UVs (u across the petal,
+// v base->tip): a soft deepening around the petal base, a few faint darker
+// veins radiating from it, and a subtle rose blush along the tip and side
+// edges. It multiplies the baked vertex gradient and instance tint, so it
+// stays close to white overall; the non-petal parts of the flower (pedicel,
+// calyx, stamens) all sample near u=0.5 / v<0.15 where the texture is
+// almost neutral.
+function createPetalDetailTexture() {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const rng = makeRng(0x9e7a1);
+  const rand = (min: number, max: number) => min + (max - min) * rng();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+
+  // Base deepening: petal base is v=0, which is the canvas bottom row after
+  // the default flipY.
+  const baseGrad = ctx.createRadialGradient(64, 134, 4, 64, 134, 118);
+  baseGrad.addColorStop(0, "rgba(233, 196, 209, 0.8)");
+  baseGrad.addColorStop(0.4, "rgba(244, 224, 232, 0.38)");
+  baseGrad.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = baseGrad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Faint darker veins fanning out from the petal base.
+  ctx.lineCap = "round";
+  const veinCount = 7;
+  for (let i = 0; i < veinCount; i += 1) {
+    // Angle from the petal axis, +-50deg fan, kept off dead-vertical so the
+    // bud geometry's center-column UVs do not pick up a stripe.
+    let angle = (i / (veinCount - 1) - 0.5) * 1.75 + rand(-0.1, 0.1);
+    if (Math.abs(angle) < 0.1) angle = angle < 0 ? -0.1 : 0.1;
+    const sinA = Math.sin(angle);
+    const cosA = Math.cos(angle);
+    const startR = rand(10, 16);
+    const endR = rand(82, 112);
+    const midR = (startR + endR) / 2;
+    const bow = rand(-7, 7);
+    ctx.strokeStyle = `rgba(198, 126, 158, ${rand(0.09, 0.16).toFixed(3)})`;
+    ctx.lineWidth = rand(1, 1.7);
+    ctx.beginPath();
+    ctx.moveTo(64 + sinA * startR, 126 - cosA * startR);
+    ctx.quadraticCurveTo(
+      64 + sinA * midR + cosA * bow,
+      126 - cosA * midR + sinA * bow,
+      64 + sinA * endR,
+      126 - cosA * endR,
+    );
+    ctx.stroke();
+  }
+
+  // Edge blush: subtle rose wash along the petal tip (v=1 -> canvas top)...
+  const tipGrad = ctx.createLinearGradient(0, 0, 0, 40);
+  tipGrad.addColorStop(0, "rgba(239, 164, 195, 0.3)");
+  tipGrad.addColorStop(1, "rgba(239, 164, 195, 0)");
+  ctx.fillStyle = tipGrad;
+  ctx.fillRect(0, 0, size, 40);
+  // ...and a softer one down the lateral edges.
+  for (const [x0, x1] of [
+    [0, 22],
+    [size, size - 22],
+  ] as const) {
+    const sideGrad = ctx.createLinearGradient(x0, 0, x1, 0);
+    sideGrad.addColorStop(0, "rgba(242, 178, 204, 0.18)");
+    sideGrad.addColorStop(1, "rgba(242, 178, 204, 0)");
+    ctx.fillStyle = sideGrad;
+    ctx.fillRect(Math.min(x0, x1), 0, 22, size);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function createBarkTextures() {
@@ -1631,10 +1763,12 @@ function createFallingPetalGeometry() {
 // precomputed at construction; update() allocates nothing.
 const PETAL_HELD = 0;
 const PETAL_FALLING = 1;
-// With no ground, petals sink past the trunk base (group-local y=0) and
-// dissolve: full size above the fade start, gone by the fade end.
-const PETAL_VOID_FADE_START = -0.35;
-const PETAL_VOID_FADE_END = -2.1;
+// With no ground, petals dissolve as they sink past the frame's bottom edge
+// (world y ~0.55 at the trunk plane -> group-local ~0.52 after the 1.05 y
+// scale): full size while visible, shrinking away just below the edge, gone
+// well off-screen.
+const PETAL_VOID_FADE_START = 0.45;
+const PETAL_VOID_FADE_END = -0.75;
 
 // Shared flow field: one smooth curl-noise current that every falling petal
 // samples, so the flock reads as riding the same wind instead of confetti.
@@ -1754,7 +1888,9 @@ class FallingPetalSystem {
       this.tiltZ0s[i] = this.rand(-0.7, 0.7);
       this.yaw0s[i] = this.rand(0, TAU);
       this.baseScales[i] = this.rand(0.45, 0.95);
-      this.color.set(this.pickColor());
+      // Same widened instance palette as the attached blossoms, so loose
+      // petals match the canopy they fell from.
+      sampleBlossomTint(this.rng, this.color);
       this.mesh.setColorAt(i, this.color);
 
       if (this.rng() < 0.6) {
@@ -1783,11 +1919,6 @@ class FallingPetalSystem {
 
   private rand(min: number, max: number) {
     return min + (max - min) * this.rng();
-  }
-
-  private pickColor() {
-    const colors = ["#fff7fa", "#ffe8f0", "#ffd6e5", "#f7b8cc", "#ffffff"];
-    return colors[Math.floor(this.rng() * colors.length)];
   }
 
   // Park the petal (hidden) at a fresh detachment point and arm its delay.
@@ -1987,8 +2118,11 @@ class WeepingCherryGenerator {
   group = new THREE.Group();
   branchMesh: THREE.Mesh | null = null;
   blossomMesh: THREE.InstancedMesh | null = null;
+  halfBlossomMesh: THREE.InstancedMesh | null = null;
   budMesh: THREE.InstancedMesh | null = null;
   petals: FallingPetalSystem | null = null;
+  // One shared procedural petal-surface texture (blossom + loose petals).
+  private petalDetailTexture: THREE.Texture | null = null;
   branchWindUniforms: BranchWindUniforms | null = null;
   // Intro grow reveal: 0 hides every blossom at its spur point, 1 is fully
   // bloomed. Driven per frame from the intro progress by the component.
@@ -2074,6 +2208,7 @@ class WeepingCherryGenerator {
       group: this.group,
       branchMesh: this.branchMesh,
       blossomMesh: this.blossomMesh,
+      halfBlossomMesh: this.halfBlossomMesh,
       budMesh: this.budMesh,
       petals: this.petals,
       branchWindUniforms: this.branchWindUniforms,
@@ -3193,11 +3328,14 @@ class WeepingCherryGenerator {
   // No canopy-lobe scatter — the lobes only steered branch growth.
   private createBlossomPlacements() {
     const flowers: BlossomPlacement[] = [];
+    // Half-open variant: shares the flower budget (~22% of it) so the total
+    // instance count is unchanged across quality tiers.
+    const halves: BlossomPlacement[] = [];
     const buds: BlossomPlacement[] = [];
     const terminals = this.branches.filter(
       (branch) => branch.terminal && branch.lobeId >= 0,
     );
-    if (terminals.length === 0) return { flowers, buds };
+    if (terminals.length === 0) return { flowers, halves, buds };
 
     const totalOverride = this.options.blossomCount;
     const flowerTarget =
@@ -3258,10 +3396,11 @@ class WeepingCherryGenerator {
       const baseAzimuth = this.rand(0, TAU);
 
       for (let k = 0; k < clusterSize; k += 1) {
+        const flowersPlaced = flowers.length + halves.length;
         const wantBud =
           buds.length < budTarget &&
-          (flowers.length >= flowerTarget || this.rng() < budFraction);
-        if (!wantBud && flowers.length >= flowerTarget) continue;
+          (flowersPlaced >= flowerTarget || this.rng() < budFraction);
+        if (!wantBud && flowersPlaced >= flowerTarget) continue;
 
         const azimuth =
           baseAzimuth + (k / clusterSize) * TAU + this.rand(-0.55, 0.55);
@@ -3300,30 +3439,41 @@ class WeepingCherryGenerator {
           wind2: wind.wind2,
           revealT: clamp01(t * 0.5 + this.rand(0, 0.4)) * 0.7,
           color,
+          emissive: 1,
           phase: this.rand(0, TAU),
           flutter: this.rand(0.65, 1.35),
         };
 
         if (wantBud) {
           placement.scale = flowerScale * this.rand(0.52, 0.72);
+          placement.emissive = this.rand(0.55, 1.15);
           color
             .set("#e2679c")
             .lerp(new THREE.Color("#c94a7f"), this.rng())
-            .offsetHSL(this.rand(-0.01, 0.01), 0, this.rand(-0.04, 0.04));
+            .offsetHSL(
+              this.rand(-0.012, 0.012),
+              this.rand(-0.08, 0.08),
+              this.rand(-0.06, 0.05),
+            );
           buds.push(placement);
         } else {
-          const tintRoll = this.rng();
-          const tint =
-            tintRoll < 0.08 + lobe.colorBias * 0.5
-              ? "#f2b3cb"
-              : tintRoll < 0.4
-                ? "#ffdfe9"
-                : "#ffffff";
-          color
-            .set(tint)
-            .lerp(new THREE.Color("#ffffff"), this.rand(0, 0.35))
-            .offsetHSL(this.rand(-0.008, 0.008), 0, this.rand(-0.02, 0.03));
-          flowers.push(placement);
+          // Pale-weighted near-white -> rose ramp with independent
+          // saturation/lightness jitter; biased lobes lean deeper.
+          sampleBlossomTint(this.rng, color);
+          if (this.rng() < lobe.colorBias * 0.6) {
+            color.lerp(BLOSSOM_TINT_ROSE, 0.4);
+          }
+          if (this.rng() < 0.22) {
+            // Half-open flower: a touch smaller and pinker (the furled
+            // petals read deeper than a spread corolla).
+            placement.scale = flowerScale * this.rand(0.72, 0.88);
+            placement.emissive = this.rand(0.75, 1.5);
+            color.lerp(BLOSSOM_TINT_ROSE, 0.25);
+            halves.push(placement);
+          } else {
+            placement.emissive = this.rand(0.7, 1.45);
+            flowers.push(placement);
+          }
         }
       }
     };
@@ -3343,34 +3493,40 @@ class WeepingCherryGenerator {
     }
     const guaranteeCap = Math.floor((flowerTarget + budTarget) * 0.6);
     for (const branch of shuffledTerminals) {
-      if (flowers.length + buds.length >= guaranteeCap) break;
+      if (flowers.length + halves.length + buds.length >= guaranteeCap) break;
       placeCluster(branch, this.rand(0.3, 0.9));
     }
 
     let guard = (flowerTarget + budTarget) * 30;
     while (
-      (flowers.length < flowerTarget || buds.length < budTarget) &&
+      (flowers.length + halves.length < flowerTarget ||
+        buds.length < budTarget) &&
       guard-- > 0
     ) {
       // Spur position along the twig, concentrated toward the tip.
       placeCluster(pickTerminal(), 1 - Math.pow(this.rng(), 1.55) * 0.88);
     }
 
-    return { flowers, buds };
+    return { flowers, halves, buds };
   }
 
-  // Two InstancedMeshes (open flowers + closed buds) sharing one material.
-  // Per-instance wind: each blossom bakes the branch wind vec4 pair
-  // evaluated at its spur t (see getBranchWindVectors), so the shader
-  // reproduces the exact displacement of the twig point it grows from.
+  // Three InstancedMeshes (open flowers + half-open flowers + closed buds)
+  // sharing one material. Per-instance wind: each blossom bakes the branch
+  // wind vec4 pair evaluated at its spur t (see getBranchWindVectors), so
+  // the shader reproduces the exact displacement of the twig point it grows
+  // from.
   private buildBlossomMeshes() {
-    const { flowers, buds } = this.createBlossomPlacements();
+    const { flowers, halves, buds } = this.createBlossomPlacements();
+    this.petalDetailTexture = createPetalDetailTexture();
     // Raised emissive lift for the dark void scene: clusters luminesce
     // slightly against the black background instead of relying on skylight.
+    // emissiveIntensity is the base; the blossomEmissive instance attribute
+    // scales it 0.55-1.5x per flower.
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffb9ce,
       emissiveIntensity: 0.3,
+      map: this.petalDetailTexture ?? undefined,
       metalness: 0,
       roughness: 0.55,
       side: THREE.DoubleSide,
@@ -3397,6 +3553,7 @@ class WeepingCherryGenerator {
       const phase = new Float32Array(count);
       const flutter = new Float32Array(count);
       const revealT = new Float32Array(count);
+      const emissive = new Float32Array(count);
 
       for (let i = 0; i < count; i += 1) {
         const placement = placements[i];
@@ -3409,6 +3566,7 @@ class WeepingCherryGenerator {
         phase[i] = placement.phase;
         flutter[i] = placement.flutter;
         revealT[i] = placement.revealT;
+        emissive[i] = placement.emissive;
       }
 
       geometry.setAttribute(
@@ -3431,6 +3589,10 @@ class WeepingCherryGenerator {
         "blossomRevealT",
         new THREE.InstancedBufferAttribute(revealT, 1),
       );
+      geometry.setAttribute(
+        "blossomEmissive",
+        new THREE.InstancedBufferAttribute(emissive, 1),
+      );
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.group.add(mesh);
@@ -3441,6 +3603,11 @@ class WeepingCherryGenerator {
       createSakuraBlossomGeometry(),
       flowers,
       "Attached cherry blossom corollas",
+    );
+    this.halfBlossomMesh = buildInstancedMesh(
+      createSakuraBlossomGeometry(0.45),
+      halves,
+      "Attached cherry blossom half-open corollas",
     );
     this.budMesh = buildInstancedMesh(
       createSakuraBudGeometry(),
@@ -3460,6 +3627,9 @@ class WeepingCherryGenerator {
       // through the unlit void below the canopy.
       emissive: 0xf2a9c1,
       emissiveIntensity: 0.22,
+      // Same procedural vein/blush texture as the attached blossoms (the
+      // loose-petal geometry shares the petal UV layout).
+      map: this.petalDetailTexture ?? undefined,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0.78,
@@ -3606,7 +3776,7 @@ export default function WeepingCherryTreeCanvas({
       const voidColor = new THREE.Color(0x0a0a0a);
       const scene = new THREE.Scene();
       scene.background = null;
-      // Fog starts behind the trunk (camera-to-trunk is ~16.5 world units)
+      // Fog starts behind the trunk (camera-to-trunk is ~15.7 world units)
       // so the front canopy keeps its color while the outer branch tips
       // melt into the darkness.
       scene.fog = new THREE.Fog(voidColor.getHex(), 20, 45);
