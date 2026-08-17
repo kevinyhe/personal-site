@@ -171,6 +171,14 @@ function getGroundHeight(x: number, z: number) {
     (fbm2(x * 0.06 + 20.4, z * 0.06 - 4.1) - 0.5) * 0.18 * noiseMask;
   const fineRoll =
     (fbm2(x * 0.2 - 3.7, z * 0.2 + 8.2) - 0.5) * 0.055 * noiseMask;
+  // Fine surface detail: soft micro-relief plus small hummocks, so the mound
+  // reads as packed soil under moss instead of a smooth dome. Total added
+  // amplitude stays under +-0.05 so twig strands (clamped to ground + 0.34)
+  // can never be submerged between clamp samples.
+  const microRelief =
+    (fbm2(x * 0.52 + 14.2, z * 0.52 - 7.3, 3) - 0.5) * 0.06 * noiseMask;
+  const hummocks =
+    (valueNoise2(x * 0.95 + 3.3, z * 0.95 + 6.1) - 0.5) * 0.026 * noiseMask;
   const ridgeVariation =
     (Math.sin(angle * 3.1 + r * 0.44) * 0.11 +
       Math.cos(angle * 5.2 - r * 0.23) * 0.07 +
@@ -196,6 +204,8 @@ function getGroundHeight(x: number, z: number) {
     shoulder +
     broadRoll +
     fineRoll +
+    microRelief +
+    hummocks +
     ridgeVariation -
     downslope -
     edgeSettle -
@@ -3586,34 +3596,51 @@ function createMossTextures() {
   const colors = {
     dark: [22, 48, 31],
     lush: [62, 100, 48],
+    yellowGreen: [104, 118, 46], // hue ~0.23, sunlit dry moss
+    blueGreen: [36, 82, 64], // hue ~0.34, shaded damp moss
     gold: [112, 126, 55],
-    blue: [34, 74, 61],
-    earth: [46, 42, 31],
+    earth: [58, 48, 33],
   };
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const u = x / size;
       const v = y / size;
+      // Multi-scale clumping: a low-frequency mask separates lush moss
+      // tufts from earthy gaps; medium-frequency patches drift the hue
+      // between yellow-green and blue-green; fiber and speckle keep the
+      // fine filament detail. The mask is kept subtle here because this
+      // texture tiles 7.5x across the mound — the strong non-repeating
+      // clump variation lives in the mound's vertex colors instead.
+      const clump = fbm2(u * 4.6 + 9.3, v * 4.6 - 5.6, 4);
+      const clumpMask = smoothstep(0.34, 0.62, clump);
       const broad = fbm2(u * 5.4 + 6.7, v * 5.4 - 3.1, 5);
       const patch = fbm2(u * 12.0 - 2.3, v * 12.0 + 8.9, 4);
+      const huePatch = fbm2(u * 7.2 + 3.3, v * 7.2 - 12.1, 4);
       const fiber = fbm2(u * 42.0 + 4.1, v * 42.0 - 7.8, 3);
       const speckle = valueNoise2(u * 118.0, v * 118.0);
       const wet = fbm2(u * 8.0 + 11.4, v * 8.0 + 1.6, 4);
-      const earthMix = smoothstep(0.67, 0.9, wet) * 0.48;
-      const goldMix = smoothstep(0.55, 0.84, patch) * 0.35;
-      const blueMix = (1 - smoothstep(0.34, 0.62, broad)) * 0.32;
-      const shade = 0.78 + fiber * 0.34 + speckle * 0.12;
+      const yellowMix = smoothstep(0.56, 0.8, huePatch) * 0.5;
+      const blueMix = (1 - smoothstep(0.3, 0.52, huePatch)) * 0.46;
+      const goldMix = smoothstep(0.6, 0.86, patch) * 0.22;
+      const earthMix = clamp01(
+        (1 - clumpMask) * 0.3 + smoothstep(0.68, 0.92, wet) * 0.36,
+      );
+      const shade =
+        (0.77 + fiber * 0.34 + speckle * 0.12) * (0.94 + clumpMask * 0.09);
       const index = (y * size + x) * 4;
       let red = lerp(colors.dark[0], colors.lush[0], broad);
       let green = lerp(colors.dark[1], colors.lush[1], broad);
       let blue = lerp(colors.dark[2], colors.lush[2], broad);
+      red = lerp(red, colors.yellowGreen[0], yellowMix);
+      green = lerp(green, colors.yellowGreen[1], yellowMix);
+      blue = lerp(blue, colors.yellowGreen[2], yellowMix);
+      red = lerp(red, colors.blueGreen[0], blueMix);
+      green = lerp(green, colors.blueGreen[1], blueMix);
+      blue = lerp(blue, colors.blueGreen[2], blueMix);
       red = lerp(red, colors.gold[0], goldMix);
       green = lerp(green, colors.gold[1], goldMix);
       blue = lerp(blue, colors.gold[2], goldMix);
-      red = lerp(red, colors.blue[0], blueMix);
-      green = lerp(green, colors.blue[1], blueMix);
-      blue = lerp(blue, colors.blue[2], blueMix);
       red = lerp(red, colors.earth[0], earthMix);
       green = lerp(green, colors.earth[1], earthMix);
       blue = lerp(blue, colors.earth[2], earthMix);
@@ -3622,8 +3649,12 @@ function createMossTextures() {
       colorImage.data[index + 2] = Math.min(255, blue * shade);
       colorImage.data[index + 3] = 255;
 
+      // Tufts stand proud of the earthy gaps; extra contrast around the
+      // midpoint keeps the fibers crisp.
+      const rawHeight =
+        fiber * 0.4 + patch * 0.2 + speckle * 0.14 + clumpMask * 0.26;
       const height = Math.floor(
-        255 * clamp01(fiber * 0.52 + patch * 0.28 + speckle * 0.2),
+        255 * clamp01((rawHeight - 0.5) * 1.35 + 0.5),
       );
       bumpImage.data[index] = height;
       bumpImage.data[index + 1] = height;
@@ -3684,14 +3715,25 @@ function createMossCardAlphaTexture() {
 }
 
 function createMossBladeGeometry() {
+  // Two crossed cards, each with a mid row so the blade bows out of its
+  // plane instead of standing perfectly flat.
+  const midBend = 0.07;
+  const tipBend = 0.19;
   const positions = new Float32Array([
-    -0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0, 0, 0, -0.5, 0, 0, 0.5, 0, 1,
-    0.5, 0, 1, -0.5,
+    // card A (spans x, bends toward +z)
+    -0.5, 0, 0, 0.5, 0, 0, -0.5, 0.55, midBend, 0.5, 0.55, midBend, -0.5, 1,
+    tipBend, 0.5, 1, tipBend,
+    // card B (spans z, bends toward +x)
+    0, 0, -0.5, 0, 0, 0.5, midBend, 0.55, -0.5, midBend, 0.55, 0.5, tipBend, 1,
+    -0.5, tipBend, 1, 0.5,
   ]);
   const uvs = new Float32Array([
-    0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 0, 0.55, 1, 0.55, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0.55, 1, 0.55, 0,
+    1, 1, 1,
   ]);
-  const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
+  const indices = [
+    0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 6, 7, 9, 6, 9, 8, 8, 9, 11, 8, 11, 10,
+  ];
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
@@ -3701,7 +3743,7 @@ function createMossBladeGeometry() {
 }
 
 function createMossFoliage(quality: Exclude<Quality, "auto">) {
-  const count = quality === "low" ? 0 : quality === "medium" ? 600 : 900;
+  const count = quality === "low" ? 0 : quality === "medium" ? 1400 : 2200;
   if (count === 0) {
     const group = new THREE.Group();
     group.name = "Skipped moss micro foliage";
@@ -3739,39 +3781,75 @@ function createMossFoliage(quality: Exclude<Quality, "auto">) {
   let accepted = 0;
   let attempts = 0;
 
-  while (accepted < count && attempts < count * 12) {
+  // Blades grow in clumps: pick a clump center, then scatter 5-12 blades
+  // around it sharing one hue family, instead of a uniform sprinkle.
+  while (accepted < count && attempts < count * 4) {
     attempts += 1;
-    const angle = rng() * TAU;
-    const edgeRadius = getGroundRadiusAtAngle(angle);
-    const radius = Math.sqrt(rng()) * (edgeRadius - 0.9);
-    const x = TREE_BASE_X + Math.cos(angle) * radius;
-    const z = TREE_BASE_Z + Math.sin(angle) * radius;
+    const clumpAngle = rng() * TAU;
+    const clumpEdge = getGroundRadiusAtAngle(clumpAngle);
+    const clumpRadius = Math.sqrt(rng()) * (clumpEdge - 0.9);
+    const cx = TREE_BASE_X + Math.cos(clumpAngle) * clumpRadius;
+    const cz = TREE_BASE_Z + Math.sin(clumpAngle) * clumpRadius;
     const edgeFade =
-      1 - smoothstep(edgeRadius * 0.78, edgeRadius - 0.25, radius);
-    const trunkGap = smoothstep(0.72, 1.5, radius);
-    const height = getGroundHeight(x, z);
-    const moundBias = 0.32 + (1 - smoothstep(3.8, 13.2, radius)) * 0.68;
-    const noiseBias = 0.55 + fbm2(x * 0.18 + 5.4, z * 0.18 - 3.2, 4) * 0.45;
-    const density = clamp01(edgeFade * trunkGap * moundBias * noiseBias);
+      1 - smoothstep(clumpEdge * 0.78, clumpEdge - 0.25, clumpRadius);
+    // Bare ring near the trunk widened to clear the worn dirt ring.
+    const trunkGap = smoothstep(1.35, 2.2, clumpRadius);
+    const moundBias = 0.32 + (1 - smoothstep(3.8, 13.2, clumpRadius)) * 0.68;
+    const clumpNoise = fbm2(cx * 0.34 + 5.4, cz * 0.34 - 3.2, 4);
+    const density = clamp01(
+      edgeFade *
+        trunkGap *
+        moundBias *
+        (0.3 + smoothstep(0.4, 0.62, clumpNoise) * 0.85),
+    );
     if (rng() > density) continue;
 
-    getGroundNormal(x, z, normal);
-    position.set(x, height + 0.012, z);
-    align.setFromUnitVectors(UP, normal);
-    yaw.setFromAxisAngle(UP, rng() * TAU);
-    quaternion.copy(align).multiply(yaw);
-    const h = lerp(0.055, 0.18, rng()) * lerp(0.76, 1.16, moundBias);
-    const w = h * lerp(0.36, 0.72, rng());
-    scale.set(w, h, w);
-    matrix.compose(position, quaternion, scale);
-    mesh.setMatrixAt(accepted, matrix);
+    const clumpHue = lerp(0.23, 0.34, rng());
+    const clumpSaturation = lerp(0.36, 0.56, rng());
+    const clumpBlades = 5 + Math.floor(rng() * 8);
+    const clumpSpread = lerp(0.14, 0.48, rng());
+    for (let blade = 0; blade < clumpBlades && accepted < count; blade += 1) {
+      const bladeAngle = rng() * TAU;
+      const bladeDistance = Math.sqrt(rng()) * clumpSpread;
+      const x = cx + Math.cos(bladeAngle) * bladeDistance;
+      const z = cz + Math.sin(bladeAngle) * bladeDistance;
+      const bladeRadius = Math.hypot(x - TREE_BASE_X, z - TREE_BASE_Z);
+      const bladeEdge = getGroundRadiusAtAngle(
+        Math.atan2(z - TREE_BASE_Z, x - TREE_BASE_X),
+      );
+      if (bladeRadius < 1.3 || bladeRadius > bladeEdge - 0.6) continue;
 
-    const hue = lerp(0.23, 0.34, rng());
-    const saturation = lerp(0.34, 0.58, rng());
-    const lightness = lerp(0.19, 0.34, rng()) + height * 0.08;
-    color.setHSL(hue, saturation, clamp01(lightness));
-    mesh.setColorAt(accepted, color);
-    accepted += 1;
+      const height = getGroundHeight(x, z);
+      // Blades stretch taller in dips where moisture gathers.
+      const sampleStep = 0.5;
+      const dip =
+        (getGroundHeight(x + sampleStep, z) +
+          getGroundHeight(x - sampleStep, z) +
+          getGroundHeight(x, z + sampleStep) +
+          getGroundHeight(x, z - sampleStep)) *
+          0.25 -
+        height;
+      const dipBoost = 1 + clamp01(dip * 9) * 0.55;
+
+      getGroundNormal(x, z, normal);
+      position.set(x, height + 0.012, z);
+      align.setFromUnitVectors(UP, normal);
+      yaw.setFromAxisAngle(UP, rng() * TAU);
+      quaternion.copy(align).multiply(yaw);
+      const h =
+        lerp(0.055, 0.18, rng()) * lerp(0.76, 1.16, moundBias) * dipBoost;
+      const w = h * lerp(0.36, 0.72, rng());
+      scale.set(w, h, w);
+      matrix.compose(position, quaternion, scale);
+      mesh.setMatrixAt(accepted, matrix);
+
+      const hue = clamp01(clumpHue + (rng() - 0.5) * 0.025);
+      const saturation = clamp01(clumpSaturation + (rng() - 0.5) * 0.09);
+      const lightness = lerp(0.19, 0.34, rng()) + height * 0.08;
+      color.setHSL(hue, saturation, clamp01(lightness));
+      mesh.setColorAt(accepted, color);
+      accepted += 1;
+    }
   }
 
   mesh.count = accepted;
@@ -3806,6 +3884,8 @@ function createFallenPetals(quality: Exclude<Quality, "auto">) {
   const position = new THREE.Vector3();
   const normal = new THREE.Vector3();
   const color = new THREE.Color();
+  const brightTint = new THREE.Color(0xffffff);
+  const dampTint = new THREE.Color(0xcfa39e);
   const shadowDir = TREE_SHADOW_DIRECTION.clone();
   const sideDir = new THREE.Vector2(-shadowDir.y, shadowDir.x);
 
@@ -3860,13 +3940,37 @@ function createFallenPetals(quality: Exclude<Quality, "auto">) {
     // cleanly over it instead of going mottled.
     const rightBias = lerp(0.6, 0.42, smoothstep(-0.15, 0.85, sideAmount));
     const clumpNoise = fbm2(x * 0.92 + 8.1, z * 0.92 - 1.7, 3);
+    // Drift accumulation: petals collect in ground dips, blow slightly to
+    // the downwind (+x) side, and pile up in clumps near the trunk ring.
+    const groundY = getGroundHeight(x, z);
+    const sampleStep = 0.6;
+    const dip =
+      (getGroundHeight(x + sampleStep, z) +
+        getGroundHeight(x - sampleStep, z) +
+        getGroundHeight(x, z + sampleStep) +
+        getGroundHeight(x, z - sampleStep)) *
+        0.25 -
+      groundY;
+    const dipBoost = 1 + clamp01(dip * 7) * 0.85;
+    const downwind = lerp(0.86, 1.16, smoothstep(-3.4, 4.6, dx));
+    const pileNoise = fbm2(x * 1.55 - 4.9, z * 1.55 + 10.3, 3);
+    const nearRing = 1 - smoothstep(1.9, 3.4, radius);
+    const pileBoost =
+      lerp(0.78, 1.0, smoothstep(0.4, 0.68, pileNoise)) +
+      nearRing * smoothstep(0.4, 0.68, pileNoise) * 0.5;
     const density = clamp01(
-      edgeFade * centerFade * rightBias * (0.56 + clumpNoise * 0.58),
+      edgeFade *
+        centerFade *
+        rightBias *
+        dipBoost *
+        downwind *
+        pileBoost *
+        (0.56 + clumpNoise * 0.58),
     );
     if (rng() > density) continue;
 
     getGroundNormal(x, z, normal);
-    position.set(x, getGroundHeight(x, z) + 0.045 + rng() * 0.012, z);
+    position.set(x, groundY + 0.045 + rng() * 0.012, z);
     align.setFromUnitVectors(PETAL_SURFACE_NORMAL, normal);
     yaw.setFromAxisAngle(normal, rng() * TAU);
     quaternion.copy(yaw).multiply(align);
@@ -3890,7 +3994,13 @@ function createFallenPetals(quality: Exclude<Quality, "auto">) {
       lerp(0.63, 0.82, rng()),
     );
     if (rng() < 0.12) {
-      color.lerp(new THREE.Color(0xffffff), lerp(0.12, 0.35, rng()));
+      color.lerp(brightTint, lerp(0.12, 0.35, rng()));
+    }
+    // Petals sitting in damp dips or in the piles at the trunk ring pick up
+    // a faded, slightly bruised tint.
+    const settle = clamp01(dip * 7) * 0.45 + nearRing * 0.2;
+    if (rng() < settle) {
+      color.lerp(dampTint, lerp(0.12, 0.32, rng()));
     }
     mesh.setColorAt(accepted, color);
     accepted += 1;
@@ -3925,7 +4035,7 @@ function createSoftTreeShadow(quality: Exclude<Quality, "auto">) {
       const localX = (u - 0.5) * shadowWidth;
       const worldX = center.x + along.x * localX + side.x * localY;
       const worldZ = center.y + along.y * localX + side.y * localY;
-      positions.push(worldX, getGroundHeight(worldX, worldZ) + 0.024, worldZ);
+      positions.push(worldX, getGroundHeight(worldX, worldZ) + 0.032, worldZ);
       uvs.push(u, v);
     }
   }
@@ -4004,15 +4114,17 @@ function createSoftTreeShadow(quality: Exclude<Quality, "auto">) {
 
 function createTrunkBaseBlend() {
   const radialSegments = 72;
-  const rings = 7;
+  const rings = 9;
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
   const color = new THREE.Color();
-  const earth = new THREE.Color(0x231e17);
-  const moss = new THREE.Color(0x273923);
-  const softGreen = new THREE.Color(0x3d4d31);
+  // Blend from the warm gray-brown bark base, through packed worn dirt
+  // matching the ground's dirt ring, feathering into moss at the rim.
+  const bark = new THREE.Color(0x453729);
+  const dirt = new THREE.Color(0x3b2e20);
+  const moss = new THREE.Color(0x2c3a24);
 
   positions.push(
     TREE_BASE_X,
@@ -4020,12 +4132,12 @@ function createTrunkBaseBlend() {
     TREE_BASE_Z,
   );
   normals.push(0, 1, 0);
-  color.copy(earth).offsetHSL(0, 0, -0.025);
+  color.copy(bark).offsetHSL(0, 0, -0.03);
   colors.push(color.r, color.g, color.b);
 
   for (let ring = 1; ring <= rings; ring += 1) {
     const t = ring / rings;
-    const baseRadius = lerp(0.18, 0.78, Math.pow(t, 0.9));
+    const baseRadius = lerp(0.16, 1.28, Math.pow(t, 0.92));
     for (let segment = 0; segment < radialSegments; segment += 1) {
       const angle = (segment / radialSegments) * TAU;
       const irregularity =
@@ -4041,11 +4153,11 @@ function createTrunkBaseBlend() {
       positions.push(x, getGroundHeight(x, z) + 0.034 + (1 - t) * 0.014, z);
       normals.push(0, 1, 0);
       color
-        .copy(earth)
-        .lerp(moss, smoothstep(0.18, 0.76, t) * 0.55)
-        .lerp(softGreen, smoothstep(0.72, 1.0, t) * 0.16);
+        .copy(bark)
+        .lerp(dirt, smoothstep(0.12, 0.52, t))
+        .lerp(moss, smoothstep(0.66, 1.0, t) * 0.45);
       const fleck = fbm2(x * 2.2 + 1.7, z * 2.2 - 9.4, 3);
-      color.offsetHSL(0, 0, (fleck - 0.5) * 0.08);
+      color.offsetHSL(0, 0, (fleck - 0.5) * 0.09);
       colors.push(color.r, color.g, color.b);
     }
   }
@@ -4234,16 +4346,62 @@ function createReferenceHouseAndRocks() {
   return group;
 }
 
-function createMoundGeometry() {
-  const radialSegments = 40;
-  const angularSegments = 64;
+function createMoundGeometry(quality: Exclude<Quality, "auto">) {
+  const radialSegments = quality === "low" ? 40 : 72;
+  const angularSegments = quality === "low" ? 64 : 128;
   const skirtDepth = 1.35;
   const positions: number[] = [];
   const uvs: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
 
   const topIndex = (ring: number, segment: number) =>
     ring * angularSegments + (segment % angularSegments);
+
+  // Per-vertex tint multiplied over the tiling moss map: a worn dirt ring at
+  // the trunk, moisture darkening in concavities, and a slow warm/cool hue
+  // drift plus lightness patches across the mound so no tiling repeat shows.
+  const pushGroundColor = (x: number, z: number, radius: number, y: number) => {
+    const sampleStep = 0.55;
+    const dip =
+      (getGroundHeight(x + sampleStep, z) +
+        getGroundHeight(x - sampleStep, z) +
+        getGroundHeight(x, z + sampleStep) +
+        getGroundHeight(x, z - sampleStep)) *
+        0.25 -
+      y;
+    const moisture = clamp01(dip * 7.5) * 0.6;
+    const wearNoise = fbm2(x * 0.9 + 7.7, z * 0.9 - 3.9, 3);
+    const ringEdge = 1.55 + (wearNoise - 0.5) * 0.7;
+    const dirtAmount = 1 - smoothstep(ringEdge * 0.5, ringEdge, radius);
+    const drift = fbm2(x * 0.05 + 21.3, z * 0.05 - 8.8, 3) - 0.5;
+    const patchLight =
+      (fbm2(x * 0.085 + 4.4, z * 0.085 - 14.6, 4) - 0.5) * 0.18;
+    // World-space lush/gap clumping: this is what keeps the tiling moss
+    // texture from reading as a repeat — earthy worn patches drift across
+    // the mound at 2-4 unit scale, uncorrelated with the texture tiles.
+    const gapNoise = fbm2(x * 0.31 + 6.2, z * 0.31 - 9.4, 4);
+    const gap = (1 - smoothstep(0.4, 0.58, gapNoise)) * 0.55;
+    let red = (1 + drift * 0.14) * (1 + patchLight);
+    let green = (1 + drift * 0.03) * (1 + patchLight);
+    let blue = (1 - drift * 0.12) * (1 + patchLight);
+    red = lerp(red, red * 1.14, gap);
+    green = lerp(green, green * 0.82, gap);
+    blue = lerp(blue, blue * 0.62, gap);
+    // Multiplied over the green-dominant moss map, so the tint has to pull
+    // red well above green before the ring reads as brown dirt.
+    red = lerp(red, 1.28, dirtAmount);
+    green = lerp(green, 0.66, dirtAmount);
+    blue = lerp(blue, 0.42, dirtAmount);
+    red *= 1 - moisture * 0.34;
+    green *= 1 - moisture * 0.28;
+    blue *= 1 - moisture * 0.2;
+    colors.push(
+      Math.min(1.35, Math.max(0, red)),
+      Math.min(1.35, Math.max(0, green)),
+      Math.min(1.35, Math.max(0, blue)),
+    );
+  };
 
   for (let ring = 0; ring <= radialSegments; ring += 1) {
     const t = ring / radialSegments;
@@ -4252,11 +4410,13 @@ function createMoundGeometry() {
       const radius = Math.pow(t, 1.34) * getGroundRadiusAtAngle(angle);
       const x = TREE_BASE_X + Math.cos(angle) * radius;
       const z = TREE_BASE_Z + Math.sin(angle) * radius;
-      positions.push(x, getGroundHeight(x, z), z);
+      const y = getGroundHeight(x, z);
+      positions.push(x, y, z);
       uvs.push(
         (x - TREE_BASE_X) / (GROUND_RADIUS * 2) + 0.5,
         (z - TREE_BASE_Z) / (GROUND_RADIUS * 2) + 0.5,
       );
+      pushGroundColor(x, z, radius, y);
     }
   }
 
@@ -4282,6 +4442,13 @@ function createMoundGeometry() {
       (x - TREE_BASE_X) / (GROUND_RADIUS * 2) + 0.5,
       (z - TREE_BASE_Z) / (GROUND_RADIUS * 2) + 0.5,
     );
+    // The skirt reads as cut soil at the mound rim: dark warm earth.
+    const crumb = fbm2(x * 1.4 + 2.2, z * 1.4 - 6.5, 3);
+    colors.push(
+      0.46 + (crumb - 0.5) * 0.1,
+      0.38 + (crumb - 0.5) * 0.08,
+      0.3 + (crumb - 0.5) * 0.06,
+    );
   }
 
   for (let segment = 0; segment < angularSegments; segment += 1) {
@@ -4299,23 +4466,25 @@ function createMoundGeometry() {
     new THREE.Float32BufferAttribute(positions, 3),
   );
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
 
-function createGround() {
-  const geometry = createMoundGeometry();
+function createGround(quality: Exclude<Quality, "auto">) {
+  const geometry = createMoundGeometry(quality);
   const textures = createMossTextures();
   const material = new THREE.MeshStandardMaterial({
     bumpMap: textures.bumpMap ?? undefined,
-    bumpScale: 0.06,
+    bumpScale: 0.085,
     color: 0xffffff,
     map: textures.colorMap ?? undefined,
     roughness: 0.96,
     metalness: 0,
     transparent: true,
+    vertexColors: true,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "Procedural moss mound ground";
@@ -4486,7 +4655,7 @@ export default function WeepingCherryTreeCanvas({
       scene.add(fill);
       await reportSceneBuildProgress();
 
-      const groundMesh = createGround();
+      const groundMesh = createGround(sceneQuality);
       worldGroup.add(groundMesh);
       await reportSceneBuildProgress();
 
