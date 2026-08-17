@@ -8,6 +8,13 @@ export default function Home() {
     <HeroIntro>
       <h1 className="sr-only">Kevin He - Creative Developer</h1>
 
+      {/* On phones the canopy reaches the top edge; a faint scrim outside the
+          difference-blended layer keeps the tagline readable over blossoms. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-x-0 top-0 z-10 h-36 bg-gradient-to-b from-black/60 to-transparent sm:hidden"
+      />
+
       <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-6 text-[#f0f0f0] mix-blend-difference sm:p-12">
         <p
           className="max-w-[28rem] text-[0.75rem] leading-[1.7] sm:text-[0.85rem]"

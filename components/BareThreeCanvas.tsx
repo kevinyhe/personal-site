@@ -11,22 +11,15 @@ import {
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
-const TREE_BASE_X = 2.7;
-const TREE_BASE_Z = 0;
-const GROUND_RADIUS = 15;
-const MOUND_HEIGHT = 1.78;
-const MOUND_DOWNSLOPE_DEPTH = 1.25;
-// Hero composition: the tree is the centerpiece. The camera target sits on
-// the tree axis (world x ~2.6) so the canopy reads near-centered with a
-// little headroom above the crown; the mossy ground stays in the lower
-// quarter of the frame so the name across the bottom ~22% of the viewport
-// reads over calm ground rather than moving canopy.
-const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 6.6, 16.4);
-const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 11.6, 18.0);
-const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 4.95, 0);
+// Hero composition: the tree floats alone in a near-black void. The camera
+// target sits on the tree axis (world x ~2.6) so the canopy reads
+// near-centered with headroom above the crown; the darkened trunk base and
+// empty void fill the bottom ~22% of the viewport so the name reads over
+// calm darkness rather than moving canopy.
+const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 6.15, 16.4);
+const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 10.9, 18.0);
+const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 4.6, 0);
 const HERO_CAMERA_FOV = 42;
-const PETAL_SURFACE_NORMAL = new THREE.Vector3(0, 0, 1);
-const TREE_SHADOW_DIRECTION = new THREE.Vector2(1, -0.28).normalize();
 
 type BareThreeCanvasProps = {
   introActive?: boolean;
@@ -35,7 +28,7 @@ type BareThreeCanvasProps = {
   onProgress?: (progress: { loaded: number; total: number }) => void;
 };
 
-export const SCENE_BUILD_MILESTONE_TOTAL = 11;
+export const SCENE_BUILD_MILESTONE_TOTAL = 5;
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -128,98 +121,6 @@ function fbm2(x: number, z: number, octaves = 5) {
     amplitude *= 0.52;
   }
   return total > 0 ? value / total : 0;
-}
-
-function getGroundRadiusAtAngle(angle: number) {
-  return (
-    GROUND_RADIUS *
-    (1 +
-      Math.sin(angle * 2.0 + 0.4) * 0.075 +
-      Math.cos(angle * 3.0 - 0.9) * 0.055 +
-      Math.sin(angle * 5.0 + 1.7) * 0.035)
-  );
-}
-
-function getGroundHeight(x: number, z: number) {
-  const dx = x - TREE_BASE_X;
-  const dz = z - TREE_BASE_Z;
-  const r = Math.hypot(dx, dz);
-  const angle = Math.atan2(dz, dx);
-  const angleNoise =
-    fbm2(Math.cos(angle) * 1.8 + 4.4, Math.sin(angle) * 1.8 - 6.8, 3) - 0.5;
-  const directionalWarp = Math.max(
-    0.74,
-    Math.min(
-      1.32,
-      1 +
-        Math.sin(angle * 2.0 + 0.72) * 0.18 +
-        Math.cos(angle * 3.4 - 0.6) * 0.12 +
-        angleNoise * 0.22,
-    ),
-  );
-  const edgeRadius = getGroundRadiusAtAngle(angle);
-  const shapedR = r * directionalWarp;
-  const mound = MOUND_HEIGHT * (1 - smoothstep(0.32, 11.8, shapedR));
-  const shoulder =
-    smoothstep(2.2, 7.4, shapedR) *
-    (1 - smoothstep(edgeRadius * 0.52, edgeRadius * 0.96, shapedR)) *
-    0.18;
-  const noiseMask =
-    smoothstep(1.15, 5.8, r) *
-    (1 - smoothstep(edgeRadius * 0.72, edgeRadius * 0.98, r));
-  const broadRoll =
-    (fbm2(x * 0.06 + 20.4, z * 0.06 - 4.1) - 0.5) * 0.18 * noiseMask;
-  const fineRoll =
-    (fbm2(x * 0.2 - 3.7, z * 0.2 + 8.2) - 0.5) * 0.055 * noiseMask;
-  // Fine surface detail: soft micro-relief plus small hummocks, so the mound
-  // reads as packed soil under moss instead of a smooth dome. Total added
-  // amplitude stays under +-0.05 so twig strands (clamped to ground + 0.34)
-  // can never be submerged between clamp samples.
-  const microRelief =
-    (fbm2(x * 0.52 + 14.2, z * 0.52 - 7.3, 3) - 0.5) * 0.06 * noiseMask;
-  const hummocks =
-    (valueNoise2(x * 0.95 + 3.3, z * 0.95 + 6.1) - 0.5) * 0.026 * noiseMask;
-  const ridgeVariation =
-    (Math.sin(angle * 3.1 + r * 0.44) * 0.11 +
-      Math.cos(angle * 5.2 - r * 0.23) * 0.07 +
-      (fbm2(x * 0.13 - 9.1, z * 0.13 + 2.6, 4) - 0.5) * 0.2) *
-    noiseMask;
-  const rateVariation = Math.max(
-    0.72,
-    Math.min(
-      1.34,
-      1 +
-        Math.sin(angle * 2.7 - 0.35) * 0.18 +
-        Math.cos(angle * 4.6 + 1.1) * 0.1 +
-        (fbm2(x * 0.08 + 1.7, z * 0.08 - 12.0, 3) - 0.5) * 0.32,
-    ),
-  );
-  const downslope =
-    smoothstep(1.2, edgeRadius * 0.88, shapedR) *
-    MOUND_DOWNSLOPE_DEPTH *
-    rateVariation;
-  const edgeSettle = smoothstep(edgeRadius * 0.82, edgeRadius, r) * 0.22;
-  return (
-    mound +
-    shoulder +
-    broadRoll +
-    fineRoll +
-    microRelief +
-    hummocks +
-    ridgeVariation -
-    downslope -
-    edgeSettle -
-    0.02
-  );
-}
-
-function getGroundNormal(x: number, z: number, target = new THREE.Vector3()) {
-  const step = 0.22;
-  const left = getGroundHeight(x - step, z);
-  const right = getGroundHeight(x + step, z);
-  const back = getGroundHeight(x, z - step);
-  const front = getGroundHeight(x, z + step);
-  return target.set(left - right, step * 2, back - front).normalize();
 }
 
 function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
@@ -682,17 +583,12 @@ class BranchGeometryBuilder {
         this.windParams1.push(...wind.wind1);
         this.windParams2.push(...wind.wind2);
 
-        const heightTone = smoothstep(0.2, 6.6, this.point.y);
-        const grooveTone = smoothstep(-0.06, 0.08, -ridge);
-        this.barkColor.setHSL(
-          0.055 + Math.sin(this.point.x * 3.1 + this.point.z * 2.7) * 0.008,
-          THREE.MathUtils.clamp(0.29 - depthFactor * 0.1, 0.12, 0.32),
-          THREE.MathUtils.clamp(
-            0.055 + heightTone * 0.07 + depthFactor * 0.04 - grooveTone * 0.035,
-            0.035,
-            0.18,
-          ),
-        );
+        // Vertex color is a multiplier on the bark map: white everywhere
+        // except near the trunk base, where it ramps toward black so the
+        // tree melts into the void instead of ending in a hard cut. Low
+        // drooping strand tips pick up the same fade.
+        const baseFade = 0.03 + 0.97 * smoothstep(-0.05, 1.15, this.point.y);
+        this.barkColor.setScalar(baseFade);
         this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
       }
     }
@@ -722,8 +618,10 @@ class BranchGeometryBuilder {
       const capWind = getBranchWindVectors(branch, t);
       this.windParams1.push(...capWind.wind1);
       this.windParams2.push(...capWind.wind2);
-      const capLightness = depth === 0 && t === 0 ? 0.085 : 0.07;
-      this.barkColor.setHSL(0.055, 0.25, capLightness + depthFactor * 0.035);
+      // Same void fade as the ring vertices: the trunk's bottom cap sits at
+      // y=0 and reads near-black.
+      const capFade = 0.03 + 0.97 * smoothstep(-0.05, 1.15, this.center.y);
+      this.barkColor.setScalar(capFade);
       this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
 
       const capRingStart = this.positions.length / 3;
@@ -1022,7 +920,7 @@ function applyBlossomWind(
   material.customProgramCacheKey = () => "blossom-wind-v8";
 }
 
-// Sakura palette shared by attached blossoms, falling petals and the carpet:
+// Sakura palette shared by attached blossoms and falling petals:
 // near-white petal edges, soft pink mid petal, deeper pink base, and a
 // magenta-crimson flower center / calyx.
 const PETAL_EDGE_COLOR = new THREE.Color("#fdeef2");
@@ -1666,9 +1564,9 @@ function createBarkTextures() {
   return { colorMap, bumpMap };
 }
 
-// A single loose petal (falling + ground carpet): same obcordate outline
-// with the tip notch and the same base->edge color gradient as the petals
-// on the attached flowers. Lies in the xy plane along +y, normal +z.
+// A single loose falling petal: same obcordate outline with the tip notch
+// and the same base->edge color gradient as the petals on the attached
+// flowers. Lies in the xy plane along +y, normal +z.
 function createFallingPetalGeometry() {
   const positions: number[] = [];
   const colors: number[] = [];
@@ -1728,12 +1626,15 @@ function createFallingPetalGeometry() {
 
 // Petal lifecycle: HELD (invisible at a blossom anchor, waiting for a gust
 // to shake it loose) -> FALLING (drag-limited descent with falling-leaf
-// side-slip and rocking) -> SETTLED (landed on the mound, brief fade, then
-// recycled to a new anchor). All per-petal parameters are precomputed at
-// construction; update() allocates nothing.
+// side-slip and rocking; below the tree base the petal shrinks away into
+// the void, then recycles to a new anchor). All per-petal parameters are
+// precomputed at construction; update() allocates nothing.
 const PETAL_HELD = 0;
 const PETAL_FALLING = 1;
-const PETAL_SETTLED = 2;
+// With no ground, petals sink past the trunk base (group-local y=0) and
+// dissolve: full size above the fade start, gone by the fade end.
+const PETAL_VOID_FADE_START = -0.35;
+const PETAL_VOID_FADE_END = -2.1;
 
 class FallingPetalSystem {
   mesh: THREE.InstancedMesh;
@@ -1758,7 +1659,6 @@ class FallingPetalSystem {
   private tiltX0s: Float32Array;
   private tiltZ0s: Float32Array;
   private yaw0s: Float32Array;
-  private fadeDurs: Float32Array;
   private baseScales: Float32Array;
   private matrix = new THREE.Matrix4();
   private quat = new THREE.Quaternion();
@@ -1804,7 +1704,6 @@ class FallingPetalSystem {
     this.tiltX0s = new Float32Array(count);
     this.tiltZ0s = new Float32Array(count);
     this.yaw0s = new Float32Array(count);
-    this.fadeDurs = new Float32Array(count);
     this.baseScales = new Float32Array(count);
 
     for (let i = 0; i < count; i += 1) {
@@ -1828,8 +1727,6 @@ class FallingPetalSystem {
       this.tiltX0s[i] = this.rand(-0.7, 0.7);
       this.tiltZ0s[i] = this.rand(-0.7, 0.7);
       this.yaw0s[i] = this.rand(0, TAU);
-      this.fadeDurs[i] = this.rand(0.8, 1.6);
-      // Trimmed to stay size-coherent with the smaller ground carpet.
       this.baseScales[i] = this.rand(0.45, 0.95);
       this.color.set(this.pickColor());
       this.mesh.setColorAt(i, this.color);
@@ -1841,8 +1738,8 @@ class FallingPetalSystem {
         this.hold(i, 0);
         this.release(i);
         const p = this.positions[i];
-        const groundY = this.groundLocalY(p);
-        const drop = this.rng() * Math.max(0, p.y - groundY - 0.2);
+        const drop =
+          this.rng() * Math.max(0, p.y - PETAL_VOID_FADE_START - 0.2);
         const driftT = drop / this.vTerms[i];
         this.fallAges[i] = driftT;
         p.y -= drop;
@@ -1865,13 +1762,6 @@ class FallingPetalSystem {
   private pickColor() {
     const colors = ["#fff7fa", "#ffe8f0", "#ffd6e5", "#f7b8cc", "#ffffff"];
     return colors[Math.floor(this.rng() * colors.length)];
-  }
-
-  // Petal positions are tree-group-local. The group is placed at (2.7, 0, 0)
-  // with scale (0.92, 1.05, 0.84) in generate() -- keep these in sync -- and
-  // getGroundHeight() works in world space, so convert both ways.
-  private groundLocalY(p: THREE.Vector3) {
-    return getGroundHeight(2.7 + p.x * 0.92, p.z * 0.84) / 1.05;
   }
 
   // Park the petal (hidden) at a fresh detachment point and arm its delay.
@@ -1918,23 +1808,6 @@ class FallingPetalSystem {
     this.fallAges[i] = 0;
   }
 
-  private settle(i: number, groundY: number) {
-    this.positions[i].y = groundY + 0.015;
-    this.velocities[i].set(0, 0, 0);
-    // Lie roughly flat on the mound (geometry normal is +z; x-rotation of
-    // -90deg turns it up) with a random resting tilt and heading. YXZ order
-    // applies the flatten before the heading spin -- with the default XYZ
-    // the full-circle y component would tip the petal onto its edge.
-    this.rotations[i].set(
-      -Math.PI / 2 + this.rand(-0.35, 0.35),
-      this.rand(0, TAU),
-      this.rand(-0.25, 0.25),
-      "YXZ",
-    );
-    this.states[i] = PETAL_SETTLED;
-    this.timers[i] = this.fadeDurs[i];
-  }
-
   update(dt: number, windTime = 0, windStrength = 1) {
     const wind = this.wind;
     const count = this.positions.length;
@@ -1979,8 +1852,6 @@ class FallingPetalSystem {
         p.x += this.slipDirXs[i] * slipVel * dt;
         p.z += this.slipDirZs[i] * slipVel * dt;
         const rock = this.rockAmps[i] * Math.cos(phase);
-        // Explicit order: Euler.set keeps the previous order otherwise, and
-        // settle() switches this euler to YXZ.
         r.set(
           this.tiltX0s[i] + rock * this.slipDirZs[i],
           this.yaw0s[i] + this.tumbleRates[i] * t,
@@ -1988,33 +1859,30 @@ class FallingPetalSystem {
           "XYZ",
         );
 
-        // Ground contact. The mound crests near y=2 world, so the height
-        // field only needs sampling once a petal is low enough to matter.
-        if (p.y < 2.2) {
-          const groundY = this.groundLocalY(p);
-          if (p.y <= groundY + 0.02) this.settle(i, groundY);
-        }
+        // No ground: once a petal has fully dissolved below the tree base
+        // (or drifted far out of frame), recycle it to a new anchor.
         if (
-          this.states[i] === PETAL_FALLING &&
-          (Math.abs(p.x) > 11 || Math.abs(p.z) > 9 || p.y < -2.5)
+          Math.abs(p.x) > 11 ||
+          Math.abs(p.z) > 9 ||
+          p.y < PETAL_VOID_FADE_END
         ) {
           this.hold(i, this.rand(0.4, 4.5));
         }
-      } else {
-        // Settled: brief fade (scale shrink), then recycle to a new anchor.
-        this.timers[i] -= dt;
-        if (this.timers[i] <= 0) this.hold(i, this.rand(0.4, 4.5));
       }
 
+      // Scale-in on release, then a scale-out ramp as the petal sinks past
+      // the tree base into the void.
       const stateNow = this.states[i];
+      const voidFade = clamp01(
+        (p.y - PETAL_VOID_FADE_END) /
+          (PETAL_VOID_FADE_START - PETAL_VOID_FADE_END),
+      );
       const s =
         stateNow === PETAL_FALLING
           ? this.baseScales[i] *
-            Math.min(1, 0.15 + this.fallAges[i] * 3)
-          : stateNow === PETAL_SETTLED
-            ? this.baseScales[i] *
-              Math.max(0, this.timers[i] / this.fadeDurs[i])
-            : 0;
+            Math.min(1, 0.15 + this.fallAges[i] * 3) *
+            voidFade
+          : 0;
 
       this.quat.setFromEuler(r);
       this.scale.setScalar(s);
@@ -2107,7 +1975,6 @@ class WeepingCherryGenerator {
     this.solveRadii(trunk);
     this.computeWeights(trunk);
     this.applySagging(trunk);
-    this.keepStrandsAboveGround();
     this.computeWindChains(trunk);
     this.buildBranchMesh();
     this.buildBlossomMeshes();
@@ -3209,33 +3076,6 @@ class WeepingCherryGenerator {
     }
   }
 
-  // Safety net for the lengthened weeping strands: no drooping twig point
-  // may dip below the ground + petal carpet, regardless of how far droop and
-  // sagging pushed it. Runs before wind chains and blossom placement so
-  // spurs inherit the corrected curves. Works in world space because the
-  // tree group is translated and non-uniformly scaled.
-  private keepStrandsAboveGround() {
-    const groupPosition = this.group.position;
-    const groupScale = this.group.scale;
-    const clearance = 0.34;
-    for (const branch of this.branches) {
-      if (branch.depth < 4) continue;
-      let changed = false;
-      for (const point of branch.curve.points) {
-        const worldX = groupPosition.x + point.x * groupScale.x;
-        const worldZ = groupPosition.z + point.z * groupScale.z;
-        const floorLocal =
-          (getGroundHeight(worldX, worldZ) + clearance - groupPosition.y) /
-          groupScale.y;
-        if (point.y < floorLocal) {
-          point.y = floorLocal;
-          changed = true;
-        }
-      }
-      if (changed) branch.curve.updateArcLengths();
-    }
-  }
-
   private buildBranchMesh() {
     const builder = new BranchGeometryBuilder();
     for (const branch of this.branches) builder.append(branch);
@@ -3247,13 +3087,13 @@ class WeepingCherryGenerator {
       color: 0xcfc9c4,
       map: textures.colorMap ?? undefined,
       metalness: 0,
-      roughness: 0.86,
+      roughness: 0.82,
+      // Vertex colors carry only the trunk-base void fade (white elsewhere).
+      vertexColors: true,
     });
     this.branchWindUniforms = applyBranchWind(material);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = "Attached cherry branch structure";
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
     this.branchMesh = mesh;
     this.group.add(mesh);
   }
@@ -3436,10 +3276,12 @@ class WeepingCherryGenerator {
   // reproduces the exact displacement of the twig point it grows from.
   private buildBlossomMeshes() {
     const { flowers, buds } = this.createBlossomPlacements();
+    // Raised emissive lift for the dark void scene: clusters luminesce
+    // slightly against the black background instead of relying on skylight.
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      emissive: 0xffc9d9,
-      emissiveIntensity: 0.12,
+      emissive: 0xffb9ce,
+      emissiveIntensity: 0.3,
       metalness: 0,
       roughness: 0.55,
       side: THREE.DoubleSide,
@@ -3525,9 +3367,13 @@ class WeepingCherryGenerator {
     if (count <= 0) return;
     const material = new THREE.MeshStandardMaterial({
       color: 0xffe3ed,
+      // Small emissive lift so loose petals stay readable while tumbling
+      // through the unlit void below the canopy.
+      emissive: 0xf2a9c1,
+      emissiveIntensity: 0.22,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.74,
+      opacity: 0.78,
       depthWrite: false,
       roughness: 0.65,
       vertexColors: true,
@@ -3574,927 +3420,6 @@ class WeepingCherryGenerator {
       this.group.add(mesh);
     }
   }
-}
-
-function createMossTextures() {
-  const size = 256;
-  const colorCanvas = document.createElement("canvas");
-  const bumpCanvas = document.createElement("canvas");
-  colorCanvas.width = size;
-  colorCanvas.height = size;
-  bumpCanvas.width = size;
-  bumpCanvas.height = size;
-
-  const colorContext = colorCanvas.getContext("2d");
-  const bumpContext = bumpCanvas.getContext("2d");
-  if (!colorContext || !bumpContext) {
-    return { colorMap: null, bumpMap: null };
-  }
-
-  const colorImage = colorContext.createImageData(size, size);
-  const bumpImage = bumpContext.createImageData(size, size);
-  const colors = {
-    dark: [22, 48, 31],
-    lush: [62, 100, 48],
-    yellowGreen: [104, 118, 46], // hue ~0.23, sunlit dry moss
-    blueGreen: [36, 82, 64], // hue ~0.34, shaded damp moss
-    gold: [112, 126, 55],
-    earth: [58, 48, 33],
-  };
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const u = x / size;
-      const v = y / size;
-      // Multi-scale clumping: a low-frequency mask separates lush moss
-      // tufts from earthy gaps; medium-frequency patches drift the hue
-      // between yellow-green and blue-green; fiber and speckle keep the
-      // fine filament detail. The mask is kept subtle here because this
-      // texture tiles 7.5x across the mound — the strong non-repeating
-      // clump variation lives in the mound's vertex colors instead.
-      const clump = fbm2(u * 4.6 + 9.3, v * 4.6 - 5.6, 4);
-      const clumpMask = smoothstep(0.34, 0.62, clump);
-      const broad = fbm2(u * 5.4 + 6.7, v * 5.4 - 3.1, 5);
-      const patch = fbm2(u * 12.0 - 2.3, v * 12.0 + 8.9, 4);
-      const huePatch = fbm2(u * 7.2 + 3.3, v * 7.2 - 12.1, 4);
-      const fiber = fbm2(u * 42.0 + 4.1, v * 42.0 - 7.8, 3);
-      const speckle = valueNoise2(u * 118.0, v * 118.0);
-      const wet = fbm2(u * 8.0 + 11.4, v * 8.0 + 1.6, 4);
-      const yellowMix = smoothstep(0.56, 0.8, huePatch) * 0.5;
-      const blueMix = (1 - smoothstep(0.3, 0.52, huePatch)) * 0.46;
-      const goldMix = smoothstep(0.6, 0.86, patch) * 0.22;
-      const earthMix = clamp01(
-        (1 - clumpMask) * 0.3 + smoothstep(0.68, 0.92, wet) * 0.36,
-      );
-      const shade =
-        (0.77 + fiber * 0.34 + speckle * 0.12) * (0.94 + clumpMask * 0.09);
-      const index = (y * size + x) * 4;
-      let red = lerp(colors.dark[0], colors.lush[0], broad);
-      let green = lerp(colors.dark[1], colors.lush[1], broad);
-      let blue = lerp(colors.dark[2], colors.lush[2], broad);
-      red = lerp(red, colors.yellowGreen[0], yellowMix);
-      green = lerp(green, colors.yellowGreen[1], yellowMix);
-      blue = lerp(blue, colors.yellowGreen[2], yellowMix);
-      red = lerp(red, colors.blueGreen[0], blueMix);
-      green = lerp(green, colors.blueGreen[1], blueMix);
-      blue = lerp(blue, colors.blueGreen[2], blueMix);
-      red = lerp(red, colors.gold[0], goldMix);
-      green = lerp(green, colors.gold[1], goldMix);
-      blue = lerp(blue, colors.gold[2], goldMix);
-      red = lerp(red, colors.earth[0], earthMix);
-      green = lerp(green, colors.earth[1], earthMix);
-      blue = lerp(blue, colors.earth[2], earthMix);
-      colorImage.data[index] = Math.min(255, red * shade);
-      colorImage.data[index + 1] = Math.min(255, green * shade);
-      colorImage.data[index + 2] = Math.min(255, blue * shade);
-      colorImage.data[index + 3] = 255;
-
-      // Tufts stand proud of the earthy gaps; extra contrast around the
-      // midpoint keeps the fibers crisp.
-      const rawHeight =
-        fiber * 0.4 + patch * 0.2 + speckle * 0.14 + clumpMask * 0.26;
-      const height = Math.floor(
-        255 * clamp01((rawHeight - 0.5) * 1.35 + 0.5),
-      );
-      bumpImage.data[index] = height;
-      bumpImage.data[index + 1] = height;
-      bumpImage.data[index + 2] = height;
-      bumpImage.data[index + 3] = 255;
-    }
-  }
-
-  colorContext.putImageData(colorImage, 0, 0);
-  bumpContext.putImageData(bumpImage, 0, 0);
-
-  const colorMap = new THREE.CanvasTexture(colorCanvas);
-  colorMap.colorSpace = THREE.SRGBColorSpace;
-  colorMap.wrapS = THREE.RepeatWrapping;
-  colorMap.wrapT = THREE.RepeatWrapping;
-  colorMap.repeat.set(7.5, 7.5);
-  colorMap.needsUpdate = true;
-
-  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
-  bumpMap.wrapS = THREE.RepeatWrapping;
-  bumpMap.wrapT = THREE.RepeatWrapping;
-  bumpMap.repeat.set(12, 12);
-  bumpMap.needsUpdate = true;
-
-  return { colorMap, bumpMap };
-}
-
-function createMossCardAlphaTexture() {
-  const size = 64;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-  if (!context) return null;
-
-  const image = context.createImageData(size, size);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const u = x / (size - 1);
-      const v = y / (size - 1);
-      const centered = Math.abs(u - 0.5) * (1.35 + v * 1.2);
-      const sideFray = valueNoise2(u * 18.0 + 2.1, v * 18.0 - 4.2) * 0.18;
-      const blade = 1 - smoothstep(0.22 + sideFray, 0.52, centered);
-      const vertical =
-        smoothstep(0.02, 0.26, v) * (1 - smoothstep(0.78, 1.0, v));
-      const value = Math.floor(255 * clamp01(blade * vertical));
-      const index = (y * size + x) * 4;
-      image.data[index] = value;
-      image.data[index + 1] = value;
-      image.data[index + 2] = value;
-      image.data[index + 3] = 255;
-    }
-  }
-  context.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function createMossBladeGeometry() {
-  // Two crossed cards, each with a mid row so the blade bows out of its
-  // plane instead of standing perfectly flat.
-  const midBend = 0.07;
-  const tipBend = 0.19;
-  const positions = new Float32Array([
-    // card A (spans x, bends toward +z)
-    -0.5, 0, 0, 0.5, 0, 0, -0.5, 0.55, midBend, 0.5, 0.55, midBend, -0.5, 1,
-    tipBend, 0.5, 1, tipBend,
-    // card B (spans z, bends toward +x)
-    0, 0, -0.5, 0, 0, 0.5, midBend, 0.55, -0.5, midBend, 0.55, 0.5, tipBend, 1,
-    -0.5, tipBend, 1, 0.5,
-  ]);
-  const uvs = new Float32Array([
-    0, 0, 1, 0, 0, 0.55, 1, 0.55, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0.55, 1, 0.55, 0,
-    1, 1, 1,
-  ]);
-  const indices = [
-    0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4, 6, 7, 9, 6, 9, 8, 8, 9, 11, 8, 11, 10,
-  ];
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function createMossFoliage(quality: Exclude<Quality, "auto">) {
-  const count = quality === "low" ? 0 : quality === "medium" ? 1400 : 2200;
-  if (count === 0) {
-    const group = new THREE.Group();
-    group.name = "Skipped moss micro foliage";
-    return group;
-  }
-
-  const rng = makeRng(20260706);
-  const alphaMap = createMossCardAlphaTexture();
-  const geometry = createMossBladeGeometry();
-  const material = new THREE.MeshStandardMaterial({
-    alphaMap: alphaMap ?? undefined,
-    alphaTest: 0.28,
-    color: 0xffffff,
-    depthWrite: false,
-    metalness: 0,
-    opacity: 0.82,
-    roughness: 0.94,
-    side: THREE.DoubleSide,
-    transparent: true,
-    vertexColors: true,
-  });
-  const mesh = new THREE.InstancedMesh(geometry, material, count);
-  mesh.name = "Procedural moss micro foliage";
-  mesh.frustumCulled = false;
-  mesh.receiveShadow = false;
-
-  const position = new THREE.Vector3();
-  const normal = new THREE.Vector3();
-  const scale = new THREE.Vector3();
-  const matrix = new THREE.Matrix4();
-  const align = new THREE.Quaternion();
-  const yaw = new THREE.Quaternion();
-  const quaternion = new THREE.Quaternion();
-  const color = new THREE.Color();
-  let accepted = 0;
-  let attempts = 0;
-
-  // Blades grow in clumps: pick a clump center, then scatter 5-12 blades
-  // around it sharing one hue family, instead of a uniform sprinkle.
-  while (accepted < count && attempts < count * 4) {
-    attempts += 1;
-    const clumpAngle = rng() * TAU;
-    const clumpEdge = getGroundRadiusAtAngle(clumpAngle);
-    const clumpRadius = Math.sqrt(rng()) * (clumpEdge - 0.9);
-    const cx = TREE_BASE_X + Math.cos(clumpAngle) * clumpRadius;
-    const cz = TREE_BASE_Z + Math.sin(clumpAngle) * clumpRadius;
-    const edgeFade =
-      1 - smoothstep(clumpEdge * 0.78, clumpEdge - 0.25, clumpRadius);
-    // Bare ring near the trunk widened to clear the worn dirt ring.
-    const trunkGap = smoothstep(1.35, 2.2, clumpRadius);
-    const moundBias = 0.32 + (1 - smoothstep(3.8, 13.2, clumpRadius)) * 0.68;
-    const clumpNoise = fbm2(cx * 0.34 + 5.4, cz * 0.34 - 3.2, 4);
-    const density = clamp01(
-      edgeFade *
-        trunkGap *
-        moundBias *
-        (0.3 + smoothstep(0.4, 0.62, clumpNoise) * 0.85),
-    );
-    if (rng() > density) continue;
-
-    const clumpHue = lerp(0.23, 0.34, rng());
-    const clumpSaturation = lerp(0.36, 0.56, rng());
-    const clumpBlades = 5 + Math.floor(rng() * 8);
-    const clumpSpread = lerp(0.14, 0.48, rng());
-    for (let blade = 0; blade < clumpBlades && accepted < count; blade += 1) {
-      const bladeAngle = rng() * TAU;
-      const bladeDistance = Math.sqrt(rng()) * clumpSpread;
-      const x = cx + Math.cos(bladeAngle) * bladeDistance;
-      const z = cz + Math.sin(bladeAngle) * bladeDistance;
-      const bladeRadius = Math.hypot(x - TREE_BASE_X, z - TREE_BASE_Z);
-      const bladeEdge = getGroundRadiusAtAngle(
-        Math.atan2(z - TREE_BASE_Z, x - TREE_BASE_X),
-      );
-      // Trunk-blend disc rim reaches ~1.5; blades rooted under it would clip
-      // through the opaque disc, so keep them fully outside it.
-      if (bladeRadius < 1.55 || bladeRadius > bladeEdge - 0.6) continue;
-
-      const height = getGroundHeight(x, z);
-      // Blades stretch taller in dips where moisture gathers.
-      const sampleStep = 0.5;
-      const dip =
-        (getGroundHeight(x + sampleStep, z) +
-          getGroundHeight(x - sampleStep, z) +
-          getGroundHeight(x, z + sampleStep) +
-          getGroundHeight(x, z - sampleStep)) *
-          0.25 -
-        height;
-      const dipBoost = 1 + clamp01(dip * 9) * 0.55;
-
-      getGroundNormal(x, z, normal);
-      position.set(x, height + 0.012, z);
-      align.setFromUnitVectors(UP, normal);
-      yaw.setFromAxisAngle(UP, rng() * TAU);
-      quaternion.copy(align).multiply(yaw);
-      const h =
-        lerp(0.055, 0.18, rng()) * lerp(0.76, 1.16, moundBias) * dipBoost;
-      const w = h * lerp(0.36, 0.72, rng());
-      scale.set(w, h, w);
-      matrix.compose(position, quaternion, scale);
-      mesh.setMatrixAt(accepted, matrix);
-
-      const hue = clamp01(clumpHue + (rng() - 0.5) * 0.025);
-      const saturation = clamp01(clumpSaturation + (rng() - 0.5) * 0.09);
-      const lightness = lerp(0.19, 0.34, rng()) + height * 0.08;
-      color.setHSL(hue, saturation, clamp01(lightness));
-      mesh.setColorAt(accepted, color);
-      accepted += 1;
-    }
-  }
-
-  mesh.count = accepted;
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  return mesh;
-}
-
-function createFallenPetals(quality: Exclude<Quality, "auto">) {
-  const count = quality === "low" ? 520 : quality === "medium" ? 960 : 1520;
-  const rng = makeRng(20260708);
-  const geometry = createFallingPetalGeometry();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xffd9e7,
-    emissive: 0xffb5c9,
-    emissiveIntensity: 0.012,
-    metalness: 0,
-    roughness: 0.82,
-    side: THREE.DoubleSide,
-    vertexColors: true,
-  });
-  const mesh = new THREE.InstancedMesh(geometry, material, count);
-  mesh.name = "Fallen cherry blossom carpet";
-  mesh.frustumCulled = false;
-  mesh.receiveShadow = true;
-
-  const matrix = new THREE.Matrix4();
-  const align = new THREE.Quaternion();
-  const yaw = new THREE.Quaternion();
-  const quaternion = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  const position = new THREE.Vector3();
-  const normal = new THREE.Vector3();
-  const color = new THREE.Color();
-  const brightTint = new THREE.Color(0xffffff);
-  const dampTint = new THREE.Color(0xcfa39e);
-  const shadowDir = TREE_SHADOW_DIRECTION.clone();
-  const sideDir = new THREE.Vector2(-shadowDir.y, shadowDir.x);
-
-  let accepted = 0;
-  let attempts = 0;
-  while (accepted < count && attempts < count * 18) {
-    attempts += 1;
-
-    let x: number;
-    let z: number;
-    const roll = rng();
-    if (roll < 0.46) {
-      const along = lerp(1.1, 8.3, Math.pow(rng(), 0.76));
-      const spread = lerp(0.26, 2.75, rng()) * (rng() < 0.5 ? -1 : 1);
-      x =
-        TREE_BASE_X +
-        shadowDir.x * along +
-        sideDir.x * spread +
-        (rng() - 0.5) * 0.28;
-      z =
-        TREE_BASE_Z +
-        shadowDir.y * along +
-        sideDir.y * spread +
-        (rng() - 0.5) * 0.28;
-    } else if (roll < 0.74) {
-      const angle = rng() * TAU;
-      const radius = lerp(0.72, 2.7, Math.pow(rng(), 0.45));
-      x = TREE_BASE_X + Math.cos(angle) * radius;
-      z = TREE_BASE_Z + Math.sin(angle) * radius;
-    } else {
-      const angle = rng() * TAU;
-      const edgeRadius = getGroundRadiusAtAngle(angle);
-      const radius = Math.pow(rng(), 0.64) * edgeRadius * 0.72;
-      x = TREE_BASE_X + Math.cos(angle) * radius;
-      z = TREE_BASE_Z + Math.sin(angle) * radius;
-    }
-
-    const dx = x - TREE_BASE_X;
-    const dz = z - TREE_BASE_Z;
-    const radius = Math.hypot(dx, dz);
-    const angle = Math.atan2(dz, dx);
-    const edgeRadius = getGroundRadiusAtAngle(angle);
-    if (radius < 0.52 || radius > edgeRadius - 0.42) continue;
-
-    const sideAmount =
-      (dx * shadowDir.x + dz * shadowDir.y) / Math.max(0.001, radius);
-    const edgeFade =
-      1 - smoothstep(edgeRadius * 0.66, edgeRadius - 0.32, radius);
-    const centerFade = smoothstep(0.62, 1.18, radius);
-    // The hero name is difference-blended over the ground right of the
-    // trunk; keep that side of the carpet sparser so the large glyphs read
-    // cleanly over it instead of going mottled.
-    const rightBias = lerp(0.6, 0.42, smoothstep(-0.15, 0.85, sideAmount));
-    const clumpNoise = fbm2(x * 0.92 + 8.1, z * 0.92 - 1.7, 3);
-    // dipBoost * downwind * pileBoost is bounded by 1.85 * 1.16 * 1.5 ≈ 3.22,
-    // so a roll above the cheap factors times that bound can never be
-    // accepted — reject it before paying five terrain samples.
-    const cheapDensity =
-      edgeFade * centerFade * rightBias * (0.56 + clumpNoise * 0.58);
-    const densityRoll = rng();
-    if (densityRoll > Math.min(1, cheapDensity * 3.22)) continue;
-    // Drift accumulation: petals collect in ground dips, blow slightly to
-    // the downwind (+x) side, and pile up in clumps near the trunk ring.
-    const groundY = getGroundHeight(x, z);
-    const sampleStep = 0.6;
-    const dip =
-      (getGroundHeight(x + sampleStep, z) +
-        getGroundHeight(x - sampleStep, z) +
-        getGroundHeight(x, z + sampleStep) +
-        getGroundHeight(x, z - sampleStep)) *
-        0.25 -
-      groundY;
-    const dipBoost = 1 + clamp01(dip * 7) * 0.85;
-    const downwind = lerp(0.86, 1.16, smoothstep(-3.4, 4.6, dx));
-    const pileNoise = fbm2(x * 1.55 - 4.9, z * 1.55 + 10.3, 3);
-    const nearRing = 1 - smoothstep(1.9, 3.4, radius);
-    const pileBoost =
-      lerp(0.78, 1.0, smoothstep(0.4, 0.68, pileNoise)) +
-      nearRing * smoothstep(0.4, 0.68, pileNoise) * 0.5;
-    const density = clamp01(
-      cheapDensity * dipBoost * downwind * pileBoost,
-    );
-    if (densityRoll > density) continue;
-
-    getGroundNormal(x, z, normal);
-    position.set(x, groundY + 0.045 + rng() * 0.012, z);
-    align.setFromUnitVectors(PETAL_SURFACE_NORMAL, normal);
-    yaw.setFromAxisAngle(normal, rng() * TAU);
-    quaternion.copy(yaw).multiply(align);
-
-    // ~35-40% smaller than before, skewed toward the small end with the
-    // occasional larger petal, so the carpet reads as loose single petals
-    // at the scale of the on-tree corollas and the shrine.
-    const petalScale =
-      lerp(0.24, 0.66, Math.pow(rng(), 1.35)) * lerp(0.86, 1.14, clumpNoise);
-    scale.set(
-      petalScale * lerp(0.76, 1.3, rng()),
-      petalScale * lerp(0.72, 1.18, rng()),
-      petalScale,
-    );
-    matrix.compose(position, quaternion, scale);
-    mesh.setMatrixAt(accepted, matrix);
-
-    color.setHSL(
-      lerp(0.94, 0.985, rng()),
-      lerp(0.45, 0.74, rng()),
-      lerp(0.63, 0.82, rng()),
-    );
-    if (rng() < 0.12) {
-      color.lerp(brightTint, lerp(0.12, 0.35, rng()));
-    }
-    // Petals sitting in damp dips or in the piles at the trunk ring pick up
-    // a faded, slightly bruised tint.
-    const settle = clamp01(dip * 7) * 0.45 + nearRing * 0.2;
-    if (rng() < settle) {
-      color.lerp(dampTint, lerp(0.12, 0.32, rng()));
-    }
-    mesh.setColorAt(accepted, color);
-    accepted += 1;
-  }
-
-  mesh.count = accepted;
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  return mesh;
-}
-
-function createSoftTreeShadow(quality: Exclude<Quality, "auto">) {
-  const widthSegments = quality === "low" ? 18 : quality === "medium" ? 28 : 42;
-  const heightSegments = quality === "low" ? 10 : quality === "medium" ? 14 : 20;
-  const shadowWidth = 9.4;
-  const shadowLength = 5.1;
-  const center = new THREE.Vector2(
-    TREE_BASE_X + TREE_SHADOW_DIRECTION.x * 3.75,
-    TREE_BASE_Z + TREE_SHADOW_DIRECTION.y * 3.75,
-  );
-  const along = TREE_SHADOW_DIRECTION.clone();
-  const side = new THREE.Vector2(-along.y, along.x);
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
-
-  for (let y = 0; y <= heightSegments; y += 1) {
-    const v = y / heightSegments;
-    const localY = (v - 0.5) * shadowLength;
-    for (let x = 0; x <= widthSegments; x += 1) {
-      const u = x / widthSegments;
-      const localX = (u - 0.5) * shadowWidth;
-      const worldX = center.x + along.x * localX + side.x * localY;
-      const worldZ = center.y + along.y * localX + side.y * localY;
-      positions.push(worldX, getGroundHeight(worldX, worldZ) + 0.032, worldZ);
-      uvs.push(u, v);
-    }
-  }
-
-  const row = widthSegments + 1;
-  for (let y = 0; y < heightSegments; y += 1) {
-    for (let x = 0; x < widthSegments; x += 1) {
-      const a = y * row + x;
-      const b = a + 1;
-      const c = a + row;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 256;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.filter = "blur(22px)";
-    context.fillStyle = "rgba(15, 22, 15, 0.52)";
-    context.beginPath();
-    context.ellipse(254, 128, 204, 58, -0.08, 0, TAU);
-    context.fill();
-    context.fillStyle = "rgba(15, 22, 15, 0.3)";
-    const lobes = [
-      [154, 108, 86, 30, -0.18],
-      [244, 144, 126, 42, 0.04],
-      [356, 112, 110, 35, 0.16],
-      [410, 146, 72, 28, -0.1],
-    ];
-    for (const lobe of lobes) {
-      context.beginPath();
-      context.ellipse(
-        lobe[0],
-        lobe[1],
-        lobe[2],
-        lobe[3],
-        lobe[4],
-        0,
-        TAU,
-      );
-      context.fill();
-    }
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x172016,
-    map: texture,
-    transparent: true,
-    opacity: 0.66,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "Soft right-falling tree shadow";
-  mesh.renderOrder = 1;
-  return mesh;
-}
-
-function createTrunkBaseBlend() {
-  const radialSegments = 72;
-  const rings = 9;
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
-  const color = new THREE.Color();
-  // Blend from the warm gray-brown bark base, through packed worn dirt
-  // matching the ground's dirt ring, feathering into moss at the rim.
-  const bark = new THREE.Color(0x453729);
-  const dirt = new THREE.Color(0x3b2e20);
-  const moss = new THREE.Color(0x2c3a24);
-
-  positions.push(
-    TREE_BASE_X,
-    getGroundHeight(TREE_BASE_X, TREE_BASE_Z) + 0.038,
-    TREE_BASE_Z,
-  );
-  normals.push(0, 1, 0);
-  color.copy(bark).offsetHSL(0, 0, -0.03);
-  colors.push(color.r, color.g, color.b);
-
-  for (let ring = 1; ring <= rings; ring += 1) {
-    const t = ring / rings;
-    const baseRadius = lerp(0.16, 1.28, Math.pow(t, 0.92));
-    for (let segment = 0; segment < radialSegments; segment += 1) {
-      const angle = (segment / radialSegments) * TAU;
-      const irregularity =
-        1 +
-        Math.sin(angle * 3.0 + 0.4) * 0.08 +
-        Math.cos(angle * 5.0 - 1.1) * 0.05 +
-        (fbm2(Math.cos(angle) * 2.4 + 3.1, Math.sin(angle) * 2.4 - 5.2, 3) -
-          0.5) *
-          0.12;
-      const radius = baseRadius * irregularity;
-      const x = TREE_BASE_X + Math.cos(angle) * radius;
-      const z = TREE_BASE_Z + Math.sin(angle) * radius;
-      positions.push(x, getGroundHeight(x, z) + 0.034 + (1 - t) * 0.014, z);
-      normals.push(0, 1, 0);
-      color
-        .copy(bark)
-        .lerp(dirt, smoothstep(0.12, 0.52, t))
-        .lerp(moss, smoothstep(0.66, 1.0, t) * 0.45);
-      const fleck = fbm2(x * 2.2 + 1.7, z * 2.2 - 9.4, 3);
-      color.offsetHSL(0, 0, (fleck - 0.5) * 0.09);
-      colors.push(color.r, color.g, color.b);
-    }
-  }
-
-  for (let segment = 0; segment < radialSegments; segment += 1) {
-    const next = (segment + 1) % radialSegments;
-    indices.push(0, 1 + segment, 1 + next);
-  }
-
-  for (let ring = 1; ring < rings; ring += 1) {
-    const row = 1 + (ring - 1) * radialSegments;
-    const nextRow = 1 + ring * radialSegments;
-    for (let segment = 0; segment < radialSegments; segment += 1) {
-      const next = (segment + 1) % radialSegments;
-      const a = row + segment;
-      const b = row + next;
-      const c = nextRow + segment;
-      const d = nextRow + next;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    metalness: 0,
-    roughness: 0.96,
-    side: THREE.DoubleSide,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "Trunk base moss and earth blend";
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-function createReferenceHouseAndRocks() {
-  const group = new THREE.Group();
-  group.name = "Reference house and rocks";
-
-  const postMaterial = new THREE.MeshStandardMaterial({
-    color: 0x171414,
-    metalness: 0,
-    roughness: 0.8,
-  });
-  const roofMaterial = new THREE.MeshStandardMaterial({
-    color: 0x242938,
-    metalness: 0,
-    roughness: 0.72,
-  });
-  const house = new THREE.Group();
-  house.name = "Reference house";
-  const postGeometry = new THREE.BoxGeometry(0.08, 0.78, 0.08);
-
-  for (const x of [-0.34, 0.34]) {
-    for (const z of [-0.2, 0.24]) {
-      const post = new THREE.Mesh(postGeometry, postMaterial);
-      post.position.set(x, 0.39, z);
-      post.castShadow = true;
-      house.add(post);
-    }
-  }
-
-  const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.86, 0.08, 0.62),
-    postMaterial,
-  );
-  floor.name = "Reference house removable floor";
-  floor.position.y = 0.06;
-  house.add(floor);
-
-  const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(0.78, 0.56, 0.055),
-    postMaterial,
-  );
-  backWall.position.set(0, 0.36, -0.24);
-  house.add(backWall);
-
-  const leftRoof = new THREE.Mesh(
-    new THREE.BoxGeometry(0.68, 0.08, 0.86),
-    roofMaterial,
-  );
-  leftRoof.position.set(-0.22, 0.87, 0.02);
-  leftRoof.rotation.z = 0.38;
-  house.add(leftRoof);
-
-  const rightRoof = new THREE.Mesh(
-    new THREE.BoxGeometry(0.68, 0.08, 0.86),
-    roofMaterial,
-  );
-  rightRoof.position.set(0.22, 0.87, 0.02);
-  rightRoof.rotation.z = -0.38;
-  house.add(rightRoof);
-
-  const ridge = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.028, 0.028, 0.88, 8),
-    roofMaterial,
-  );
-  ridge.rotation.x = Math.PI / 2;
-  ridge.position.set(0, 0.99, 0.02);
-  house.add(ridge);
-
-  for (let i = 0; i < 7; i += 1) {
-    const tile = new THREE.Mesh(
-      new THREE.BoxGeometry(0.025, 0.035, 0.84),
-      roofMaterial,
-    );
-    tile.position.set(-0.39 + i * 0.13, 0.91 - Math.abs(i - 3) * 0.025, 0.02);
-    tile.rotation.z = i < 3 ? 0.38 : i > 3 ? -0.38 : 0;
-    house.add(tile);
-  }
-
-  house.position.set(1.32, getGroundHeight(1.32, 0.82) + 0.02, 0.82);
-  house.rotation.y = -0.38;
-  house.scale.setScalar(0.82);
-  group.add(house);
-
-  const stoneMaterial = new THREE.MeshStandardMaterial({
-    color: 0x696e69,
-    metalness: 0,
-    roughness: 0.9,
-  });
-  const stones = [
-    {
-      radius: 0.12786901553161442,
-      rotation: [5.277079709700181, 2.359463522543521, 0.8454589790457842],
-      scaleY: 0.8064226673659869,
-      x: 0.5625481634680182,
-      z: 0.5251295206602663,
-    },
-    {
-      radius: 0.12921561203664167,
-      rotation: [2.8730883460162033, 1.7463725333229305, 4.241033376886112],
-      scaleY: 1.1983504419308155,
-      x: 0.691508929557167,
-      z: 0.5788182338885963,
-    },
-    {
-      radius: 0.12510388655122368,
-      rotation: [4.273765734423046, 0.4034871472478137, 6.249547059565838],
-      scaleY: 0.92957790348446,
-      x: 0.9793763056769966,
-      z: 0.4226786406431347,
-    },
-    {
-      radius: 0.09800860824296251,
-      rotation: [3.6057545944263025, 1.8981250253033417, 3.4420278370868185],
-      scaleY: 1.126443377430551,
-      x: 1.2179586843075232,
-      z: 0.5172905759513379,
-    },
-  ];
-
-  for (const entry of stones) {
-    const stone = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(entry.radius, 0),
-      stoneMaterial,
-    );
-    stone.position.set(
-      entry.x,
-      getGroundHeight(entry.x, entry.z) + 0.07,
-      entry.z,
-    );
-    stone.rotation.set(entry.rotation[0], entry.rotation[1], entry.rotation[2]);
-    stone.scale.y = entry.scaleY;
-    stone.castShadow = true;
-    group.add(stone);
-  }
-
-  group.traverse((object) => {
-    const mesh = object as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-  });
-
-  return group;
-}
-
-function createMoundGeometry(quality: Exclude<Quality, "auto">) {
-  const radialSegments = quality === "low" ? 40 : 72;
-  const angularSegments = quality === "low" ? 64 : 128;
-  const skirtDepth = 1.35;
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
-
-  const topIndex = (ring: number, segment: number) =>
-    ring * angularSegments + (segment % angularSegments);
-
-  // Per-vertex tint multiplied over the tiling moss map: a worn dirt ring at
-  // the trunk, moisture darkening in concavities, and a slow warm/cool hue
-  // drift plus lightness patches across the mound so no tiling repeat shows.
-  const pushGroundColor = (x: number, z: number, radius: number, y: number) => {
-    const sampleStep = 0.55;
-    const dip =
-      (getGroundHeight(x + sampleStep, z) +
-        getGroundHeight(x - sampleStep, z) +
-        getGroundHeight(x, z + sampleStep) +
-        getGroundHeight(x, z - sampleStep)) *
-        0.25 -
-      y;
-    const moisture = clamp01(dip * 7.5) * 0.6;
-    const wearNoise = fbm2(x * 0.9 + 7.7, z * 0.9 - 3.9, 3);
-    const ringEdge = 1.55 + (wearNoise - 0.5) * 0.7;
-    const dirtAmount = 1 - smoothstep(ringEdge * 0.5, ringEdge, radius);
-    const drift = fbm2(x * 0.05 + 21.3, z * 0.05 - 8.8, 3) - 0.5;
-    const patchLight =
-      (fbm2(x * 0.085 + 4.4, z * 0.085 - 14.6, 4) - 0.5) * 0.18;
-    // World-space lush/gap clumping: this is what keeps the tiling moss
-    // texture from reading as a repeat — earthy worn patches drift across
-    // the mound at 2-4 unit scale, uncorrelated with the texture tiles.
-    const gapNoise = fbm2(x * 0.31 + 6.2, z * 0.31 - 9.4, 4);
-    const gap = (1 - smoothstep(0.4, 0.58, gapNoise)) * 0.55;
-    let red = (1 + drift * 0.14) * (1 + patchLight);
-    let green = (1 + drift * 0.03) * (1 + patchLight);
-    let blue = (1 - drift * 0.12) * (1 + patchLight);
-    red = lerp(red, red * 1.14, gap);
-    green = lerp(green, green * 0.82, gap);
-    blue = lerp(blue, blue * 0.62, gap);
-    // Multiplied over the green-dominant moss map, so the tint has to pull
-    // red well above green before the ring reads as brown dirt.
-    red = lerp(red, 1.28, dirtAmount);
-    green = lerp(green, 0.66, dirtAmount);
-    blue = lerp(blue, 0.42, dirtAmount);
-    red *= 1 - moisture * 0.34;
-    green *= 1 - moisture * 0.28;
-    blue *= 1 - moisture * 0.2;
-    colors.push(
-      Math.min(1.35, Math.max(0, red)),
-      Math.min(1.35, Math.max(0, green)),
-      Math.min(1.35, Math.max(0, blue)),
-    );
-  };
-
-  for (let ring = 0; ring <= radialSegments; ring += 1) {
-    const t = ring / radialSegments;
-    for (let segment = 0; segment < angularSegments; segment += 1) {
-      const angle = (segment / angularSegments) * TAU;
-      const radius = Math.pow(t, 1.34) * getGroundRadiusAtAngle(angle);
-      const x = TREE_BASE_X + Math.cos(angle) * radius;
-      const z = TREE_BASE_Z + Math.sin(angle) * radius;
-      const y = getGroundHeight(x, z);
-      positions.push(x, y, z);
-      uvs.push(
-        (x - TREE_BASE_X) / (GROUND_RADIUS * 2) + 0.5,
-        (z - TREE_BASE_Z) / (GROUND_RADIUS * 2) + 0.5,
-      );
-      pushGroundColor(x, z, radius, y);
-    }
-  }
-
-  for (let ring = 0; ring < radialSegments; ring += 1) {
-    for (let segment = 0; segment < angularSegments; segment += 1) {
-      const next = (segment + 1) % angularSegments;
-      const a = topIndex(ring, segment);
-      const b = topIndex(ring + 1, segment);
-      const c = topIndex(ring + 1, next);
-      const d = topIndex(ring, next);
-      indices.push(a, d, b, b, d, c);
-    }
-  }
-
-  const skirtStart = positions.length / 3;
-  for (let segment = 0; segment < angularSegments; segment += 1) {
-    const angle = (segment / angularSegments) * TAU;
-    const radius = getGroundRadiusAtAngle(angle);
-    const x = TREE_BASE_X + Math.cos(angle) * radius;
-    const z = TREE_BASE_Z + Math.sin(angle) * radius;
-    positions.push(x, getGroundHeight(x, z) - skirtDepth, z);
-    uvs.push(
-      (x - TREE_BASE_X) / (GROUND_RADIUS * 2) + 0.5,
-      (z - TREE_BASE_Z) / (GROUND_RADIUS * 2) + 0.5,
-    );
-    // The skirt reads as cut soil at the mound rim: dark warm earth.
-    const crumb = fbm2(x * 1.4 + 2.2, z * 1.4 - 6.5, 3);
-    // Red must sit well above green here (the tint multiplies a
-    // green-dominant moss map) or the cut earth reads as dark moss.
-    colors.push(
-      0.58 + (crumb - 0.5) * 0.12,
-      0.32 + (crumb - 0.5) * 0.07,
-      0.22 + (crumb - 0.5) * 0.05,
-    );
-  }
-
-  for (let segment = 0; segment < angularSegments; segment += 1) {
-    const next = (segment + 1) % angularSegments;
-    const topA = topIndex(radialSegments, segment);
-    const topB = topIndex(radialSegments, next);
-    const bottomA = skirtStart + segment;
-    const bottomB = skirtStart + next;
-    indices.push(topA, topB, bottomA, bottomA, topB, bottomB);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(positions, 3),
-  );
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function createGround(quality: Exclude<Quality, "auto">) {
-  const geometry = createMoundGeometry(quality);
-  const textures = createMossTextures();
-  const material = new THREE.MeshStandardMaterial({
-    bumpMap: textures.bumpMap ?? undefined,
-    bumpScale: 0.085,
-    color: 0xffffff,
-    map: textures.colorMap ?? undefined,
-    roughness: 0.96,
-    metalness: 0,
-    transparent: true,
-    vertexColors: true,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "Procedural moss mound ground";
-  mesh.receiveShadow = true;
-  return mesh;
 }
 
 function disposeMaterialTextures(
@@ -4586,13 +3511,16 @@ export default function WeepingCherryTreeCanvas({
       await waitForNextFrame();
     };
     const initializeScene = async () => {
-      const skyColor = new THREE.Color(0xdfeaf1);
+      // Near-black void: the tree floats in darkness, lit like a stage
+      // subject. The overlay uses mix-blend-difference, so the dark scene
+      // flips the text light automatically.
+      const voidColor = new THREE.Color(0x0a0a0a);
       const scene = new THREE.Scene();
       scene.background = null;
-      // Fog starts behind the trunk (camera-to-trunk is ~18 world units) so
-      // limbs a few meters back keep bark color instead of flattening to
-      // gray; the far ground edge still dissolves softly into the sky.
-      scene.fog = new THREE.Fog(skyColor, 18.5, 36);
+      // Fog starts behind the trunk (camera-to-trunk is ~16.5 world units)
+      // so the front canopy keeps its color while the outer branch tips
+      // melt into the darkness.
+      scene.fog = new THREE.Fog(voidColor.getHex(), 20, 45);
 
       const initialViewport = getViewportMetrics();
       const width = mount.clientWidth || initialViewport.width;
@@ -4624,199 +3552,88 @@ export default function WeepingCherryTreeCanvas({
         alpha: true,
         powerPreference: "low-power",
       });
-      renderer.setClearColor(skyColor, 1);
+      renderer.setClearColor(voidColor, 1);
       renderer.setSize(width, height);
       renderer.setPixelRatio(getRenderPixelRatio());
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
-      renderer.shadowMap.enabled = sceneQuality !== "low";
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.shadowMap.autoUpdate = false;
-      renderer.shadowMap.needsUpdate = renderer.shadowMap.enabled;
+      renderer.toneMappingExposure = 1.15;
+      // No ground, nothing catches shadows: shadow maps stay off.
+      renderer.shadowMap.enabled = false;
       mount.appendChild(renderer.domElement);
       await reportSceneBuildProgress();
 
-      // Sky half matches the dome zenith blue; ground half bounces grass
-      // green back up into the underside of the canopy.
-      const hemi = new THREE.HemisphereLight(0xbdd3ea, 0x31502c, 1.95);
+      // Stage lighting for the void: a dim, moody base so unlit bark never
+      // clips to a pure-black mass, with the drama carried by three
+      // directional accents below.
+      const hemi = new THREE.HemisphereLight(0x2b2436, 0x0b0910, 0.5);
       scene.add(hemi);
 
-      const sun = new THREE.DirectionalLight(0xffe9c4, 3.2);
-      sun.position.set(-7.2, 10.4, 3.1);
-      sun.castShadow = sceneQuality !== "low";
-      sun.shadow.mapSize.set(1024, 1024);
-      sun.shadow.camera.near = 0.5;
-      sun.shadow.camera.far = 35;
-      sun.shadow.camera.left = -12;
-      sun.shadow.camera.right = 12;
-      sun.shadow.camera.top = 12;
-      sun.shadow.camera.bottom = -12;
-      sun.shadow.bias = -0.00008;
-      sun.shadow.normalBias = 0.045;
-      sun.shadow.radius = 4;
-      scene.add(sun);
+      // Warm key from upper front-left: models the canopy and puts readable
+      // highlights on the dark bark.
+      const key = new THREE.DirectionalLight(0xffd9b4, 2.7);
+      key.position.set(-6.5, 10.5, 7.5);
+      scene.add(key);
 
-      const fill = new THREE.DirectionalLight(0xbfd7ff, 0.65);
-      fill.position.set(6, 4, -6);
-      scene.add(fill);
-
-      // Cool rim from back-left so the canopy edge separates from the
-      // brighter sun-side sky. No shadows; purely a highlight.
-      const rim = new THREE.DirectionalLight(0xd6e4ff, 0.4);
-      rim.position.set(-4.5, 6, -8.5);
+      // Cool blue-violet rim from behind-right for silhouette separation
+      // against the black backdrop.
+      const rim = new THREE.DirectionalLight(0x8d84ff, 1.7);
+      rim.position.set(6.5, 7.5, -9);
       scene.add(rim);
 
-      // Sky dome: vertex-color gradient from skyColor at the horizon (kept
-      // identical to the fog color so the mound's far edge dissolves into it
-      // with no junction line) up to a deeper blue zenith, with a subtle warm
-      // bias toward the sun azimuth and faint procedural cloud wisps.
-      const createSkyDome = () => {
-        const sky = new THREE.Group();
-        sky.name = "Sky dome";
-        const smoothRamp = (edge0: number, edge1: number, v: number) => {
-          const k = clamp01((v - edge0) / (edge1 - edge0));
-          return k * k * (3 - 2 * k);
-        };
-        // Deep enough that the blue survives ACES tone mapping, which
-        // desaturates pale colors near the shoulder into gray.
-        const zenithColor = new THREE.Color(0x6f9dcc);
-        const warmColor = new THREE.Color(0xf9ead2);
-        const sunAzimuth = new THREE.Vector2(-7.2, 3.1).normalize();
-        // Camera far is 80 and the camera sits up to ~24 units from the
-        // origin, so keep radius + camera offset under the far plane or the
-        // dome gets clipped mid-frame.
-        const domeRadius = 52;
-        const domeGeometry = new THREE.SphereGeometry(domeRadius, 48, 32);
-        const domePositions = domeGeometry.attributes.position;
-        const domeColors = new Float32Array(domePositions.count * 3);
-        const vertexColor = new THREE.Color();
-        const vertexAzimuth = new THREE.Vector2();
-        for (let i = 0; i < domePositions.count; i += 1) {
-          const up = domePositions.getY(i) / domeRadius;
-          // Everything at or below the horizon stays exactly skyColor.
-          const zenithMix = Math.pow(clamp01((up - 0.02) / 0.7), 1.15);
-          vertexColor.copy(skyColor).lerp(zenithColor, zenithMix);
-          vertexAzimuth.set(domePositions.getX(i), domePositions.getZ(i));
-          if (vertexAzimuth.lengthSq() > 1e-6) {
-            const facing = clamp01(vertexAzimuth.normalize().dot(sunAzimuth));
-            const warmBand =
-              smoothRamp(0.03, 0.14, up) * (1 - smoothRamp(0.32, 0.72, up));
-            vertexColor.lerp(warmColor, facing * facing * warmBand * 0.16);
-          }
-          domeColors[i * 3] = vertexColor.r;
-          domeColors[i * 3 + 1] = vertexColor.g;
-          domeColors[i * 3 + 2] = vertexColor.b;
-        }
-        domeGeometry.setAttribute(
-          "color",
-          new THREE.BufferAttribute(domeColors, 3),
+      // Low deep-rose glow from behind/below the canopy, echoing the
+      // glowing-dark-canvas reference; it warms the underside of the
+      // blossom clusters without lifting the void.
+      const roseGlow = new THREE.PointLight(0xff4f8b, 18, 30, 2);
+      roseGlow.position.set(2.7, 1.1, -4.5);
+      scene.add(roseGlow);
+
+      // Void backdrop: one large soft radial gradient far behind the tree, a
+      // barely-lifted deep rose/plum near-black melting to the clear color at
+      // its edges, so the darkness reads as a glowing canvas instead of a
+      // dead fill. toneMapped stays false so the edge matches the clear
+      // color exactly and the plane disappears into it.
+      const createVoidBackdrop = () => {
+        const gradientCanvas = document.createElement("canvas");
+        gradientCanvas.width = 256;
+        gradientCanvas.height = 256;
+        const gradientCtx = gradientCanvas.getContext("2d");
+        if (!gradientCtx) return null;
+        const gradient = gradientCtx.createRadialGradient(
+          128,
+          128,
+          0,
+          128,
+          128,
+          128,
         );
-        const domeMesh = new THREE.Mesh(
-          domeGeometry,
+        gradient.addColorStop(0, "#17101a");
+        gradient.addColorStop(0.55, "#100c13");
+        gradient.addColorStop(1, "#0a0a0a");
+        gradientCtx.fillStyle = gradient;
+        gradientCtx.fillRect(0, 0, 256, 256);
+        const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
+        gradientTexture.colorSpace = THREE.SRGBColorSpace;
+        const backdrop = new THREE.Mesh(
+          new THREE.PlaneGeometry(110, 62),
           new THREE.MeshBasicMaterial({
-            vertexColors: true,
-            side: THREE.BackSide,
+            map: gradientTexture,
             fog: false,
             depthWrite: false,
+            toneMapped: false,
           }),
         );
-        domeMesh.renderOrder = -2;
-        sky.add(domeMesh);
-
-        // Faint cloud wisps: one canvas of u-elongated value-noise fbm
-        // streaks, alpha-blended into the upper sky band only.
-        const cloudCanvas = document.createElement("canvas");
-        cloudCanvas.width = 512;
-        cloudCanvas.height = 256;
-        const cloudCtx = cloudCanvas.getContext("2d");
-        if (cloudCtx) {
-          const rng = makeRng(0x5cae1);
-          const latticeSize = 64;
-          const lattice = new Float32Array(latticeSize * latticeSize);
-          for (let i = 0; i < lattice.length; i += 1) lattice[i] = rng();
-          // periodX makes the noise wrap horizontally so the dome seam at
-          // u = 0/1 is invisible.
-          const latticeAt = (ix: number, iy: number, periodX: number) => {
-            const wx = ((ix % periodX) + periodX) % periodX;
-            const wy = ((iy % latticeSize) + latticeSize) % latticeSize;
-            return lattice[wy * latticeSize + (wx % latticeSize)];
-          };
-          const valueNoise = (x: number, y: number, periodX: number) => {
-            const ix = Math.floor(x);
-            const iy = Math.floor(y);
-            const fx = x - ix;
-            const fy = y - iy;
-            const sx = fx * fx * (3 - 2 * fx);
-            const sy = fy * fy * (3 - 2 * fy);
-            const a = latticeAt(ix, iy, periodX);
-            const b = latticeAt(ix + 1, iy, periodX);
-            const c = latticeAt(ix, iy + 1, periodX);
-            const d = latticeAt(ix + 1, iy + 1, periodX);
-            return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-          };
-          const cloudImage = cloudCtx.createImageData(512, 256);
-          const cloudData = cloudImage.data;
-          for (let py = 0; py < 256; py += 1) {
-            // py = 0 is the zenith (sphere uv.y = 1 with flipY canvas).
-            const v = (py + 0.5) / 256;
-            const band =
-              smoothRamp(0.08, 0.18, v) * (1 - smoothRamp(0.28, 0.4, v));
-            for (let px = 0; px < 512; px += 1) {
-              const u = (px + 0.5) / 512;
-              let fbm = 0;
-              fbm += valueNoise(u * 6, v * 24, 6) * 0.55;
-              fbm += valueNoise(u * 12, v * 48 + 17.3, 12) * 0.3;
-              fbm += valueNoise(u * 24, v * 96 + 41.7, 24) * 0.15;
-              const wisp = smoothRamp(0.52, 0.74, fbm) * band;
-              const o = (py * 512 + px) * 4;
-              cloudData[o] = 255;
-              cloudData[o + 1] = 251;
-              cloudData[o + 2] = 246;
-              cloudData[o + 3] = Math.round(wisp * 96);
-            }
-          }
-          cloudCtx.putImageData(cloudImage, 0, 0);
-          const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
-          cloudTexture.colorSpace = THREE.SRGBColorSpace;
-          cloudTexture.wrapS = THREE.RepeatWrapping;
-          const cloudMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(domeRadius - 1, 32, 16),
-            new THREE.MeshBasicMaterial({
-              map: cloudTexture,
-              transparent: true,
-              side: THREE.BackSide,
-              fog: false,
-              depthWrite: false,
-            }),
-          );
-          cloudMesh.renderOrder = -1;
-          sky.add(cloudMesh);
-        }
-        return sky;
+        backdrop.name = "Void backdrop";
+        // Far behind the tree (z=0) and centered on the canopy glow; well
+        // inside the camera far plane (80) at camera z ~16.4.
+        backdrop.position.set(2.6, 5.4, -26);
+        backdrop.renderOrder = -2;
+        return backdrop;
       };
-      // Added to the scene (not worldGroup) so the sky never inherits any
-      // world transform.
-      scene.add(createSkyDome());
-      await reportSceneBuildProgress();
-
-      const groundMesh = createGround(sceneQuality);
-      worldGroup.add(groundMesh);
-      await reportSceneBuildProgress();
-
-      worldGroup.add(createSoftTreeShadow(sceneQuality));
-      await reportSceneBuildProgress();
-
-      worldGroup.add(createTrunkBaseBlend());
-      await reportSceneBuildProgress();
-
-      worldGroup.add(createMossFoliage(sceneQuality));
-      await reportSceneBuildProgress();
-
-      worldGroup.add(createFallenPetals(sceneQuality));
-      await reportSceneBuildProgress();
-
-      worldGroup.add(createReferenceHouseAndRocks());
+      // Added to the scene (not worldGroup) so the backdrop never inherits
+      // any world transform.
+      const voidBackdrop = createVoidBackdrop();
+      if (voidBackdrop) scene.add(voidBackdrop);
       await reportSceneBuildProgress();
 
       const generator = new WeepingCherryGenerator({

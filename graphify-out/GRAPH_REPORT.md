@@ -1,16 +1,16 @@
-# Graph Report - arbor-web  (2026-08-16)
+# Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~50,594 words
+- 61 files · ~54,687 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 561 nodes · 827 edges · 49 communities (33 shown, 16 thin omitted)
+- 562 nodes · 842 edges · 49 communities (33 shown, 16 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c469c1ca`
+- Built from commit: `1830187b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -66,14 +66,14 @@
 
 ## God Nodes (most connected - your core abstractions)
 1. `WeepingCherryGenerator` - 39 edges
-2. `lerp()` - 21 edges
-3. `clamp01()` - 19 edges
-4. `smoothstep()` - 17 edges
-5. `WeepingCherryTreeCanvas()` - 17 edges
+2. `lerp()` - 23 edges
+3. `clamp01()` - 21 edges
+4. `WeepingCherryTreeCanvas()` - 20 edges
+5. `smoothstep()` - 18 edges
 6. `compilerOptions` - 16 edges
 7. `validate()` - 14 edges
-8. `compress_file()` - 12 edges
-9. `getGroundHeight()` - 12 edges
+8. `getGroundHeight()` - 14 edges
+9. `compress_file()` - 12 edges
 10. `createMossFoliage()` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -110,8 +110,8 @@ Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 4 - "What You Must Do When Invoked"
-Cohesion: 0.15
-Nodes (3): Branch, randomPointInUnitSphere(), WeepingCherryGenerator
+Cohesion: 0.14
+Nodes (5): Branch, getBranchFrame(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -210,8 +210,8 @@ Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.05
-Nodes (74): applyBlossomWind(), applyBranchWind(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchGeometryBuilder (+66 more)
+Cohesion: 0.06
+Nodes (72): applyBlossomWind(), applyBranchWind(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchGeometryBuilder (+64 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
