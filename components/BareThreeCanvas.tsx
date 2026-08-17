@@ -2181,8 +2181,8 @@ class WeepingCherryGenerator {
   private createTerminalTwigs(parents: Branch[]) {
     for (const parent of parents) {
       const count = this.int(
-        parent.depth === 2 ? 7 : 9,
-        parent.depth === 2 ? 10 : 13,
+        parent.depth === 2 ? 6 : 7,
+        parent.depth === 2 ? 8 : 10,
       );
       const attachValues = this.attachmentValues(count, 0.52, 0.99);
       const siblingDirs: THREE.Vector3[] = [];
@@ -2474,7 +2474,7 @@ class WeepingCherryGenerator {
         droop,
         parentTangent,
       );
-      const radius = parent.baseRadius * this.rand(0.1, 0.18);
+      const radius = parent.baseRadius * this.rand(0.09, 0.16);
       fallback = { curve, radius };
 
       if (
@@ -2513,21 +2513,22 @@ class WeepingCherryGenerator {
     });
   }
 
-  // Second and third twig orders: every depth-4 twig leader sprouts 1-2
-  // finer drooping sub-twigs, and roughly a third of those carry one more
-  // even finer tip twig. These skip the collision hash - they are tiny and
-  // their gnarled overlap is what makes the canopy read as fine strands.
+  // Second and third twig orders: every depth-4 twig leader sprouts a finer
+  // drooping sub-twig (a second one ~35% of the time), and roughly a quarter
+  // of those carry one more even finer tip twig. These skip the collision
+  // hash - they are tiny and their gnarled overlap is what makes the canopy
+  // read as fine strands.
   private createSubTwigs() {
     const leaders = [...this.terminalTwigs];
     const second: Branch[] = [];
     for (const leader of leaders) {
-      const count = this.int(1, 2);
+      const count = this.rng() < 0.35 ? 2 : 1;
       for (let i = 0; i < count; i += 1) {
         second.push(this.createDroopTwig(leader, 5, this.rand(0.22, 0.85)));
       }
     }
     for (const twig of second) {
-      if (this.rng() > 0.32) continue;
+      if (this.rng() > 0.25) continue;
       this.createDroopTwig(twig, 6, this.rand(0.3, 0.75));
     }
   }
@@ -2560,7 +2561,7 @@ class WeepingCherryGenerator {
       droop,
       parentTangent,
     );
-    const radius = Math.max(0.0042, parent.baseRadius * this.rand(0.48, 0.64));
+    const radius = Math.max(0.0042, parent.baseRadius * this.rand(0.42, 0.58));
     return this.createBranch({
       parent,
       depth,
@@ -2930,7 +2931,7 @@ class WeepingCherryGenerator {
 
   // Every blossom sits ON a twig: spur points are sampled along terminal
   // twig curves (tip-biased, cherry style), and each spur carries a cluster
-  // of 2-5 flowers/buds whose geometry pedicels start exactly at the spur.
+  // of 3-6 flowers/buds whose geometry pedicels start exactly at the spur.
   // No canopy-lobe scatter — the lobes only steered branch growth.
   private createBlossomPlacements() {
     const flowers: BlossomPlacement[] = [];
@@ -2945,18 +2946,18 @@ class WeepingCherryGenerator {
       totalOverride != null
         ? Math.max(1, Math.round(totalOverride * 0.7))
         : this.quality === "low"
-          ? 4600
+          ? 5400
           : this.quality === "medium"
-            ? 8600
-            : 14200;
+            ? 10400
+            : 17200;
     const budTarget =
       totalOverride != null
         ? Math.max(0, totalOverride - flowerTarget)
         : this.quality === "low"
-          ? 2000
+          ? 2200
           : this.quality === "medium"
-            ? 3700
-            : 6100;
+            ? 4100
+            : 6800;
 
     // Weight twigs by length so spurs land evenly along the fine strands,
     // with a mild bias toward the finest drooping orders.
@@ -2965,7 +2966,7 @@ class WeepingCherryGenerator {
     for (const branch of terminals) {
       const lobe = this.lobes[branch.lobeId];
       const depthBias =
-        branch.depth >= 6 ? 1.35 : branch.depth === 5 ? 1.2 : 1;
+        branch.depth >= 6 ? 1.5 : branch.depth === 5 ? 1.3 : 1;
       totalWeight += branch.curve.getLength() * lobe.density * depthBias;
       cumulative.push(totalWeight);
     }
@@ -2988,14 +2989,14 @@ class WeepingCherryGenerator {
     const roll = new THREE.Quaternion();
     const budFraction = budTarget / Math.max(1, budTarget + flowerTarget);
 
-    // Places one spur cluster (2-5 flowers/buds) on `branch` at curve
+    // Places one spur cluster (3-6 flowers/buds) on `branch` at curve
     // parameter t. Shared by the per-strand guarantee pass and the
     // tip-biased weighted fill below; both respect the flower/bud budgets.
     const placeCluster = (branch: Branch, t: number) => {
       const frame = getBranchFrame(branch, t);
       const wind = getBranchWindVectors(branch, t);
       const lobe = this.lobes[branch.lobeId];
-      const clusterSize = this.int(2, 5);
+      const clusterSize = this.int(3, 6);
       const baseAzimuth = this.rand(0, TAU);
 
       for (let k = 0; k < clusterSize; k += 1) {
@@ -3028,7 +3029,7 @@ class WeepingCherryGenerator {
         quaternion.multiply(roll);
 
         const flowerScale =
-          this.rand(0.095, 0.145) *
+          this.rand(0.105, 0.155) *
           THREE.MathUtils.lerp(0.96, 1.12, clamp01(lobe.density));
         const color = new THREE.Color();
         const placement: BlossomPlacement = {
