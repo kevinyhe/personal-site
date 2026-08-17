@@ -18,7 +18,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Luke Baffait, Creative Developer",
+  title: "Kevin He, Creative Developer",
   description:
     "Quiet creator, bringing ideas to life through motion, detail and softness.",
 };
