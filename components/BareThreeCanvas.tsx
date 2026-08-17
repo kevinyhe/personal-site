@@ -3817,7 +3817,9 @@ function createMossFoliage(quality: Exclude<Quality, "auto">) {
       const bladeEdge = getGroundRadiusAtAngle(
         Math.atan2(z - TREE_BASE_Z, x - TREE_BASE_X),
       );
-      if (bladeRadius < 1.3 || bladeRadius > bladeEdge - 0.6) continue;
+      // Trunk-blend disc rim reaches ~1.5; blades rooted under it would clip
+      // through the opaque disc, so keep them fully outside it.
+      if (bladeRadius < 1.55 || bladeRadius > bladeEdge - 0.6) continue;
 
       const height = getGroundHeight(x, z);
       // Blades stretch taller in dips where moisture gathers.
@@ -3940,6 +3942,13 @@ function createFallenPetals(quality: Exclude<Quality, "auto">) {
     // cleanly over it instead of going mottled.
     const rightBias = lerp(0.6, 0.42, smoothstep(-0.15, 0.85, sideAmount));
     const clumpNoise = fbm2(x * 0.92 + 8.1, z * 0.92 - 1.7, 3);
+    // dipBoost * downwind * pileBoost is bounded by 1.85 * 1.16 * 1.5 ≈ 3.22,
+    // so a roll above the cheap factors times that bound can never be
+    // accepted — reject it before paying five terrain samples.
+    const cheapDensity =
+      edgeFade * centerFade * rightBias * (0.56 + clumpNoise * 0.58);
+    const densityRoll = rng();
+    if (densityRoll > Math.min(1, cheapDensity * 3.22)) continue;
     // Drift accumulation: petals collect in ground dips, blow slightly to
     // the downwind (+x) side, and pile up in clumps near the trunk ring.
     const groundY = getGroundHeight(x, z);
@@ -3959,15 +3968,9 @@ function createFallenPetals(quality: Exclude<Quality, "auto">) {
       lerp(0.78, 1.0, smoothstep(0.4, 0.68, pileNoise)) +
       nearRing * smoothstep(0.4, 0.68, pileNoise) * 0.5;
     const density = clamp01(
-      edgeFade *
-        centerFade *
-        rightBias *
-        dipBoost *
-        downwind *
-        pileBoost *
-        (0.56 + clumpNoise * 0.58),
+      cheapDensity * dipBoost * downwind * pileBoost,
     );
-    if (rng() > density) continue;
+    if (densityRoll > density) continue;
 
     getGroundNormal(x, z, normal);
     position.set(x, groundY + 0.045 + rng() * 0.012, z);
@@ -4444,10 +4447,12 @@ function createMoundGeometry(quality: Exclude<Quality, "auto">) {
     );
     // The skirt reads as cut soil at the mound rim: dark warm earth.
     const crumb = fbm2(x * 1.4 + 2.2, z * 1.4 - 6.5, 3);
+    // Red must sit well above green here (the tint multiplies a
+    // green-dominant moss map) or the cut earth reads as dark moss.
     colors.push(
-      0.46 + (crumb - 0.5) * 0.1,
-      0.38 + (crumb - 0.5) * 0.08,
-      0.3 + (crumb - 0.5) * 0.06,
+      0.58 + (crumb - 0.5) * 0.12,
+      0.32 + (crumb - 0.5) * 0.07,
+      0.22 + (crumb - 0.5) * 0.05,
     );
   }
 
