@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Bodoni_Moda, Inter } from "next/font/google";
+import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const inter = Inter({
@@ -9,13 +10,29 @@ const inter = Inter({
   weight: ["300", "400", "500"],
 });
 
-// Closest free stand-in for the reference serif (Apparel It, commercial):
-// a high-contrast fashion didone with true italic weights 400-900.
-const displaySerif = Bodoni_Moda({
+// Apparel (Latinotype) — the exact serif from the reference site, loaded
+// from user-provided files. NOTE: these are Fontspring DEMO cuts, licensed
+// for testing/mockups only; license the webfonts before public deploy.
+const displaySerif = localFont({
   display: "swap",
-  style: ["normal", "italic"],
-  subsets: ["latin"],
   variable: "--font-instrument-serif",
+  src: [
+    {
+      path: "./fonts/Fontspring-DEMO-apparel-regular.otf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/Fontspring-DEMO-apparel-regularit.otf",
+      weight: "400",
+      style: "italic",
+    },
+    {
+      path: "./fonts/Fontspring-DEMO-apparel-boldit.otf",
+      weight: "700",
+      style: "italic",
+    },
+  ],
 });
 
 export const metadata: Metadata = {
