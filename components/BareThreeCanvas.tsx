@@ -796,9 +796,12 @@ type BranchWindUniforms = {
   uWindTime: { value: number };
   uWindStrength: { value: number };
   // Cursor rustle (see arborPointerRustle in WIND_SHADER_CHUNK): smoothed
-  // pointer point on the world z=0 plane, 0..1 activity envelope, and the
+  // pointer point on the world z=0 plane, the normalized camera->pointer ray
+  // direction (influence falls off with distance from that ray so all
+  // depths under the cursor react), 0..1 activity envelope, and the
   // world-space falloff radius.
   uPointerPos: { value: THREE.Vector3 };
+  uPointerRayDir: { value: THREE.Vector3 };
   uPointerStrength: { value: number };
   uPointerRadius: { value: number };
 };
@@ -857,30 +860,43 @@ const WIND_SHADER_CHUNK = `
   uniform float uWindTime;
   uniform float uWindStrength;
   uniform vec3 uPointerPos;
+  uniform vec3 uPointerRayDir;
   uniform float uPointerStrength;
   uniform float uPointerRadius;
 
-  // Cursor rustle: a gentle push away from the smoothed pointer point plus a
-  // high-frequency shake, both fading to zero at uPointerRadius and gated by
-  // uPointerStrength. Scaled by the same per-point wind amplitudes as
-  // arborWindOffset, so the trunk and thick limbs barely move while twig
-  // tips (and the blossoms baking the same vec4s) respond most. The shake
-  // phase derives from the wind-tier phases, so a twig family and the
-  // flowers riding it shake coherently instead of tearing apart.
+  // Influence falls off with the distance from the CAMERA RAY through the
+  // cursor, not from a fixed-depth point — front and back branches under
+  // the cursor react equally (a plane-point distance excluded the frontmost
+  // branches entirely).
+  float arborPointerInfluence(vec3 worldPos) {
+    vec3 rel = worldPos - uPointerPos;
+    vec3 perp = rel - dot(rel, uPointerRayDir) * uPointerRayDir;
+    float dist = length(perp);
+    return (1.0 - smoothstep(0.0, uPointerRadius, dist)) * uPointerStrength;
+  }
+
+  // Cursor rustle: a gentle push off the cursor ray plus a high-frequency
+  // shake, gated by arborPointerInfluence and scaled by the same per-point
+  // wind amplitudes as arborWindOffset, so the trunk and thick limbs barely
+  // move while twig tips (and the blossoms baking the same vec4s) respond
+  // most. The shake phase derives from the wind-tier phases, so a twig
+  // family and the flowers riding it shake coherently.
   vec3 arborPointerRustle(vec3 worldPos, vec4 wp1, vec4 wp2) {
-    float dist = distance(worldPos, uPointerPos);
+    vec3 rel = worldPos - uPointerPos;
+    vec3 perp = rel - dot(rel, uPointerRayDir) * uPointerRayDir;
+    float dist = length(perp);
     float influence =
       (1.0 - smoothstep(0.0, uPointerRadius, dist)) * uPointerStrength;
     float bendWeight =
       clamp(wp1.y * 2.0 + wp2.x * 3.5 + wp2.z * 20.0, 0.0, 1.0);
     float w = influence * bendWeight;
-    vec3 away = (worldPos - uPointerPos) / max(dist, 0.2);
+    vec3 away = perp / max(dist, 0.2);
     float phase = wp1.w * 2.0 + wp1.x;
     float shake =
       sin(uWindTime * 16.0 + phase) +
       0.5 * sin(uWindTime * 23.0 + phase * 1.9);
     vec3 shakeDir = normalize(vec3(sin(phase * 3.7), 0.35, cos(phase * 2.9)));
-    return (away * 0.10 + shakeDir * (shake * 0.05)) * w;
+    return (away * 0.055 + shakeDir * (shake * 0.028)) * w;
   }
 
   float arborGust(float t, float phase) {
@@ -934,6 +950,7 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     uWindTime: { value: 0 },
     uWindStrength: { value: 1 },
     uPointerPos: { value: new THREE.Vector3(0, 6.5, 0) },
+    uPointerRayDir: { value: new THREE.Vector3(0, 0, -1) },
     uPointerStrength: { value: 0 },
     uPointerRadius: { value: 2 },
   };
@@ -942,6 +959,7 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     shader.uniforms.uWindTime = uniforms.uWindTime;
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
     shader.uniforms.uPointerPos = uniforms.uPointerPos;
+    shader.uniforms.uPointerRayDir = uniforms.uPointerRayDir;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.vertexShader =
@@ -976,6 +994,7 @@ function applyBlossomWind(
     shader.uniforms.uWindTime = uniforms.uWindTime;
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
     shader.uniforms.uPointerPos = uniforms.uPointerPos;
+    shader.uniforms.uPointerRayDir = uniforms.uPointerRayDir;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.uniforms.uBlossomGrowth = growthUniform;
@@ -1027,14 +1046,12 @@ function applyBlossomWind(
       #else
       vec3 rustleAnchor = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
       #endif
-      float rustleInfluence =
-        (1.0 - smoothstep(0.0, uPointerRadius,
-          distance(rustleAnchor, uPointerPos))) * uPointerStrength;
+      float rustleInfluence = arborPointerInfluence(rustleAnchor);
       float rustleFlutter =
         sin(uWindTime * 24.0 + blossomPhase * 3.1 + petalAngle * 3.0) +
         0.6 * sin(uWindTime * 33.0 + blossomPhase * 1.9);
       transformed.z +=
-        rustleFlutter * petalTip * (0.07 * rustleInfluence) * blossomReveal;
+        rustleFlutter * petalTip * (0.04 * rustleInfluence) * blossomReveal;
 
       // Whole-flower flutter: the flower swings on its pedicel around the
       // spur point, weighted by the twig-tip flutter amplitude
@@ -1049,11 +1066,11 @@ function applyBlossomWind(
       float swingA =
         swing * (sin(uWindTime * 2.9 + blossomPhase) +
           0.45 * sin(uWindTime * 4.3 + blossomPhase * 1.7)) +
-        rustleInfluence * (0.22 * sin(uWindTime * 17.0 + blossomPhase) +
-          0.12 * sin(uWindTime * 26.0 + blossomPhase * 2.3));
+        rustleInfluence * (0.12 * sin(uWindTime * 17.0 + blossomPhase) +
+          0.07 * sin(uWindTime * 26.0 + blossomPhase * 2.3));
       float swingB =
         swing * 0.7 * sin(uWindTime * 3.4 + blossomPhase * 2.3 + 1.1) +
-        rustleInfluence * 0.16 * sin(uWindTime * 21.0 + blossomPhase * 1.4);
+        rustleInfluence * 0.09 * sin(uWindTime * 21.0 + blossomPhase * 1.4);
       float swingCosA = cos(swingA);
       float swingSinA = sin(swingA);
       transformed.yz = vec2(
@@ -4638,6 +4655,13 @@ export default function WeepingCherryTreeCanvas({
           tree.branchWindUniforms.uPointerStrength.value =
             pointerRustleStrength;
           tree.branchWindUniforms.uPointerPos.value.copy(pointerWorldSmooth);
+          // Ray direction from the live camera through the smoothed pointer
+          // point — the camera dollies and parallaxes, so this refreshes
+          // every frame rather than only on pointer moves.
+          tree.branchWindUniforms.uPointerRayDir.value
+            .copy(pointerWorldSmooth)
+            .sub(camera.position)
+            .normalize();
         }
 
         if (!introComplete) {
