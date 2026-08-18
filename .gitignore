@@ -16,3 +16,5 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .claude/worktrees/
+apparel-font-family/
+apparel-font-family.zip*
