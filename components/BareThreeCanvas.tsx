@@ -22,6 +22,95 @@ const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 12.9, 17.2);
 const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
 
+// Halftone post-pass: the finished frame is redrawn as a print-style grid of
+// round dots (ordered dither), like the reference site's dot-matrix render.
+// Cell edge in CSS px — multiplied by the render pixel ratio at runtime, so
+// dots read ~3-5 screen px. "low" quality bumps it one step larger.
+const HALFTONE_CELL_CSS_PX = 3.5;
+// 0..1 mix of dithered over the smooth render; below 1 a hint of the smooth
+// image survives under the dots.
+const HALFTONE_STRENGTH = 0.85;
+
+const HALFTONE_VERTEX_SHADER = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+// Single clip-space triangle covering the screen; no matrices needed.
+void main() {
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const HALFTONE_FRAGMENT_SHADER = /* glsl */ `
+precision highp float;
+
+uniform sampler2D uScene;
+uniform vec2 uResolution;
+uniform float uCellSize;
+uniform float uStrength;
+uniform float uExposure;
+
+// The target holds the LINEAR frame (three skips renderer.toneMapping and
+// output encoding for render targets), so the pass applies tone mapping and
+// sRGB itself before dithering. ACES here is the Narkowicz fit — visually
+// close to three's ACESFilmic for this scene's dark range.
+vec3 acesFilm(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+vec3 srgbEncode(vec3 c) {
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(vec3(0.0031308), c));
+}
+
+vec3 displayColor(vec2 uv) {
+  return srgbEncode(acesFilm(texture2D(uScene, uv).rgb * uExposure));
+}
+
+// 2x2 Bayer rank: [[0, .5], [.75, .25]].
+float bayer2(vec2 a) {
+  a = floor(a);
+  return fract(a.x * 0.5 + a.y * a.y * 0.75);
+}
+
+// Exact 8x8 Bayer threshold: 64 distinct values in [0, 63/64]. The fine 2x2
+// carries the coarse steps; each coarser level refines by a quarter.
+float bayer8(vec2 a) {
+  return bayer2(a) + bayer2(a * 0.5) * 0.25 + bayer2(a * 0.25) * 0.0625;
+}
+
+void main() {
+  vec2 fragPx = gl_FragCoord.xy;
+  vec2 cell = floor(fragPx / uCellSize);
+  vec2 cellCenter = (cell + 0.5) * uCellSize;
+
+  vec3 cellColor = displayColor(cellCenter / uResolution);
+  vec3 smoothColor = displayColor(fragPx / uResolution);
+
+  float luma = dot(cellColor, vec3(0.2126, 0.7152, 0.0722));
+  // Bayer jitter staggers the tone step from cell to cell so gradients
+  // break into dither texture instead of concentric rings.
+  float tone = clamp(luma + (bayer8(cell) - 0.5) * 0.22, 0.0, 1.0);
+
+  // Print-style sizing: dot area tracks tone, sqrt turns area into radius
+  // (in cell units). Cells darker than the floor print nothing, so the
+  // void stays clean black.
+  float radius = tone < 0.05 ? 0.0 : sqrt(tone) * 0.57;
+  float dist = length(fragPx - cellCenter) / uCellSize;
+  float edge = 0.7 / uCellSize;
+  float inDot = radius <= 0.0
+    ? 0.0
+    : 1.0 - smoothstep(max(radius - edge, 0.0), radius + edge, dist);
+
+  // Ink quantized to 5 levels per channel, printed on the void color.
+  vec3 ink = floor(cellColor * 4.0 + 0.5) * 0.25;
+  vec3 voidInk = vec3(10.0 / 255.0); // #0a0a0a
+  vec3 dotted = mix(voidInk, ink, inDot);
+
+  gl_FragColor = vec4(mix(smoothColor, dotted, uStrength), 1.0);
+}
+`;
+
 type BareThreeCanvasProps = {
   introActive?: boolean;
   onIntroComplete?: () => void;
@@ -949,7 +1038,8 @@ const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
 const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
 const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
 const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
-const PEDICEL_BASE_COLOR = new THREE.Color("#6f7b4c");
+// Pedicels stay in the plum band — no green anywhere in the palette.
+const PEDICEL_BASE_COLOR = new THREE.Color("#5d4150");
 const PEDICEL_TIP_COLOR = new THREE.Color("#7d5560");
 const STAMEN_FILAMENT_COLOR = new THREE.Color("#f6dce4");
 const STAMEN_ANTHER_COLOR = new THREE.Color("#edd28c");
@@ -1718,14 +1808,15 @@ function createBarkTextures() {
       g += hueShift * 7;
       b -= hueShift * 8;
 
-      // Faint algae in the damp crevices.
-      const algae =
+      // Faint damp sheen in the crevices — a cool plum, not the old green
+      // algae (the night palette is pink/plum/violet only).
+      const damp =
         smoothstep(0.55, 0.8, fbmWrapU(u, 2.2, -4.3, v * 1.6 + 11.0, 2)) *
         smoothstep(0.25, 0.7, fissure) *
         0.45;
-      r = lerp(r, 72, algae);
-      g = lerp(g, 92, algae);
-      b = lerp(b, 56, algae);
+      r = lerp(r, 64, damp);
+      g = lerp(g, 50, damp);
+      b = lerp(b, 68, damp);
 
       // Dark rim first, then the light tan-orange lenticel fill.
       r = lerp(r, 38, lenticelRim * 0.35);
@@ -3979,6 +4070,61 @@ export default function WeepingCherryTreeCanvas({
       // No ground, nothing catches shadows: shadow maps stay off.
       renderer.shadowMap.enabled = false;
       mount.appendChild(renderer.domElement);
+
+      // ---- Halftone post-pass -------------------------------------------
+      // The scene renders into an offscreen target each frame, then a
+      // fullscreen triangle redraws that frame as a Bayer-dithered dot grid
+      // (HALFTONE_* consts above). Three skips renderer.toneMapping and
+      // output encoding for render-target renders, so the target holds the
+      // LINEAR frame and the pass shader applies ACES + sRGB itself. Plain
+      // non-MSAA target: multisample resolve is unreliable on software GL,
+      // and the dot grid hides aliasing anyway.
+      const drawingBufferSize = new THREE.Vector2();
+      renderer.getDrawingBufferSize(drawingBufferSize);
+      const sceneTarget = new THREE.WebGLRenderTarget(
+        drawingBufferSize.x,
+        drawingBufferSize.y,
+      );
+      const halftoneCellCssPx =
+        sceneQuality === "low" ? HALFTONE_CELL_CSS_PX + 1 : HALFTONE_CELL_CSS_PX;
+      const halftoneUniforms = {
+        uScene: { value: sceneTarget.texture },
+        uResolution: {
+          value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+        },
+        uCellSize: { value: halftoneCellCssPx * getRenderPixelRatio() },
+        uStrength: { value: HALFTONE_STRENGTH },
+        uExposure: { value: renderer.toneMappingExposure },
+      };
+      const halftoneMaterial = new THREE.RawShaderMaterial({
+        uniforms: halftoneUniforms,
+        vertexShader: HALFTONE_VERTEX_SHADER,
+        fragmentShader: HALFTONE_FRAGMENT_SHADER,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const halftoneGeometry = new THREE.BufferGeometry();
+      halftoneGeometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]),
+          3,
+        ),
+      );
+      const halftoneMesh = new THREE.Mesh(halftoneGeometry, halftoneMaterial);
+      halftoneMesh.frustumCulled = false;
+      const halftoneScene = new THREE.Scene();
+      halftoneScene.add(halftoneMesh);
+      const halftoneCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      // All scene/camera/uniform objects above are preallocated once; the
+      // per-frame path only issues the two render calls.
+      const renderWithHalftone = () => {
+        renderer.setRenderTarget(sceneTarget);
+        renderer.render(scene, camera);
+        renderer.setRenderTarget(null);
+        renderer.render(halftoneScene, halftoneCamera);
+      };
       await reportSceneBuildProgress();
 
       // Stage lighting for the void: a dim, moody base so unlit bark never
@@ -4006,64 +4152,31 @@ export default function WeepingCherryTreeCanvas({
       roseGlow.position.set(2.7, 1.1, -4.5);
       scene.add(roseGlow);
 
-      // Void backdrop: the plum glow behind the tree rendered as an
-      // ordered-dither halftone raster instead of a smooth gradient — a
-      // Bayer-thresholded dot grid whose density follows the glow, so the
-      // darkness reads as printed dot-matrix texture. Dot cells are sized to
-      // land around 4-6 screen px at the hero framing. toneMapped stays
-      // false so the un-dotted base matches the clear color exactly and the
-      // plane disappears into it.
+      // Void backdrop: a smooth plum glow behind the tree. Kept smooth on
+      // purpose — the halftone post-pass rasterizes the whole frame into
+      // dots, so a dot grid baked into this texture would double-dither.
+      // toneMapped stays false so the gradient's dark edge matches the clear
+      // color exactly and the plane disappears into the void.
       const createVoidBackdrop = () => {
         const gradientCanvas = document.createElement("canvas");
-        gradientCanvas.width = 2048;
-        gradientCanvas.height = 1152;
+        gradientCanvas.width = 256;
+        gradientCanvas.height = 256;
         const gradientCtx = gradientCanvas.getContext("2d");
         if (!gradientCtx) return null;
-        gradientCtx.fillStyle = "#0a0a0a";
-        gradientCtx.fillRect(0, 0, 2048, 1152);
-        // 8x8 Bayer matrix, thresholds 0..63.
-        const bayer = [
-          [0, 32, 8, 40, 2, 34, 10, 42],
-          [48, 16, 56, 24, 50, 18, 58, 26],
-          [12, 44, 4, 36, 14, 46, 6, 38],
-          [60, 28, 52, 20, 62, 30, 54, 22],
-          [3, 35, 11, 43, 1, 33, 9, 41],
-          [51, 19, 59, 27, 49, 17, 57, 25],
-          [15, 47, 7, 39, 13, 45, 5, 37],
-          [63, 31, 55, 23, 61, 29, 53, 21],
-        ];
-        const cell = 4;
-        const cols = 2048 / cell;
-        const rows = 1152 / cell;
         // Glow center matches where the canopy sits on the plane.
-        const cx = cols * 0.5;
-        const cy = rows * 0.44;
-        const dotTones = ["#171020", "#1f132a", "#281735"];
-        for (let gy = 0; gy < rows; gy += 1) {
-          for (let gx = 0; gx < cols; gx += 1) {
-            const dx = (gx - cx) / (cols * 0.5);
-            const dy = (gy - cy) / (rows * 0.62);
-            const radial = clamp01(1 - Math.hypot(dx, dy));
-            // fbm breakup keeps the dot field from reading as perfect rings.
-            const breakup = 0.72 + 0.28 * fbm2(gx * 0.045, gy * 0.045, 2);
-            const glow = Math.pow(radial, 1.6) * breakup;
-            const threshold = bayer[gy % 8][gx % 8] / 64;
-            // Density-modulated dither: stronger glow lights more cells.
-            if (glow * 0.92 <= threshold) continue;
-            const tone =
-              glow > 0.55 ? dotTones[2] : glow > 0.3 ? dotTones[1] : dotTones[0];
-            gradientCtx.fillStyle = tone;
-            gradientCtx.beginPath();
-            gradientCtx.arc(
-              gx * cell + cell / 2,
-              gy * cell + cell / 2,
-              cell * 0.38,
-              0,
-              TAU,
-            );
-            gradientCtx.fill();
-          }
-        }
+        const gradient = gradientCtx.createRadialGradient(
+          128,
+          112,
+          8,
+          128,
+          112,
+          158,
+        );
+        gradient.addColorStop(0, "#17101a");
+        gradient.addColorStop(0.55, "#100c13");
+        gradient.addColorStop(1, "#0a0a0a");
+        gradientCtx.fillStyle = gradient;
+        gradientCtx.fillRect(0, 0, 256, 256);
         const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
         gradientTexture.colorSpace = THREE.SRGBColorSpace;
         const backdrop = new THREE.Mesh(
@@ -4209,6 +4322,16 @@ export default function WeepingCherryTreeCanvas({
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
         renderer.setPixelRatio(getRenderPixelRatio());
+        // Keep the halftone target and its uniforms in step with the
+        // drawing buffer (setSize x pixel ratio).
+        renderer.getDrawingBufferSize(drawingBufferSize);
+        sceneTarget.setSize(drawingBufferSize.x, drawingBufferSize.y);
+        halftoneUniforms.uResolution.value.set(
+          drawingBufferSize.x,
+          drawingBufferSize.y,
+        );
+        halftoneUniforms.uCellSize.value =
+          halftoneCellCssPx * getRenderPixelRatio();
       };
       const removeViewportResize = addViewportChangeListener(onResize);
 
@@ -4316,7 +4439,7 @@ export default function WeepingCherryTreeCanvas({
           lookTarget.y += pointerParallaxSmooth.y * 0.09;
         }
         camera.lookAt(lookTarget);
-        renderer.render(scene, camera);
+        renderWithHalftone();
         if (!reportedReady) {
           reportedReady = true;
           void reportSceneBuildProgress();
@@ -4337,6 +4460,11 @@ export default function WeepingCherryTreeCanvas({
           "change",
           onPointerCapabilityChange,
         );
+        // The halftone pass lives outside the main scene graph, so the
+        // traversal below never reaches it — dispose it explicitly.
+        sceneTarget.dispose();
+        halftoneGeometry.dispose();
+        halftoneMaterial.dispose();
         renderer.dispose();
         const disposedTextures = new Set<THREE.Texture>();
         scene.traverse((object) => {

@@ -1,16 +1,16 @@
 # Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~50,845 words
+- 61 files · ~52,119 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 549 nodes · 773 edges · 52 communities (37 shown, 15 thin omitted)
+- 550 nodes · 777 edges · 52 communities (37 shown, 15 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `468ab4d1`
+- Built from commit: `dc14dff0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -69,15 +69,15 @@
 
 ## God Nodes (most connected - your core abstractions)
 1. `WeepingCherryGenerator` - 38 edges
-2. `lerp()` - 17 edges
-3. `clamp01()` - 16 edges
+2. `lerp()` - 18 edges
+3. `clamp01()` - 17 edges
 4. `compilerOptions` - 16 edges
 5. `validate()` - 14 edges
-6. `compress_file()` - 12 edges
-7. `smoothstep()` - 12 edges
-8. `What You Must Do When Invoked` - 12 edges
+6. `WeepingCherryTreeCanvas()` - 13 edges
+7. `compress_file()` - 12 edges
+8. `smoothstep()` - 12 edges
 9. `What You Must Do When Invoked` - 12 edges
-10. `WeepingCherryTreeCanvas()` - 11 edges
+10. `What You Must Do When Invoked` - 12 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `compress_file()` --calls--> `validate()`  [EXTRACTED]
@@ -114,11 +114,11 @@ Nodes (26): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 4 - "What You Must Do When Invoked"
 Cohesion: 0.13
-Nodes (8): applyBlossomWind(), Branch, createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), UP, WeepingCherryGenerator
+Nodes (9): applyBlossomWind(), Branch, createSakuraBlossomGeometry(), createSakuraBudGeometry(), getBranchFrame(), lerp(), sampleBlossomTint(), UP (+1 more)
 
 ### Community 5 - "WeepingCherryTreeCanvas"
-Cohesion: 0.22
-Nodes (11): dampSpring(), disposeMaterialTextures(), easeOutCubic(), resolveSceneQuality(), WeepingCherryTreeCanvas(), addViewportChangeListener(), getViewportHeight(), getViewportMetrics() (+3 more)
+Cohesion: 0.18
+Nodes (13): createPetalDetailTexture(), dampSpring(), disposeMaterialTextures(), easeOutCubic(), makeRng(), resolveSceneQuality(), WeepingCherryTreeCanvas(), addViewportChangeListener() (+5 more)
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -133,8 +133,8 @@ Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 9 - "clamp01"
-Cohesion: 0.22
-Nodes (15): clamp01(), createBarkTextures(), createFallingPetalGeometry(), createPetalDetailTexture(), createSakuraBlossomGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor() (+7 more)
+Cohesion: 0.27
+Nodes (12): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getTwigWindAmplitude(), getTwigWindFlutter() (+4 more)
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -178,7 +178,7 @@ Nodes (3): instrumentSerif, inter, metadata
 
 ### Community 28 - ".update"
 Cohesion: 0.39
-Nodes (3): arborGustEnvelope(), FallingPetalSystem, sampleBlossomTint()
+Nodes (3): arborGustEnvelope(), FallingPetalSystem, randomPointInUnitSphere()
 
 ### Community 33 - ".append"
 Cohesion: 0.36
@@ -230,7 +230,7 @@ Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
 Cohesion: 0.07
-Nodes (29): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement, BranchFrame (+21 more)
+Nodes (30): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+22 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -241,7 +241,7 @@ Cohesion: 0.29
 Nodes (3): menuLinks, socialLinks, HeroIntroProps
 
 ## Knowledge Gaps
-- **259 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+254 more)
+- **260 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+255 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -253,7 +253,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `devDependencies` connect `compilerOptions` to `package.json`?**
   _High betweenness centrality (0.008) - this node is a cross-community bridge._
 - **What connects `inter`, `instrumentSerif`, `metadata` to the rest of the system?**
-  _259 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _260 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
   _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
