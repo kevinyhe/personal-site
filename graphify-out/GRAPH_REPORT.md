@@ -1,16 +1,16 @@
 # Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~52,119 words
+- 61 files · ~52,696 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 550 nodes · 777 edges · 52 communities (37 shown, 15 thin omitted)
+- 550 nodes · 775 edges · 53 communities (37 shown, 16 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `dc14dff0`
+- Built from commit: `b4593216`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -49,6 +49,7 @@
 - tailwind.config.ts
 - next-env.d.ts
 - .append
+- CanopyLobe
 - compress.py
 - validate.py
 - README.md
@@ -70,14 +71,14 @@
 ## God Nodes (most connected - your core abstractions)
 1. `WeepingCherryGenerator` - 38 edges
 2. `lerp()` - 18 edges
-3. `clamp01()` - 17 edges
+3. `clamp01()` - 16 edges
 4. `compilerOptions` - 16 edges
 5. `validate()` - 14 edges
-6. `WeepingCherryTreeCanvas()` - 13 edges
-7. `compress_file()` - 12 edges
-8. `smoothstep()` - 12 edges
+6. `compress_file()` - 12 edges
+7. `smoothstep()` - 12 edges
+8. `What You Must Do When Invoked` - 12 edges
 9. `What You Must Do When Invoked` - 12 edges
-10. `What You Must Do When Invoked` - 12 edges
+10. `WeepingCherryTreeCanvas()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `compress_file()` --calls--> `validate()`  [EXTRACTED]
@@ -94,7 +95,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (52 total, 15 thin omitted)
+## Communities (53 total, 16 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -230,7 +231,7 @@ Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
 Cohesion: 0.07
-Nodes (30): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+22 more)
+Nodes (29): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+21 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -243,7 +244,7 @@ Nodes (3): menuLinks, socialLinks, HeroIntroProps
 ## Knowledge Gaps
 - **260 isolated node(s):** `inter`, `instrumentSerif`, `metadata`, `socialLinks`, `menuLinks` (+255 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
