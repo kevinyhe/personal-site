@@ -131,16 +131,16 @@ void main() {
 const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
 uniform float uTime;
 uniform vec3 uBase;
-uniform vec3 uRose;
-uniform vec3 uMagenta;
-uniform vec3 uPlum;
+uniform vec3 uDeep;
+uniform vec3 uCore;
+uniform vec3 uHot;
+uniform vec3 uViolet;
 varying vec2 vUv;
 
-// Soft anisotropic gaussian: stretch > 1 on an axis narrows the blob on
-// that axis, so blobs can smear vertically like the reference gradients.
-float blob(vec2 p, vec2 c, vec2 stretch, float r) {
-  vec2 d = (p - c) * stretch;
-  return exp(-dot(d, d) / (r * r));
+// One vertical light shaft: a soft horizontal gaussian bump.
+float shaft(float x, float c, float w) {
+  float d = (x - c) / w;
+  return exp(-d * d);
 }
 
 void main() {
@@ -150,37 +150,40 @@ void main() {
   vec2 p = vec2((vUv.x - 0.5) * 1.774, vUv.y - 0.5);
   float t = uTime;
 
-  // Blob centers orbit slowly (periods ~1-2 min) and radii breathe, so the
-  // field reads as one liquid mass morphing rather than sprites sliding.
-  vec2 cRose = vec2(0.14, 0.08) +
-    0.10 * vec2(cos(t * 0.073), sin(t * 0.089 + 1.3));
-  float rRose = 0.26 * (1.0 + 0.2 * sin(t * 0.051 + 0.7));
-  vec2 cMag = vec2(-0.28, 0.14) +
-    0.11 * vec2(cos(t * 0.059 + 2.6), sin(t * 0.047));
-  float rMag = 0.17 * (1.0 + 0.2 * sin(t * 0.043 + 2.1));
-  vec2 cTop = vec2(-0.04, 0.27) +
-    0.10 * vec2(cos(t * 0.052 + 4.4), 0.6 * sin(t * 0.067 + 0.9));
+  // The reference background reads as tall backlit CURTAINS hanging from
+  // the top edge — hot highlights up top, a saturated core through the
+  // middle, dissolving into black around two-thirds down, soft fabric-like
+  // undulation, the left/bottom staying void. Rebuilt here in pinks.
+  float wob = 0.05 * sin(p.y * 6.5 + t * 0.11) +
+    0.032 * sin(p.y * 12.0 - t * 0.073 + 2.0);
+  float x = p.x + wob;
 
-  // Dark-dominant, like the reference: ONE luminous core behind the canopy
-  // with a soft plum halo, a dim counterweight upper-left, a faint top
-  // drifter — and most of the frame stays void. (An earlier broad plum
-  // wash at radius 0.5 tinted the entire visible area pink.)
-  float core = blob(p, cRose, vec2(1.35, 0.9), rRose);
+  // Curtain shafts: a dominant pair right of center, a mid drifter, and a
+  // faint far-left curtain; centers drift on 1-3 minute periods.
+  float s = 0.0;
+  s += 1.00 * shaft(x, 0.17 + 0.06 * sin(t * 0.050), 0.22);
+  s += 0.85 * shaft(x, 0.35 + 0.05 * sin(t * 0.041 + 2.0), 0.16);
+  s += 0.55 * shaft(x, -0.05 + 0.07 * sin(t * 0.033 + 4.1), 0.11);
+  s += 0.28 * shaft(x, -0.31 + 0.05 * sin(t * 0.046 + 1.2), 0.10);
+
+  // Vertical envelope: full strength at the top edge, ragged per-shaft
+  // dissolve (via the wobbled x) reaching black ~65% down the frame.
+  float vTop = clamp((0.26 - p.y) / 0.50, 0.0, 1.3);
+  float vFade =
+    1.0 - smoothstep(0.12, 0.92, vTop + 0.16 * sin(x * 5.0 + t * 0.06));
+  float I = s * vFade;
+
+  // Intensity ramp: deep rose-maroon shadows, saturated pink core, warm
+  // light-pink highlights where curtains overlap near the top.
   vec3 col = uBase;
-  col += uRose * (0.50 * core);
-  col += uPlum * (0.34 * blob(p, cRose, vec2(0.9, 0.7), rRose * 2.1));
-  col += uMagenta * (0.22 * blob(p, cMag, vec2(1.2, 0.85), rMag));
-  col += uMagenta * (0.12 * blob(p, cTop, vec2(1.7, 1.0), 0.16));
+  col += uDeep * smoothstep(0.02, 0.42, I);
+  col = mix(col, uCore, smoothstep(0.34, 0.85, I));
+  col = mix(col, uHot, smoothstep(1.1, 2.0, I) * 0.55);
+  // Faint violet bleed on the far right, like the reference's edge tint.
+  col += uViolet * (0.16 * shaft(x, 0.45, 0.12) * vFade);
 
-  // Edge vignette and bottom fade force the frame borders and the name
-  // band back to the void color.
-  float edge = 1.0 - smoothstep(0.30, 0.52, length(p * vec2(1.0, 1.45)));
-  float bottom = smoothstep(-0.30, -0.06, p.y);
-  col = uBase + (col - uBase) * edge * mix(0.25, 1.0, bottom);
-
-  // Reinhard-style rolloff clamps overlapping peaks back into the dark
-  // range, keeping the backdrop moody so the tree stays the subject.
-  col = col / (1.0 + 2.3 * col);
+  // Mild rolloff keeps overlapping peaks luminous but not clipped.
+  col = col / (1.0 + 0.35 * col);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -480,12 +483,12 @@ function arborGustEnvelope(t: number, phase: number) {
     Math.sin(t * 0.36 + phase * 0.1) +
     0.6 * Math.sin(t * 0.83 + 1.7 + phase * 0.05) +
     0.35 * Math.sin(t * 0.11 + 4.2);
-  return 0.28 + 0.72 * smoothstep(-1.7, 1.9, n);
+  return 0.2 + 1.02 * smoothstep(-1.9, 1.75, n);
 }
 
 function getLimbWindAmplitude(branch: Branch) {
   const depthAmp =
-    branch.depth === 1 ? 0.045 : branch.depth === 2 ? 0.07 : 0.09;
+    branch.depth === 1 ? 0.078 : branch.depth === 2 ? 0.122 : 0.158;
   const radiusFactor = THREE.MathUtils.clamp(
     THREE.MathUtils.inverseLerp(0.42, 0.03, branch.baseRadius),
     0.3,
@@ -496,7 +499,7 @@ function getLimbWindAmplitude(branch: Branch) {
 
 function getTwigWindAmplitude(branch: Branch) {
   const depthAmp =
-    branch.depth === 4 ? 0.11 : branch.depth === 5 ? 0.14 : 0.16;
+    branch.depth === 4 ? 0.175 : branch.depth === 5 ? 0.225 : 0.26;
   const radiusFactor = THREE.MathUtils.clamp(
     THREE.MathUtils.inverseLerp(0.06, 0.008, branch.baseRadius),
     0.4,
@@ -507,7 +510,7 @@ function getTwigWindAmplitude(branch: Branch) {
 
 function getTwigWindFlutter(branch: Branch) {
   const depthAmp =
-    branch.depth === 4 ? 0.006 : branch.depth === 5 ? 0.009 : 0.012;
+    branch.depth === 4 ? 0.008 : branch.depth === 5 ? 0.012 : 0.016;
   const radiusFactor = THREE.MathUtils.clamp(
     THREE.MathUtils.inverseLerp(0.05, 0.005, branch.baseRadius),
     0.35,
@@ -988,7 +991,7 @@ const WIND_SHADER_CHUNK = `
       sin(t * 0.36 + phase * 0.1) +
       0.6 * sin(t * 0.83 + 1.7 + phase * 0.05) +
       0.35 * sin(t * 0.11 + 4.2);
-    return 0.28 + 0.72 * smoothstep(-1.7, 1.9, n);
+    return 0.2 + 1.02 * smoothstep(-1.9, 1.75, n);
   }
 
   vec3 arborWindOffset(vec4 wp1, vec4 wp2) {
@@ -1003,14 +1006,20 @@ const WIND_SHADER_CHUNK = `
     float gustLimb = arborGust(uWindTime - limbLag * 0.5, limbPhase);
     float gustTwig = arborGust(uWindTime - twigLag * 0.5, twigPhase);
 
+    // Three tiers per band. The slow term is the gust LEAN: the canopy is
+    // pushed over and held there for a second or two, which is what makes a
+    // breeze read as a breeze instead of a vibration. The two faster terms
+    // are the limb's own ring-down on top of that lean.
     float tl = uWindTime - limbLag;
     float limbSway =
-      sin(tl * 2.0 + limbPhase) * 0.64 +
-      sin(tl * 3.1 + limbPhase * 1.31 + 0.9) * 0.36;
+      sin(tl * 1.15 + limbPhase * 0.7) * 0.42 +
+      sin(tl * 2.0 + limbPhase) * 0.36 +
+      sin(tl * 3.1 + limbPhase * 1.31 + 0.9) * 0.22;
     float tt = uWindTime - twigLag;
     float twigSway =
-      sin(tt * 2.6 + twigPhase) * 0.6 +
-      sin(tt * 3.7 + twigPhase * 1.7 + 1.4) * 0.4;
+      sin(tt * 1.5 + twigPhase * 0.6) * 0.35 +
+      sin(tt * 2.6 + twigPhase) * 0.42 +
+      sin(tt * 3.7 + twigPhase * 1.7 + 1.4) * 0.23;
     float flutterWave =
       sin(uWindTime * 15.0 + twigPhase * 2.7) +
       0.5 * sin(uWindTime * 23.0 + twigPhase * 4.1);
@@ -2079,10 +2088,14 @@ function createFallingPetalGeometry(variant: number) {
   const indices: number[] = [];
   const lengthSegments = 4;
   const widthSegments = 4;
-  // ~27% larger than the old 0.26 x 0.10 card so each petal still reads as
-  // a few halftone dots.
-  const petalLength = 0.33;
-  const maxHalfWidth = 0.125;
+  // A real sakura petal is ~15 mm long and nearly as wide. One world unit is
+  // ~1 m here, so a true-to-life petal would be 0.015 u and vanish under the
+  // halftone. This is the smallest card that still resolves at the hero
+  // framing (~67 css px per world unit -> ~12-16 px long at the common
+  // scales), which is about 16x life size; the proportions are the real
+  // ones.
+  const petalLength = 0.245;
+  const maxHalfWidth = 0.093;
   const color = new THREE.Color();
 
   for (let i = 0; i <= lengthSegments; i += 1) {
@@ -3725,7 +3738,11 @@ class WeepingCherryGenerator {
     if (!parent) {
       branch.windLimbPhase = 0;
       branch.windLimbAmpBase = 0;
-      branch.windLimbAmpLocal = 0;
+      // A real cherry trunk barely bends, but it bends: a small local
+      // amplitude here is inherited by every limb above, so the canopy
+      // leans as one body under a gust instead of only rippling at the
+      // twig tips.
+      branch.windLimbAmpLocal = 0.026;
       branch.windLimbLagBase = 0;
       branch.windLimbLagLocal = 0;
       branch.windTwigPhase = 0;
@@ -4496,9 +4513,12 @@ export default function WeepingCherryTreeCanvas({
       const voidBackdropUniforms = {
         uTime: { value: 0 },
         uBase: { value: new THREE.Color(0x0a0a0a) },
-        uRose: { value: new THREE.Color(0xd94379) },
-        uMagenta: { value: new THREE.Color(0xa92d5e) },
-        uPlum: { value: new THREE.Color(0x5a1f3a) },
+        // Curtain ramp: deep rose-maroon -> saturated pink -> warm light
+        // pink, the reference's maroon/red/orange ramp shifted to pink.
+        uDeep: { value: new THREE.Color(0x6d1a3c) },
+        uCore: { value: new THREE.Color(0xd63c78) },
+        uHot: { value: new THREE.Color(0xff8fae) },
+        uViolet: { value: new THREE.Color(0x5c2f7a) },
       };
       const createVoidBackdrop = () => {
         const backdrop = new THREE.Mesh(
