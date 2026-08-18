@@ -22,15 +22,22 @@
   box-sizing: border-box;
 }
 
-html,
-body {
+/* The home hero pins the viewport; every other route scrolls normally.
+   The lock rides on [data-home-lock], rendered only by the home page. */
+html:has([data-home-lock]),
+html:has([data-home-lock]) body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
 }
 
+html {
+  background: #0a0a0a;
+}
+
 body {
   margin: 0;
+  min-height: 100%;
   background: #0a0a0a;
   color: #f0f0f0;
   font-family: var(--font-inter), system-ui, sans-serif;
@@ -48,13 +55,17 @@ canvas {
   z-index: 0;
 }
 
-/* Hero items start hidden so nothing flashes before GSAP takes over. */
-[data-hero-animate] {
+/* Hero items start hidden so nothing flashes before GSAP takes over.
+   Subpage sections ([data-reveal]) start hidden the same way and are
+   revealed with a stagger as they enter the viewport. */
+[data-hero-animate],
+[data-reveal] {
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-hero-animate] {
+  [data-hero-animate],
+  [data-reveal] {
     opacity: 1;
   }
 }
