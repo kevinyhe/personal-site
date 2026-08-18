@@ -1,16 +1,16 @@
 # Graph Report - arbor-web  (2026-08-17)
 
 ## Corpus Check
-- 61 files · ~54,089 words
+- 67 files · ~57,688 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 551 nodes · 776 edges · 53 communities (37 shown, 16 thin omitted)
+- 579 nodes · 808 edges · 55 communities (38 shown, 17 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `28d8789c`
+- Built from commit: `36b7baef`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -62,6 +62,7 @@
 - caveman-stats
 - __init__.py
 - clamp01
+- CanopyLobe
 - smoothstep
 - SpatialHash
 - Preserve Typography
@@ -83,19 +84,19 @@
 ## Surprising Connections (you probably didn't know these)
 - `compress_file()` --calls--> `validate()`  [EXTRACTED]
   .agents/skills/caveman-compress/scripts/compress.py → .agents/skills/caveman-compress/scripts/validate.py
-- `resolveSceneQuality()` --calls--> `getViewportWidth()`  [EXTRACTED]
-  components/BareThreeCanvas.tsx → components/viewportMetrics.ts
 - `benchmark_pair()` --calls--> `validate()`  [EXTRACTED]
   .agents/skills/caveman-compress/scripts/benchmark.py → .agents/skills/caveman-compress/scripts/validate.py
 - `main()` --calls--> `backup_dir_for()`  [EXTRACTED]
   .agents/skills/caveman-compress/scripts/cli.py → .agents/skills/caveman-compress/scripts/compress.py
 - `main()` --calls--> `compress_file()`  [EXTRACTED]
   .agents/skills/caveman-compress/scripts/cli.py → .agents/skills/caveman-compress/scripts/compress.py
+- `main()` --calls--> `detect_file_type()`  [EXTRACTED]
+  .agents/skills/caveman-compress/scripts/cli.py → .agents/skills/caveman-compress/scripts/detect.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (53 total, 16 thin omitted)
+## Communities (55 total, 17 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -115,11 +116,11 @@ Nodes (26): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 4 - "What You Must Do When Invoked"
 Cohesion: 0.13
-Nodes (9): Branch, createPetalDetailTexture(), createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), sampleBlossomTint(), UP (+1 more)
+Nodes (9): applyBlossomWind(), Branch, createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), sampleBlossomTint(), UP (+1 more)
 
 ### Community 5 - "WeepingCherryTreeCanvas"
-Cohesion: 0.25
-Nodes (10): dampSpring(), disposeMaterialTextures(), easeOutCubic(), WeepingCherryTreeCanvas(), addViewportChangeListener(), getViewportHeight(), getViewportMetrics(), getViewportWidth() (+2 more)
+Cohesion: 0.22
+Nodes (11): dampSpring(), disposeMaterialTextures(), easeOutCubic(), resolveSceneQuality(), WeepingCherryTreeCanvas(), addViewportChangeListener(), getViewportHeight(), getViewportMetrics() (+3 more)
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -182,8 +183,8 @@ Cohesion: 0.36
 Nodes (3): applyBranchWind(), BranchGeometryBuilder, OccupiedPoint
 
 ### Community 34 - "createSakuraBlossomGeometry"
-Cohesion: 0.40
-Nodes (4): createSakuraBlossomGeometry(), makeRng(), resolveSceneQuality(), sakuraPetalOutline()
+Cohesion: 0.50
+Nodes (4): createPetalDetailTexture(), createSakuraBlossomGeometry(), makeRng(), sakuraPetalOutline()
 
 ### Community 35 - "compress.py"
 Cohesion: 0.12
@@ -230,31 +231,31 @@ Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.06
-Nodes (32): applyBlossomWind(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT (+24 more)
+Cohesion: 0.07
+Nodes (30): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+22 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
 Nodes (4): Hard Rule, Preserve Typography, Verification, Workflow
 
 ### Community 64 - "ProblemStatementTransition.tsx"
-Cohesion: 0.29
-Nodes (3): menuLinks, socialLinks, HeroIntroProps
+Cohesion: 0.07
+Nodes (19): elsewhere, facts, metadata, facts, metadata, roles, skillGroups, menuLinks (+11 more)
 
 ## Knowledge Gaps
-- **261 isolated node(s):** `inter`, `displaySerif`, `metadata`, `socialLinks`, `menuLinks` (+256 more)
+- **275 isolated node(s):** `metadata`, `elsewhere`, `facts`, `metadata`, `skillGroups` (+270 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `.append`, `smoothstep`, `createSakuraBlossomGeometry`, `clamp01`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `.append`, `smoothstep`, `WeepingCherryTreeCanvas`, `clamp01`?**
+  _High betweenness centrality (0.018) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `compilerOptions` to `package.json`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
-- **What connects `inter`, `displaySerif`, `metadata` to the rest of the system?**
-  _261 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
+- **What connects `metadata`, `elsewhere`, `facts` to the rest of the system?**
+  _275 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
   _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**

@@ -152,28 +152,35 @@ void main() {
 
   // Blob centers orbit slowly (periods ~1-2 min) and radii breathe, so the
   // field reads as one liquid mass morphing rather than sprites sliding.
-  vec2 cRose = vec2(0.24, 0.0) +
-    0.11 * vec2(cos(t * 0.073), sin(t * 0.089 + 1.3));
-  float rRose = 0.24 * (1.0 + 0.22 * sin(t * 0.051 + 0.7));
-  vec2 cMag = vec2(-0.30, 0.16) +
-    0.13 * vec2(cos(t * 0.059 + 2.6), sin(t * 0.047));
-  float rMag = 0.21 * (1.0 + 0.2 * sin(t * 0.043 + 2.1));
-  vec2 cPlum = vec2(0.02, -0.14) +
-    0.09 * vec2(cos(1.1 - t * 0.041), sin(t * 0.062 + 4.0));
+  vec2 cRose = vec2(0.14, 0.08) +
+    0.10 * vec2(cos(t * 0.073), sin(t * 0.089 + 1.3));
+  float rRose = 0.26 * (1.0 + 0.2 * sin(t * 0.051 + 0.7));
+  vec2 cMag = vec2(-0.28, 0.14) +
+    0.11 * vec2(cos(t * 0.059 + 2.6), sin(t * 0.047));
+  float rMag = 0.17 * (1.0 + 0.2 * sin(t * 0.043 + 2.1));
   vec2 cTop = vec2(-0.04, 0.27) +
-    0.12 * vec2(cos(t * 0.052 + 4.4), 0.6 * sin(t * 0.067 + 0.9));
+    0.10 * vec2(cos(t * 0.052 + 4.4), 0.6 * sin(t * 0.067 + 0.9));
 
-  // Additive mix over the void base: one bright rose mass right of center,
-  // a dimmer magenta counterweight upper-left, a broad deep-plum wash low,
-  // and a small magenta drifter along the top edge.
+  // Dark-dominant, like the reference: ONE luminous core behind the canopy
+  // with a soft plum halo, a dim counterweight upper-left, a faint top
+  // drifter — and most of the frame stays void. (An earlier broad plum
+  // wash at radius 0.5 tinted the entire visible area pink.)
+  float core = blob(p, cRose, vec2(1.35, 0.9), rRose);
   vec3 col = uBase;
-  col += uRose * (0.55 * blob(p, cRose, vec2(1.5, 0.85), rRose));
-  col += uMagenta * (0.45 * blob(p, cMag, vec2(1.2, 0.8), rMag));
-  col += uPlum * (0.9 * blob(p, cPlum, vec2(0.8, 1.0), 0.5));
-  col += uMagenta * (0.3 * blob(p, cTop, vec2(1.7, 1.0), 0.19));
+  col += uRose * (0.50 * core);
+  col += uPlum * (0.34 * blob(p, cRose, vec2(0.9, 0.7), rRose * 2.1));
+  col += uMagenta * (0.22 * blob(p, cMag, vec2(1.2, 0.85), rMag));
+  col += uMagenta * (0.12 * blob(p, cTop, vec2(1.7, 1.0), 0.16));
+
+  // Edge vignette and bottom fade force the frame borders and the name
+  // band back to the void color.
+  float edge = 1.0 - smoothstep(0.30, 0.52, length(p * vec2(1.0, 1.45)));
+  float bottom = smoothstep(-0.30, -0.06, p.y);
+  col = uBase + (col - uBase) * edge * mix(0.25, 1.0, bottom);
+
   // Reinhard-style rolloff clamps overlapping peaks back into the dark
   // range, keeping the backdrop moody so the tree stays the subject.
-  col = col / (1.0 + 1.7 * col);
+  col = col / (1.0 + 2.3 * col);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
