@@ -893,11 +893,20 @@ const WIND_SHADER_CHUNK = `
     float brushLen = length(brush);
     brush *= min(brushLen, 0.09) / max(brushLen, 1e-4);
     float phase = wp1.w * 2.0 + wp1.x;
+    vec3 skewDir = normalize(vec3(sin(phase * 3.7), 0.35, cos(phase * 2.9)));
+    // Decorrelate the response per twig family: without this every blossom
+    // answers the brush with the identical vector and the canopy translates
+    // as one rigid sheet. Each family gets its own gain (hash of its
+    // phase), a slow timing wobble so reactions peak at different moments,
+    // and a slight skew of the brush toward its own direction.
+    float familyHash = fract(sin(phase * 12.9898) * 43758.5453);
+    float gain = (0.55 + 0.9 * familyHash) *
+      (0.85 + 0.3 * sin(uWindTime * 2.3 + phase * 5.0));
+    vec3 response = mix(brush, skewDir * length(brush), 0.35) * gain;
     float shake =
       sin(uWindTime * 16.0 + phase) +
       0.5 * sin(uWindTime * 23.0 + phase * 1.9);
-    vec3 shakeDir = normalize(vec3(sin(phase * 3.7), 0.35, cos(phase * 2.9)));
-    return (brush + shakeDir * (shake * 0.024)) * w;
+    return (response + skewDir * (shake * 0.026)) * w;
   }
 
   float arborGust(float t, float phase) {
