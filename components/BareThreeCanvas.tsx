@@ -150,31 +150,6 @@ float shaft(float x, float c, float w) {
   return exp(-d * d);
 }
 
-float nhash(vec2 q) {
-  return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float vnoise(vec2 q) {
-  vec2 i = floor(q);
-  vec2 f = fract(q);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(nhash(i), nhash(i + vec2(1.0, 0.0)), u.x),
-    mix(nhash(i + vec2(0.0, 1.0)), nhash(i + vec2(1.0, 1.0)), u.x),
-    u.y);
-}
-
-float fbm3(vec2 q) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 3; i++) {
-    v += a * vnoise(q);
-    q = q * 2.03 + vec2(17.2, -11.1);
-    a *= 0.52;
-  }
-  return v;
-}
-
 void main() {
   // Plane-local coords corrected for the 110x62 plane aspect so radii are
   // isotropic. The camera sees roughly x in [-0.47, 0.45] and
@@ -186,9 +161,16 @@ void main() {
   // the top edge — hot highlights up top, a saturated core through the
   // middle, dissolving into black around two-thirds down, soft fabric-like
   // undulation, the left/bottom staying void. Rebuilt here in pinks.
-  float wob = 0.05 * sin(p.y * 6.5 + t * 0.11) +
-    0.032 * sin(p.y * 12.0 - t * 0.073 + 2.0);
+  // Silk undulation: large-scale, slow. These two sines ARE the motion —
+  // no small-scale texture anywhere, everything stays heavily blurred.
+  float wob = 0.09 * sin(p.y * 4.5 + t * 0.16) +
+    0.05 * sin(p.y * 9.0 - t * 0.11 + 2.0);
   float x = p.x + wob;
+  // The cursor gently pulls the curtains toward itself over a very broad
+  // radius, and lifts a soft glow — a smooth lean, not a distortion.
+  vec2 toPtr = p - uPointer;
+  float ptrInf = exp(-dot(toPtr, toPtr) / 0.16) * uPointerForce;
+  x -= toPtr.x * ptrInf * 0.4;
 
   // Curtain shafts: a dominant pair right of center, a mid drifter, and a
   // faint far-left curtain; centers drift on 1-3 minute periods.
@@ -202,24 +184,8 @@ void main() {
   // dissolve (via the wobbled x) reaching black ~65% down the frame.
   float vTop = clamp((0.26 - p.y) / 0.50, 0.0, 1.3);
   float vFade =
-    1.0 - smoothstep(0.0, 1.25, vTop + 0.10 * sin(x * 2.5 + t * 0.06));
-  // Flame field: domain-warped noise rising through the curtains, so the
-  // washes carry slow upward-licking tongues instead of holding still. The
-  // pointer bends the warp around itself and adds a soft local glow, like
-  // the reference's mouse-reactive flames.
-  vec2 fp = p * vec2(3.0, 4.4);
-  float rise = t * 0.5;
-  vec2 warp = vec2(
-    fbm3(fp * 0.9 + vec2(0.0, -rise * 0.6)),
-    fbm3(fp * 0.9 + vec2(5.2, 1.3 - rise * 0.5))) - 0.5;
-  vec2 toPtr = p - uPointer;
-  float ptrInf = exp(-dot(toPtr, toPtr) / 0.05) * uPointerForce;
-  warp += (toPtr / max(length(toPtr), 0.08)) * ptrInf * 0.5;
-  float flame = fbm3(fp + warp * 1.8 + vec2(0.0, -rise));
-  // Broad lick shaping — soft tongues, never hard edges.
-  float lick = smoothstep(0.2, 1.0, flame);
-
-  float I = s * vFade * (0.55 + 0.95 * lick) + ptrInf * 0.45;
+    1.0 - smoothstep(0.0, 1.25, vTop + 0.13 * sin(x * 2.5 + t * 0.09));
+  float I = s * vFade + ptrInf * 0.3;
 
   // Intensity ramp: deep rose-maroon shadows, saturated pink core, warm
   // light-pink highlights where curtains overlap near the top.
