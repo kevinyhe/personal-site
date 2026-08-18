@@ -43,7 +43,7 @@ export default function Home() {
             </span>
             {/* Apparel Regular Italic — the reference site's own cut; a real
                 Bold Italic (700) is loaded too if more weight is wanted. */}
-            <span className="mr-[-0.1em] text-[0.58em] font-normal font-serif-display italic mix-blend-difference">
+            <span className="mr-[-0.1em] text-[0.58em] font-normal font-serif-display italic tracking-[-0.08em] mix-blend-difference">
               He.
             </span>
           </div>
