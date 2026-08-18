@@ -1,16 +1,16 @@
-# Graph Report - arbor-web  (2026-08-17)
+# Graph Report - arbor-web  (2026-08-18)
 
 ## Corpus Check
-- 67 files · ~57,688 words
+- 67 files · ~59,809 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 579 nodes · 808 edges · 55 communities (38 shown, 17 thin omitted)
+- 580 nodes · 810 edges · 54 communities (39 shown, 15 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `36b7baef`
+- Built from commit: `eb0aaf0d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -62,7 +62,6 @@
 - caveman-stats
 - __init__.py
 - clamp01
-- CanopyLobe
 - smoothstep
 - SpatialHash
 - Preserve Typography
@@ -96,7 +95,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (55 total, 17 thin omitted)
+## Communities (54 total, 15 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -116,7 +115,7 @@ Nodes (26): For /graphify add and --watch, For /graphify query, For the commit h
 
 ### Community 4 - "What You Must Do When Invoked"
 Cohesion: 0.13
-Nodes (9): applyBlossomWind(), Branch, createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), sampleBlossomTint(), UP (+1 more)
+Nodes (10): applyBlossomWind(), Branch, createPetalDetailTexture(), createSakuraBudGeometry(), getBranchFrame(), lerp(), randomPointInUnitSphere(), sampleBlossomTint() (+2 more)
 
 ### Community 5 - "WeepingCherryTreeCanvas"
 Cohesion: 0.22
@@ -135,8 +134,8 @@ Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 9 - "clamp01"
-Cohesion: 0.30
-Nodes (11): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getTwigWindAmplitude(), getTwigWindFlutter() (+3 more)
+Cohesion: 0.39
+Nodes (7): clamp01(), getBranchWindVectors(), getLimbWindAmplitude(), getTwigWindAmplitude(), getTwigWindFlutter(), getWindFlutterRamp(), getWindRamp()
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -178,13 +177,17 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 Cohesion: 0.40
 Nodes (3): displaySerif, inter, metadata
 
+### Community 28 - ".update"
+Cohesion: 0.25
+Nodes (8): arborGustEnvelope(), createFallingPetalGeometry(), createSakuraBlossomGeometry(), FallingPetalSystem, getPetalVertexColor(), sakuraPetalOutline(), smoothstep(), wrapAngle()
+
 ### Community 33 - ".append"
 Cohesion: 0.36
 Nodes (3): applyBranchWind(), BranchGeometryBuilder, OccupiedPoint
 
 ### Community 34 - "createSakuraBlossomGeometry"
-Cohesion: 0.50
-Nodes (4): createPetalDetailTexture(), createSakuraBlossomGeometry(), makeRng(), sakuraPetalOutline()
+Cohesion: 0.40
+Nodes (5): createBarkTextures(), fbm2(), makeRng(), noiseHash2(), valueNoise2()
 
 ### Community 35 - "compress.py"
 Cohesion: 0.12
@@ -232,7 +235,7 @@ Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 50 - "smoothstep"
 Cohesion: 0.07
-Nodes (30): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+22 more)
+Nodes (28): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+20 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -245,7 +248,7 @@ Nodes (19): elsewhere, facts, metadata, facts, metadata, roles, skillGroups, men
 ## Knowledge Gaps
 - **275 isolated node(s):** `metadata`, `elsewhere`, `facts`, `metadata`, `skillGroups` (+270 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **15 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
