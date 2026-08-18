@@ -26,7 +26,7 @@ const HERO_CAMERA_FOV = 42;
 // round dots (ordered dither), like the reference site's dot-matrix render.
 // Cell edge in CSS px — multiplied by the render pixel ratio at runtime, so
 // dots read ~3-5 screen px. "low" quality bumps it one step larger.
-const HALFTONE_CELL_CSS_PX = 3.5;
+const HALFTONE_CELL_CSS_PX = 4.1;
 // 0..1 mix of dithered over the smooth render; below 1 a hint of the smooth
 // image survives under the dots.
 const HALFTONE_STRENGTH = 0.85;
@@ -795,6 +795,12 @@ class BranchGeometryBuilder {
 type BranchWindUniforms = {
   uWindTime: { value: number };
   uWindStrength: { value: number };
+  // Cursor rustle (see arborPointerRustle in WIND_SHADER_CHUNK): smoothed
+  // pointer point on the world z=0 plane, 0..1 activity envelope, and the
+  // world-space falloff radius.
+  uPointerPos: { value: THREE.Vector3 };
+  uPointerStrength: { value: number };
+  uPointerRadius: { value: number };
 };
 
 // ---------------------------------------------------------------------------
@@ -850,6 +856,32 @@ type BranchWindUniforms = {
 const WIND_SHADER_CHUNK = `
   uniform float uWindTime;
   uniform float uWindStrength;
+  uniform vec3 uPointerPos;
+  uniform float uPointerStrength;
+  uniform float uPointerRadius;
+
+  // Cursor rustle: a gentle push away from the smoothed pointer point plus a
+  // high-frequency shake, both fading to zero at uPointerRadius and gated by
+  // uPointerStrength. Scaled by the same per-point wind amplitudes as
+  // arborWindOffset, so the trunk and thick limbs barely move while twig
+  // tips (and the blossoms baking the same vec4s) respond most. The shake
+  // phase derives from the wind-tier phases, so a twig family and the
+  // flowers riding it shake coherently instead of tearing apart.
+  vec3 arborPointerRustle(vec3 worldPos, vec4 wp1, vec4 wp2) {
+    float dist = distance(worldPos, uPointerPos);
+    float influence =
+      (1.0 - smoothstep(0.0, uPointerRadius, dist)) * uPointerStrength;
+    float bendWeight =
+      clamp(wp1.y * 2.0 + wp2.x * 3.5 + wp2.z * 20.0, 0.0, 1.0);
+    float w = influence * bendWeight;
+    vec3 away = (worldPos - uPointerPos) / max(dist, 0.2);
+    float phase = wp1.w * 2.0 + wp1.x;
+    float shake =
+      sin(uWindTime * 16.0 + phase) +
+      0.5 * sin(uWindTime * 23.0 + phase * 1.9);
+    vec3 shakeDir = normalize(vec3(sin(phase * 3.7), 0.35, cos(phase * 2.9)));
+    return (away * 0.10 + shakeDir * (shake * 0.05)) * w;
+  }
 
   float arborGust(float t, float phase) {
     float n =
@@ -901,11 +933,17 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
   const uniforms: BranchWindUniforms = {
     uWindTime: { value: 0 },
     uWindStrength: { value: 1 },
+    uPointerPos: { value: new THREE.Vector3(0, 6.5, 0) },
+    uPointerStrength: { value: 0 },
+    uPointerRadius: { value: 2 },
   };
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWindTime = uniforms.uWindTime;
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
+    shader.uniforms.uPointerPos = uniforms.uPointerPos;
+    shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
+    shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.vertexShader =
       `
         attribute vec4 windParams1;
@@ -918,11 +956,14 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
       "#include <begin_vertex>",
       `#include <begin_vertex>
       transformed += arborWindOffset(windParams1, windParams2);
+      transformed += arborPointerRustle(
+        (modelMatrix * vec4(transformed, 1.0)).xyz,
+        windParams1, windParams2);
       `,
     );
   };
 
-  material.customProgramCacheKey = () => "branch-wind-v7";
+  material.customProgramCacheKey = () => "branch-wind-v8";
   return uniforms;
 }
 
@@ -934,6 +975,9 @@ function applyBlossomWind(
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWindTime = uniforms.uWindTime;
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
+    shader.uniforms.uPointerPos = uniforms.uPointerPos;
+    shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
+    shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.uniforms.uBlossomGrowth = growthUniform;
     shader.vertexShader =
       `
@@ -973,6 +1017,25 @@ function applyBlossomWind(
       float shimmerAmount = blossomFlutter * petalTip * (0.016 * uWindStrength);
       transformed.z += shimmerNoise * shimmerAmount * blossomReveal;
 
+      // Cursor rustle, flower-local part: influence sampled once at the
+      // instance anchor (the spur point), then spent on a fast petal-edge
+      // flutter plus extra pedicel swing below. Both are rotations/offsets
+      // about the origin, so the flower can never detach from its twig.
+      #ifdef USE_INSTANCING
+      vec3 rustleAnchor =
+        (modelMatrix * vec4(instanceMatrix[3].xyz, 1.0)).xyz;
+      #else
+      vec3 rustleAnchor = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      #endif
+      float rustleInfluence =
+        (1.0 - smoothstep(0.0, uPointerRadius,
+          distance(rustleAnchor, uPointerPos))) * uPointerStrength;
+      float rustleFlutter =
+        sin(uWindTime * 24.0 + blossomPhase * 3.1 + petalAngle * 3.0) +
+        0.6 * sin(uWindTime * 33.0 + blossomPhase * 1.9);
+      transformed.z +=
+        rustleFlutter * petalTip * (0.07 * rustleInfluence) * blossomReveal;
+
       // Whole-flower flutter: the flower swings on its pedicel around the
       // spur point, weighted by the twig-tip flutter amplitude
       // (blossomWindParams2.z) and the shared gust envelope, so flowers on
@@ -985,9 +1048,12 @@ function applyBlossomWind(
         (0.045 + 0.04 * blossomFlutter) * uWindStrength;
       float swingA =
         swing * (sin(uWindTime * 2.9 + blossomPhase) +
-          0.45 * sin(uWindTime * 4.3 + blossomPhase * 1.7));
+          0.45 * sin(uWindTime * 4.3 + blossomPhase * 1.7)) +
+        rustleInfluence * (0.22 * sin(uWindTime * 17.0 + blossomPhase) +
+          0.12 * sin(uWindTime * 26.0 + blossomPhase * 2.3));
       float swingB =
-        swing * 0.7 * sin(uWindTime * 3.4 + blossomPhase * 2.3 + 1.1);
+        swing * 0.7 * sin(uWindTime * 3.4 + blossomPhase * 2.3 + 1.1) +
+        rustleInfluence * 0.16 * sin(uWindTime * 21.0 + blossomPhase * 1.4);
       float swingCosA = cos(swingA);
       float swingSinA = sin(swingA);
       transformed.yz = vec2(
@@ -1008,6 +1074,12 @@ function applyBlossomWind(
       mvPosition = instanceMatrix * mvPosition;
       #endif
       mvPosition.xyz += arborWindOffset(blossomWindParams1, blossomWindParams2);
+      // Coherent cursor-rustle displacement: identical formula and baked
+      // vec4s as the branch mesh evaluates at the anchor point, so the
+      // whole flower translates exactly with its twig.
+      mvPosition.xyz += arborPointerRustle(
+        (modelMatrix * vec4(mvPosition.xyz, 1.0)).xyz,
+        blossomWindParams1, blossomWindParams2);
       mvPosition = modelViewMatrix * mvPosition;
       gl_Position = projectionMatrix * mvPosition;
       `,
@@ -1026,7 +1098,7 @@ function applyBlossomWind(
     );
   };
 
-  material.customProgramCacheKey = () => "blossom-wind-v9";
+  material.customProgramCacheKey = () => "blossom-wind-v10";
 }
 
 // Sakura palette shared by attached blossoms and falling petals: cool
@@ -1881,35 +1953,74 @@ function createBarkTextures() {
   return { colorMap, bumpMap, roughnessMap };
 }
 
-// A single loose falling petal: same obcordate outline with the tip notch
-// and the same base->edge color gradient as the petals on the attached
-// flowers. Lies in the xy plane along +y, normal +z.
-function createFallingPetalGeometry() {
+// A single loose falling petal. NOT the attached-flower outline: the deep
+// obcordate tip notch reads as a heart under the halftone, so loose petals
+// get their own soft rounded teardrop with at most a very shallow cleft, a
+// slight lengthwise curl and a touch of lateral asymmetry. Three shape
+// variants (cleft depth, widest point, skew, curl) are split across three
+// instanced meshes. Same base->edge color gradient and UV layout as the
+// flower petals. Lies in the xy plane along +y, normal +z.
+const LOOSE_PETAL_VARIANTS = [
+  { cleft: 0.0, peak: 0.5, skew: 0.09, sideBias: 0.1, curl: 0.042, twist: 0.018 },
+  { cleft: 0.055, peak: 0.44, skew: -0.07, sideBias: -0.12, curl: 0.052, twist: -0.02 },
+  { cleft: 0.03, peak: 0.56, skew: 0.12, sideBias: 0.08, curl: 0.034, twist: 0.012 },
+] as const;
+const PETAL_VARIANT_COUNT = LOOSE_PETAL_VARIANTS.length;
+
+function createFallingPetalGeometry(variant: number) {
+  const shape = LOOSE_PETAL_VARIANTS[variant % PETAL_VARIANT_COUNT];
   const positions: number[] = [];
   const colors: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
   const lengthSegments = 4;
   const widthSegments = 4;
-  const petalLength = 0.26;
-  const maxHalfWidth = 0.1;
+  // ~27% larger than the old 0.26 x 0.10 card so each petal still reads as
+  // a few halftone dots.
+  const petalLength = 0.33;
+  const maxHalfWidth = 0.125;
   const color = new THREE.Color();
 
   for (let i = 0; i <= lengthSegments; i += 1) {
     const vv = i / lengthSegments;
     for (let j = 0; j <= widthSegments; j += 1) {
       const uu = j / widthSegments;
-      const outline = sakuraPetalOutline(uu, vv);
-      const x = outline.lateral * maxHalfWidth;
-      const y = (outline.radial - 0.5) * petalLength;
-      // Slightly deeper lengthwise cup + lateral curl than a flat card, so a
-      // tumbling petal reads as a 3D shell as it rocks through the light.
+      const xu = uu * 2 - 1;
+      // Rounded-oval width profile: soft at both ends, widest at
+      // shape.peak along the length (remapped so the sine peak lands there).
+      const vvW =
+        vv < shape.peak
+          ? (vv / shape.peak) * 0.5
+          : 0.5 + ((vv - shape.peak) / (1 - shape.peak)) * 0.5;
+      const widthProfile = Math.pow(
+        Math.sin(Math.PI * (0.055 + 0.89 * vvW)),
+        0.72,
+      );
+      // At most a shallow dimple at the tip center, plus corner rounding
+      // that keeps the tip oval instead of two heart lobes.
+      const cleft =
+        shape.cleft *
+        Math.pow(Math.max(0, 1 - Math.abs(xu) * 2.3), 2) *
+        smoothstep(0.76, 1, vv);
+      const cornerRound =
+        0.085 * Math.pow(Math.abs(xu), 2.4) * smoothstep(0.5, 1, vv);
+      const radial = vv - cleft - cornerRound;
+      // Asymmetry: one lobe slightly wider (sideBias) and the midline
+      // bowed sideways (skew).
+      const lateral =
+        xu * (1 + shape.sideBias * xu) * widthProfile +
+        shape.skew * Math.sin(Math.PI * vv);
+      const x = lateral * maxHalfWidth;
+      const y = (radial - 0.5) * petalLength;
+      // Lengthwise curl + lateral cup + a slight diagonal twist, so the
+      // shell reads as 3D while it banks through the light.
       const z =
-        Math.sin(Math.PI * vv) * 0.028 +
-        outline.xu * outline.xu * 0.022 * (0.3 + vv * 0.7);
+        Math.sin(Math.PI * vv) * shape.curl +
+        xu * xu * 0.02 * (0.3 + vv * 0.7) +
+        xu * vv * shape.twist;
       positions.push(x, y, z);
       uvs.push(uu, vv);
-      getPetalVertexColor(color, outline.xu, vv);
+      getPetalVertexColor(color, xu, vv);
       colors.push(color.r, color.g, color.b);
     }
   }
@@ -1970,7 +2081,9 @@ const GUST_WAVE_SPEED = 0.45; // crest travels at LENGTH*SPEED ~ 3.2 u/s
 const HELIX_STRENGTH = 0.22;
 
 class FallingPetalSystem {
-  mesh: THREE.InstancedMesh;
+  // One InstancedMesh per loose-petal shape variant; petal i lives in
+  // meshes[i % PETAL_VARIANT_COUNT] at slot (i / PETAL_VARIANT_COUNT) | 0.
+  meshes: THREE.InstancedMesh[] = [];
   private rng: () => number;
   private lobes: CanopyLobe[];
   private anchors: THREE.Vector3[] | null;
@@ -1988,6 +2101,10 @@ class FallingPetalSystem {
   private slipDirXs: Float32Array;
   private slipDirZs: Float32Array;
   private rockAmps: Float32Array;
+  // Spiral-descent mode (~25% of petals): helical drift around the fall
+  // axis. Radius 0 marks the ordinary gliding mode.
+  private spiralRads: Float32Array;
+  private spiralRates: Float32Array;
   private tumbleRates: Float32Array;
   private tiltX0s: Float32Array;
   private tiltZ0s: Float32Array;
@@ -2026,12 +2143,17 @@ class FallingPetalSystem {
     const windLen = Math.hypot(this.wind.x, this.wind.z) || 1;
     this.windDirX = this.wind.x / windLen;
     this.windDirZ = this.wind.z / windLen;
-    this.mesh = new THREE.InstancedMesh(
-      createFallingPetalGeometry(),
-      material,
-      count,
-    );
-    this.mesh.frustumCulled = false;
+    for (let v = 0; v < PETAL_VARIANT_COUNT; v += 1) {
+      const slots = Math.ceil((count - v) / PETAL_VARIANT_COUNT);
+      if (slots <= 0) break;
+      const mesh = new THREE.InstancedMesh(
+        createFallingPetalGeometry(v),
+        material,
+        slots,
+      );
+      mesh.frustumCulled = false;
+      this.meshes.push(mesh);
+    }
 
     this.states = new Uint8Array(count);
     this.timers = new Float32Array(count);
@@ -2043,6 +2165,8 @@ class FallingPetalSystem {
     this.slipDirXs = new Float32Array(count);
     this.slipDirZs = new Float32Array(count);
     this.rockAmps = new Float32Array(count);
+    this.spiralRads = new Float32Array(count);
+    this.spiralRates = new Float32Array(count);
     this.tumbleRates = new Float32Array(count);
     this.tiltX0s = new Float32Array(count);
     this.tiltZ0s = new Float32Array(count);
@@ -2053,30 +2177,45 @@ class FallingPetalSystem {
       this.positions.push(new THREE.Vector3());
       this.velocities.push(new THREE.Vector3());
       this.rotations.push(new THREE.Euler());
-      // Terminal fall speed: light petals drift down slowly, heavier ones
-      // a little faster. Drag relaxes v.y toward this instead of gravity
-      // accelerating without bound.
-      this.vTerms[i] = this.rand(0.35, 0.75);
-      // Falling-leaf side slip: lateral oscillation perpendicular to the
-      // descent, with its own direction, amplitude, and tempo per petal.
-      // Amplitude is kept small so the shared flow field dominates the
-      // trajectory and the slip only adds individual life on top.
+      // Terminal fall speed: a low, tight band so the whole flock descends
+      // at an unhurried, deliberate pace. Drag relaxes v.y toward this
+      // instead of gravity accelerating without bound.
+      this.vTerms[i] = this.rand(0.28, 0.55);
+      // Falling-leaf side slip: long, slow lateral arcs perpendicular to
+      // the descent (low frequency, larger amplitude), so the path reads
+      // as gliding sweeps instead of jitter on top of the flow field.
       const slipAngle = this.rand(0, TAU);
       this.slipDirXs[i] = Math.cos(slipAngle);
       this.slipDirZs[i] = Math.sin(slipAngle);
-      this.slipAmps[i] = this.rand(0.05, 0.12);
-      this.slipFreqs[i] = this.rand(1.2, 2.6);
+      this.slipAmps[i] = this.rand(0.16, 0.3);
+      this.slipFreqs[i] = this.rand(0.55, 1.1);
       this.slipPhases[i] = this.rand(0, TAU);
-      this.rockAmps[i] = this.rand(0.35, 0.8);
-      this.tumbleRates[i] = this.rand(0.4, 1.3) * (this.rng() < 0.5 ? -1 : 1);
-      this.tiltX0s[i] = this.rand(-0.7, 0.7);
-      this.tiltZ0s[i] = this.rand(-0.7, 0.7);
+      this.rockAmps[i] = this.rand(0.55, 1.0);
+      this.tumbleRates[i] = this.rand(0.25, 0.7) * (this.rng() < 0.5 ? -1 : 1);
+      this.tiltX0s[i] = this.rand(-0.45, 0.45);
+      this.tiltZ0s[i] = this.rand(-0.45, 0.45);
       this.yaw0s[i] = this.rand(0, TAU);
+      // ~25% of petals descend in a slow helix around their fall axis; the
+      // yaw follows the spiral rate so the petal faces along its arc, and
+      // the plain side slip is damped so the helix stays clean.
+      if (this.rng() < 0.25) {
+        this.spiralRads[i] = this.rand(0.45, 0.95);
+        this.spiralRates[i] =
+          this.rand(0.7, 1.4) * (this.rng() < 0.5 ? -1 : 1);
+        this.slipAmps[i] *= 0.35;
+        this.tumbleRates[i] = this.spiralRates[i] * 0.9;
+      } else {
+        this.spiralRads[i] = 0;
+        this.spiralRates[i] = 0;
+      }
       this.baseScales[i] = this.rand(0.45, 0.95);
       // Same widened instance palette as the attached blossoms, so loose
       // petals match the canopy they fell from.
       sampleBlossomTint(this.rng, this.color);
-      this.mesh.setColorAt(i, this.color);
+      this.meshes[i % PETAL_VARIANT_COUNT].setColorAt(
+        (i / PETAL_VARIANT_COUNT) | 0,
+        this.color,
+      );
 
       if (this.rng() < 0.6) {
         // Pre-seed part of the flock mid-fall so the scene is not empty at
@@ -2098,7 +2237,9 @@ class FallingPetalSystem {
       }
     }
 
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    for (const mesh of this.meshes) {
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     this.update(0);
   }
 
@@ -2248,19 +2389,32 @@ class FallingPetalSystem {
         v.z += (targetZ - v.z) * Math.min(1, 1.5 * dt);
         p.addScaledVector(v, dt);
 
-        // Falling-leaf side slip perpendicular to the descent, with the
-        // rocking rotation phase-locked to the slip velocity and one slow
-        // tumble axis on top.
+        // Falling-leaf side slip: long slow arcs perpendicular to the
+        // descent. Spiral-mode petals add a helical drift around their
+        // fall axis on top.
         const phase = this.slipFreqs[i] * t + this.slipPhases[i];
         const slipVel =
           this.slipAmps[i] * this.slipFreqs[i] * Math.cos(phase);
-        p.x += this.slipDirXs[i] * slipVel * dt;
-        p.z += this.slipDirZs[i] * slipVel * dt;
-        const rock = this.rockAmps[i] * Math.cos(phase);
+        let latVX = this.slipDirXs[i] * slipVel;
+        let latVZ = this.slipDirZs[i] * slipVel;
+        const spiralR = this.spiralRads[i];
+        if (spiralR > 0) {
+          const sPhase = this.spiralRates[i] * t + this.slipPhases[i];
+          latVX += Math.cos(sPhase) * spiralR * this.spiralRates[i];
+          latVZ -= Math.sin(sPhase) * spiralR * this.spiralRates[i];
+        }
+        p.x += latVX * dt;
+        p.z += latVZ * dt;
+        // Bank into the actual lateral velocity (flow drift + slip +
+        // spiral): the card rolls about the axis perpendicular to where it
+        // is really sliding, so rocking always matches the trajectory.
+        const bank = this.rockAmps[i];
         r.set(
-          this.tiltX0s[i] + rock * this.slipDirZs[i],
+          this.tiltX0s[i] +
+            THREE.MathUtils.clamp((v.z + latVZ) * bank, -0.85, 0.85),
           this.yaw0s[i] + this.tumbleRates[i] * t,
-          this.tiltZ0s[i] - rock * this.slipDirXs[i],
+          this.tiltZ0s[i] -
+            THREE.MathUtils.clamp((v.x + latVX) * bank, -0.85, 0.85),
           "XYZ",
         );
 
@@ -2275,8 +2429,9 @@ class FallingPetalSystem {
         }
       }
 
-      // Scale-in on release, then a scale-out ramp as the petal sinks past
-      // the tree base into the void.
+      // Fade in from zero over ~0.4s at release (so recycled petals never
+      // pop into view), then a scale-out ramp as the petal sinks past the
+      // tree base into the void.
       const stateNow = this.states[i];
       const voidFade = clamp01(
         (p.y - PETAL_VOID_FADE_END) /
@@ -2285,17 +2440,22 @@ class FallingPetalSystem {
       const s =
         stateNow === PETAL_FALLING
           ? this.baseScales[i] *
-            Math.min(1, 0.15 + this.fallAges[i] * 3) *
+            smoothstep(0, 0.4, this.fallAges[i]) *
             voidFade
           : 0;
 
       this.quat.setFromEuler(r);
       this.scale.setScalar(s);
       this.matrix.compose(p, this.quat, this.scale);
-      this.mesh.setMatrixAt(i, this.matrix);
+      this.meshes[i % PETAL_VARIANT_COUNT].setMatrixAt(
+        (i / PETAL_VARIANT_COUNT) | 0,
+        this.matrix,
+      );
     }
 
-    this.mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of this.meshes) {
+      mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 }
 
@@ -3909,7 +4069,7 @@ class WeepingCherryGenerator {
       material,
       rng: this.rng,
     });
-    this.group.add(this.petals.mesh);
+    for (const mesh of this.petals.meshes) this.group.add(mesh);
   }
 
   private addDebugLobes() {
@@ -4228,6 +4388,18 @@ export default function WeepingCherryTreeCanvas({
       const springState: SpringState = { current: 0, velocity: 0 };
       let lastPointerTime = performance.now();
       let lastInteractionTime = lastPointerTime;
+      // Cursor rustle: the pointer unprojected onto the world z=0 plane
+      // through the trunk, spring-smoothed into uPointerPos, with a 0..1
+      // strength that eases up while the pointer moves over the canvas and
+      // decays to zero within ~1s of stillness or pointerleave. All scratch
+      // vectors preallocated; no raycasting against tree geometry.
+      const pointerWorldTarget = new THREE.Vector3(0, 6.5, 0);
+      const pointerWorldSmooth = new THREE.Vector3(0, 6.5, 0);
+      const pointerWorldVel = new THREE.Vector3();
+      const pointerUnproject = new THREE.Vector3();
+      let pointerRustleStrength = 0;
+      let pointerRustleActive = false;
+      let lastRustleMoveTime = 0;
 
       const markInteraction = () => {
         lastInteractionTime = performance.now();
@@ -4246,6 +4418,7 @@ export default function WeepingCherryTreeCanvas({
       const resetPointerParallax = () => {
         pointerParallaxTarget.x = 0;
         pointerParallaxTarget.y = 0;
+        pointerRustleActive = false;
       };
 
       const onPointerCapabilityChange = () => {
@@ -4278,6 +4451,27 @@ export default function WeepingCherryTreeCanvas({
           -1,
           1,
         );
+
+        // Rustle target: unproject the pointer through the camera onto the
+        // world z=0 plane (the plane the trunk stands in). Ray-plane math
+        // on preallocated vectors — no Raycaster, no geometry tests.
+        const ndcX =
+          ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+        const ndcY =
+          (0.5 - (event.clientY - rect.top) / Math.max(1, rect.height)) * 2;
+        pointerUnproject.set(ndcX, ndcY, 0.5).unproject(camera);
+        pointerUnproject.sub(camera.position);
+        if (Math.abs(pointerUnproject.z) > 1e-4) {
+          const planeT = -camera.position.z / pointerUnproject.z;
+          if (planeT > 0) {
+            pointerWorldTarget
+              .copy(pointerUnproject)
+              .multiplyScalar(planeT)
+              .add(camera.position);
+            pointerRustleActive = true;
+            lastRustleMoveTime = now;
+          }
+        }
       };
 
       const onPointerLeave = () => {
@@ -4351,7 +4545,11 @@ export default function WeepingCherryTreeCanvas({
           now - lastInteractionTime < activeFrameWindow ||
           now - lastPointerTime < activeFrameWindow;
         const shouldRenderFullRate =
-          !reportedReady || !introComplete || parallaxMoving || recentlyActive;
+          !reportedReady ||
+          !introComplete ||
+          parallaxMoving ||
+          recentlyActive ||
+          pointerRustleStrength > 0.02;
 
         if (
           !shouldRenderFullRate &&
@@ -4396,8 +4594,50 @@ export default function WeepingCherryTreeCanvas({
         pointerParallaxSmooth.y = THREE.MathUtils.clamp(springY.current, -1, 1);
         pointerParallaxSmooth.vy = springY.velocity;
 
+        // Cursor-rustle envelope: rises in ~0.3s while the pointer keeps
+        // moving over the canvas, decays to ~0 in about 1s once it goes
+        // still (320ms grace + rate-4.5 exponential) or leaves.
+        const rustleTarget =
+          !prefersReducedMotion &&
+          pointerRustleActive &&
+          now - lastRustleMoveTime < 320
+            ? 1
+            : 0;
+        pointerRustleStrength +=
+          (rustleTarget - pointerRustleStrength) *
+          Math.min(1, (rustleTarget > pointerRustleStrength ? 10 : 4.5) * dt);
+        if (pointerRustleStrength < 0.001) pointerRustleStrength = 0;
+
+        // Spring the rustle point after the target so the disturbance
+        // sweeps smoothly across the canopy instead of teleporting.
+        const springPX = dampSpring(
+          pointerWorldSmooth.x,
+          pointerWorldTarget.x,
+          pointerWorldVel.x,
+          42,
+          11,
+          dt,
+          springState,
+        );
+        pointerWorldSmooth.x = springPX.current;
+        pointerWorldVel.x = springPX.velocity;
+        const springPY = dampSpring(
+          pointerWorldSmooth.y,
+          pointerWorldTarget.y,
+          pointerWorldVel.y,
+          42,
+          11,
+          dt,
+          springState,
+        );
+        pointerWorldSmooth.y = springPY.current;
+        pointerWorldVel.y = springPY.velocity;
+
         if (tree.branchWindUniforms) {
           tree.branchWindUniforms.uWindTime.value = elapsed;
+          tree.branchWindUniforms.uPointerStrength.value =
+            pointerRustleStrength;
+          tree.branchWindUniforms.uPointerPos.value.copy(pointerWorldSmooth);
         }
 
         if (!introComplete) {
