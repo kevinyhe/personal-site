@@ -34,7 +34,7 @@ export default function Home() {
             negative side margins trim measured glyph sidebearings so ink, not
             the em box, is flush with the padding edges. */}
         <div className="relative">
-          <div className="absolute inset-x-0 bottom-16 flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:bottom-10 sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]">
+          <div className="absolute inset-x-8 bottom-24 flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:bottom-[72px] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]">
             {/* One shared baseline, both words the same size (0.62 of the
                 full-width base formula — the largest that keeps a gap
                 between the words on one line). */}
@@ -43,7 +43,7 @@ export default function Home() {
             </span>
             {/* Apparel Regular Italic — the reference site's own cut; a real
                 Bold Italic (700) is loaded too if more weight is wanted. */}
-            <span className="mr-[-0.1em] text-[0.58em] font-normal font-serif-display italic tracking-[-0.08em] mix-blend-difference">
+            <span className="mr-0 text-[0.58em] font-normal font-serif-display italic tracking-[-0.08em] mix-blend-difference">
               He.
             </span>
           </div>
