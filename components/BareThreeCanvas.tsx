@@ -802,6 +802,7 @@ type BranchWindUniforms = {
   // world-space falloff radius.
   uPointerPos: { value: THREE.Vector3 };
   uPointerRayDir: { value: THREE.Vector3 };
+  uPointerVel: { value: THREE.Vector3 };
   uPointerStrength: { value: number };
   uPointerRadius: { value: number };
 };
@@ -861,6 +862,7 @@ const WIND_SHADER_CHUNK = `
   uniform float uWindStrength;
   uniform vec3 uPointerPos;
   uniform vec3 uPointerRayDir;
+  uniform vec3 uPointerVel;
   uniform float uPointerStrength;
   uniform float uPointerRadius;
 
@@ -875,28 +877,27 @@ const WIND_SHADER_CHUNK = `
     return (1.0 - smoothstep(0.0, uPointerRadius, dist)) * uPointerStrength;
   }
 
-  // Cursor rustle: a gentle push off the cursor ray plus a high-frequency
-  // shake, gated by arborPointerInfluence and scaled by the same per-point
-  // wind amplitudes as arborWindOffset, so the trunk and thick limbs barely
-  // move while twig tips (and the blossoms baking the same vec4s) respond
-  // most. The shake phase derives from the wind-tier phases, so a twig
-  // family and the flowers riding it shake coherently.
+  // Cursor rustle: branches are BRUSHED along the pointer's motion plus a
+  // small coherent per-branch shake, gated by arborPointerInfluence and
+  // scaled by the same per-point wind amplitudes as arborWindOffset, so the
+  // trunk and thick limbs barely move while twig tips (and the blossoms
+  // baking the same vec4s) respond most. A whole twig family moves in ONE
+  // direction — an earlier radial push away from the cursor made nearby
+  // geometry expand outward, which read as swelling instead of movement.
   vec3 arborPointerRustle(vec3 worldPos, vec4 wp1, vec4 wp2) {
-    vec3 rel = worldPos - uPointerPos;
-    vec3 perp = rel - dot(rel, uPointerRayDir) * uPointerRayDir;
-    float dist = length(perp);
-    float influence =
-      (1.0 - smoothstep(0.0, uPointerRadius, dist)) * uPointerStrength;
+    float influence = arborPointerInfluence(worldPos);
     float bendWeight =
       clamp(wp1.y * 2.0 + wp2.x * 3.5 + wp2.z * 20.0, 0.0, 1.0);
     float w = influence * bendWeight;
-    vec3 away = perp / max(dist, 0.2);
+    vec3 brush = uPointerVel * 0.014;
+    float brushLen = length(brush);
+    brush *= min(brushLen, 0.09) / max(brushLen, 1e-4);
     float phase = wp1.w * 2.0 + wp1.x;
     float shake =
       sin(uWindTime * 16.0 + phase) +
       0.5 * sin(uWindTime * 23.0 + phase * 1.9);
     vec3 shakeDir = normalize(vec3(sin(phase * 3.7), 0.35, cos(phase * 2.9)));
-    return (away * 0.055 + shakeDir * (shake * 0.028)) * w;
+    return (brush + shakeDir * (shake * 0.024)) * w;
   }
 
   float arborGust(float t, float phase) {
@@ -951,6 +952,7 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     uWindStrength: { value: 1 },
     uPointerPos: { value: new THREE.Vector3(0, 6.5, 0) },
     uPointerRayDir: { value: new THREE.Vector3(0, 0, -1) },
+    uPointerVel: { value: new THREE.Vector3() },
     uPointerStrength: { value: 0 },
     uPointerRadius: { value: 2 },
   };
@@ -960,6 +962,7 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
     shader.uniforms.uPointerPos = uniforms.uPointerPos;
     shader.uniforms.uPointerRayDir = uniforms.uPointerRayDir;
+    shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.vertexShader =
@@ -995,6 +998,7 @@ function applyBlossomWind(
     shader.uniforms.uWindStrength = uniforms.uWindStrength;
     shader.uniforms.uPointerPos = uniforms.uPointerPos;
     shader.uniforms.uPointerRayDir = uniforms.uPointerRayDir;
+    shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
     shader.uniforms.uBlossomGrowth = growthUniform;
@@ -4655,6 +4659,10 @@ export default function WeepingCherryTreeCanvas({
           tree.branchWindUniforms.uPointerStrength.value =
             pointerRustleStrength;
           tree.branchWindUniforms.uPointerPos.value.copy(pointerWorldSmooth);
+          // Spring velocity of the pointer point drives the brush direction:
+          // branches move with the cursor's motion, and settle as the spring
+          // does.
+          tree.branchWindUniforms.uPointerVel.value.copy(pointerWorldVel);
           // Ray direction from the live camera through the smoothed pointer
           // point — the camera dollies and parallaxes, so this refreshes
           // every frame rather than only on pointer moves.
