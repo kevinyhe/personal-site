@@ -90,7 +90,8 @@ void main() {
   float luma = dot(cellColor, vec3(0.2126, 0.7152, 0.0722));
   // Bayer jitter staggers the tone step from cell to cell so gradients
   // break into dither texture instead of concentric rings.
-  float tone = clamp(luma + (bayer8(cell) - 0.5) * 0.22, 0.0, 1.0);
+  float bayerJitter = bayer8(cell);
+  float tone = clamp(luma + (bayerJitter - 0.5) * 0.22, 0.0, 1.0);
 
   // Print-style sizing: dot area tracks tone, sqrt turns area into radius
   // (in cell units). Cells darker than the floor print nothing, so the
@@ -102,8 +103,12 @@ void main() {
     ? 0.0
     : 1.0 - smoothstep(max(radius - edge, 0.0), radius + edge, dist);
 
-  // Ink quantized to 5 levels per channel, printed on the void color.
-  vec3 ink = floor(cellColor * 4.0 + 0.5) * 0.25;
+  // Dithered quantization: jittering each cell's rounding by its Bayer
+  // value makes adjacent cells alternate between neighbouring levels, so
+  // smooth gradients stay smooth at viewing distance instead of breaking
+  // into contour bands (a hard floor posterized the dark backdrop into
+  // topographic layers).
+  vec3 ink = floor(cellColor * 6.0 + vec3(bayerJitter)) / 6.0;
   vec3 voidInk = vec3(10.0 / 255.0); // #0a0a0a
   vec3 dotted = mix(voidInk, ink, inDot);
 
@@ -130,6 +135,8 @@ void main() {
 
 const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
 uniform float uTime;
+uniform vec2 uPointer;
+uniform float uPointerForce;
 uniform vec3 uBase;
 uniform vec3 uDeep;
 uniform vec3 uCore;
@@ -141,6 +148,31 @@ varying vec2 vUv;
 float shaft(float x, float c, float w) {
   float d = (x - c) / w;
   return exp(-d * d);
+}
+
+float nhash(vec2 q) {
+  return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float vnoise(vec2 q) {
+  vec2 i = floor(q);
+  vec2 f = fract(q);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(nhash(i), nhash(i + vec2(1.0, 0.0)), u.x),
+    mix(nhash(i + vec2(0.0, 1.0)), nhash(i + vec2(1.0, 1.0)), u.x),
+    u.y);
+}
+
+float fbm3(vec2 q) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 3; i++) {
+    v += a * vnoise(q);
+    q = q * 2.03 + vec2(17.2, -11.1);
+    a *= 0.52;
+  }
+  return v;
 }
 
 void main() {
@@ -171,7 +203,23 @@ void main() {
   float vTop = clamp((0.26 - p.y) / 0.50, 0.0, 1.3);
   float vFade =
     1.0 - smoothstep(0.0, 1.25, vTop + 0.10 * sin(x * 2.5 + t * 0.06));
-  float I = s * vFade;
+  // Flame field: domain-warped noise rising through the curtains, so the
+  // washes carry slow upward-licking tongues instead of holding still. The
+  // pointer bends the warp around itself and adds a soft local glow, like
+  // the reference's mouse-reactive flames.
+  vec2 fp = p * vec2(3.0, 4.4);
+  float rise = t * 0.5;
+  vec2 warp = vec2(
+    fbm3(fp * 0.9 + vec2(0.0, -rise * 0.6)),
+    fbm3(fp * 0.9 + vec2(5.2, 1.3 - rise * 0.5))) - 0.5;
+  vec2 toPtr = p - uPointer;
+  float ptrInf = exp(-dot(toPtr, toPtr) / 0.05) * uPointerForce;
+  warp += (toPtr / max(length(toPtr), 0.08)) * ptrInf * 0.5;
+  float flame = fbm3(fp + warp * 1.8 + vec2(0.0, -rise));
+  // Broad lick shaping — soft tongues, never hard edges.
+  float lick = smoothstep(0.2, 1.0, flame);
+
+  float I = s * vFade * (0.55 + 0.95 * lick) + ptrInf * 0.45;
 
   // Intensity ramp: deep rose-maroon shadows, saturated pink core, warm
   // light-pink highlights where curtains overlap near the top.
@@ -4700,6 +4748,8 @@ export default function WeepingCherryTreeCanvas({
       // every quality tier.
       const voidBackdropUniforms = {
         uTime: { value: 0 },
+        uPointer: { value: new THREE.Vector2(0, 0.1) },
+        uPointerForce: { value: 0 },
         uBase: { value: new THREE.Color(0x0a0a0a) },
         // Curtain ramp: deep rose-maroon -> saturated pink -> warm light
         // pink, the reference's maroon/red/orange ramp shifted to pink.
@@ -4934,6 +4984,22 @@ export default function WeepingCherryTreeCanvas({
         const dt = Math.min(0.033, clock.getDelta());
         const elapsed = clock.elapsedTime;
         voidBackdropUniforms.uTime.value = elapsed;
+        // Project the pointer ray onto the backdrop plane (z = -26) and map
+        // the hit into the shader's aspect-corrected p-space, so the flame
+        // field bends around where the cursor visually sits on the backdrop.
+        if (tree.branchWindUniforms) {
+          const rayDir = tree.branchWindUniforms.uPointerRayDir.value;
+          if (rayDir.z < -1e-4) {
+            const rayT = (-26 - camera.position.z) / rayDir.z;
+            const hitX = camera.position.x + rayDir.x * rayT;
+            const hitY = camera.position.y + rayDir.y * rayT;
+            voidBackdropUniforms.uPointer.value.set(
+              ((hitX - 2.6) / 110) * 1.774,
+              (hitY - 5.4) / 62,
+            );
+          }
+          voidBackdropUniforms.uPointerForce.value = pointerRustleStrength;
+        }
         tree.petals?.update(
           dt,
           elapsed,
