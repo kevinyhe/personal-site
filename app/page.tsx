@@ -42,13 +42,12 @@ export default function Home() {
             className="absolute inset-x-0 bottom-0 flex flex-col text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:-bottom-6 sm:text-[clamp(4rem,min(calc((100vw_-_96px)/2.165),72vh),54rem)]"
             style={{ textShadow: "0 2px 34px rgba(10,10,10,0.6), 0 0 8px rgba(10,10,10,0.35)" }}
           >
-            <span className="ml-[-0.095em] self-start font-light tracking-[-0.05em]">
+            {/* Base font-size is the Kevin-fills-width formula; both words
+                are em fractions of it: Kevin at 0.52, He. at 0.52 * 1.33. */}
+            <span className="ml-[-0.095em] self-start text-[0.52em] font-light tracking-[-0.05em]">
               Kevin
             </span>
-            {/* Half-size line: two full-width lines cannot fit the viewport
-                height, so He. tucks into the empty band under Kevin's
-                baseline instead of colliding with its letters. */}
-            <span className="mr-[-0.1em] mt-[-0.34em] self-end text-[0.52em] font-serif-display italic">
+            <span className="mr-[-0.1em] mt-[-0.1em] self-end text-[0.69em] font-serif-display italic">
               He.
             </span>
           </div>
