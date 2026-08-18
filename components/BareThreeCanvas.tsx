@@ -161,26 +161,26 @@ void main() {
   // Curtain shafts: a dominant pair right of center, a mid drifter, and a
   // faint far-left curtain; centers drift on 1-3 minute periods.
   float s = 0.0;
-  s += 1.00 * shaft(x, 0.17 + 0.06 * sin(t * 0.050), 0.22);
-  s += 0.85 * shaft(x, 0.35 + 0.05 * sin(t * 0.041 + 2.0), 0.16);
-  s += 0.55 * shaft(x, -0.05 + 0.07 * sin(t * 0.033 + 4.1), 0.11);
-  s += 0.28 * shaft(x, -0.31 + 0.05 * sin(t * 0.046 + 1.2), 0.10);
+  s += 1.00 * shaft(x, 0.17 + 0.06 * sin(t * 0.050), 0.30);
+  s += 0.85 * shaft(x, 0.35 + 0.05 * sin(t * 0.041 + 2.0), 0.22);
+  s += 0.55 * shaft(x, -0.05 + 0.07 * sin(t * 0.033 + 4.1), 0.17);
+  s += 0.28 * shaft(x, -0.31 + 0.05 * sin(t * 0.046 + 1.2), 0.15);
 
   // Vertical envelope: full strength at the top edge, ragged per-shaft
   // dissolve (via the wobbled x) reaching black ~65% down the frame.
   float vTop = clamp((0.26 - p.y) / 0.50, 0.0, 1.3);
   float vFade =
-    1.0 - smoothstep(0.12, 0.92, vTop + 0.16 * sin(x * 5.0 + t * 0.06));
+    1.0 - smoothstep(0.0, 1.25, vTop + 0.10 * sin(x * 2.5 + t * 0.06));
   float I = s * vFade;
 
   // Intensity ramp: deep rose-maroon shadows, saturated pink core, warm
   // light-pink highlights where curtains overlap near the top.
   vec3 col = uBase;
-  col += uDeep * smoothstep(0.02, 0.42, I);
-  col = mix(col, uCore, smoothstep(0.34, 0.85, I));
-  col = mix(col, uHot, smoothstep(1.1, 2.0, I) * 0.55);
+  col += uDeep * smoothstep(0.0, 0.7, I);
+  col = mix(col, uCore, smoothstep(0.3, 1.2, I));
+  col = mix(col, uHot, smoothstep(1.0, 2.4, I) * 0.5);
   // Faint violet bleed on the far right, like the reference's edge tint.
-  col += uViolet * (0.16 * shaft(x, 0.45, 0.12) * vFade);
+  col += uViolet * (0.14 * shaft(x, 0.45, 0.18) * vFade);
 
   // Mild rolloff keeps overlapping peaks luminous but not clipped.
   col = col / (1.0 + 0.35 * col);
@@ -2169,11 +2169,82 @@ function createFallingPetalGeometry(variant: number) {
   return geometry;
 }
 
-// Petal lifecycle: HELD (invisible at a blossom anchor, waiting for a gust
-// to shake it loose) -> FALLING (drag-limited descent with falling-leaf
-// side-slip and rocking; below the tree base the petal shrinks away into
-// the void, then recycles to a new anchor). All per-petal parameters are
-// precomputed at construction; update() allocates nothing.
+// ---------------------------------------------------------------------------
+// Falling petals
+// ---------------------------------------------------------------------------
+// The descent is integrated from flat-plate aerodynamics instead of being
+// drawn with scripted position offsets, so the zig-zag, the speed pulsing,
+// the long glides and the steady sideways skate of a tumbling petal all fall
+// out of the force balance rather than being animated in by hand.
+//
+// FORCES — the quasi-steady core of Andersen, Pesavento & Wang, "Unsteady
+// aerodynamics of fluttering and tumbling plates", J. Fluid Mech. 541 (2005):
+//
+//   * A thin plate at angle of attack a carries a resultant force essentially
+//     normal to its own face, of size ~ 1/2 rho C_N A U^2 sin(a). Resolved
+//     along and across the flow that IS the textbook pair
+//         C_D = C_N sin^2(a),   C_L = (C_N / 2) sin(2a),
+//     so lift and drag come out of one term instead of two curves, and they
+//     can never disagree about which way the petal is facing.
+//   * A skin-friction floor C_D0, so an edge-on petal still has a terminal
+//     speed instead of accelerating without limit.
+//   * A rotational (Magnus) term ~ rho c^2 (omega x u). This is what makes a
+//     tumbling petal skate steadily off to one side the way a topspun ball
+//     dives. Without it a tumbler falls straight down and looks wrong.
+//
+// Divided through by mass it all collapses to ONE number per petal: broadside
+// terminal speed is sqrt(g / kAero), so kAero = g / vTerm^2. A sakura petal
+// is ~4 mg over ~1 cm^2, and
+//     sqrt(2 m g / (rho C_D A)) = sqrt(2*4e-6*9.8 / (1.2*1.2*1e-4)) ~ 0.75 m/s
+// which is the 0.5-1.0 m/s you get off video of a cherry in a breeze. One
+// world unit is ~1 m here (the trunk is 5.4 u for a ~6 m tree), so the
+// numbers are used as they are. A petal now crosses the frame in ~7 s; the
+// old scripted version took ~30 s, which is why it read as drifting confetti.
+//
+// ATTITUDE is prescribed rather than solved — a full rotational solve with
+// added inertia is the one part of that paper not worth its cost here. It is
+// prescribed at the frequency plates are measured to flutter at, which is a
+// Strouhal law: f = St * U / c, St ~ 0.15-0.25. A 0.13 u wide petal falling
+// at 0.75 u/s therefore flips about once a second, and small petals visibly
+// flicker faster than big ones. Everything downstream of the attitude — the
+// forces, the path — is computed, so the pitch and the trajectory always
+// agree.
+//
+// REGIMES follow Field, Klaus, Moore & Nori, Nature 388 (1997), which showed
+// a falling plate settles into one of a few behaviours depending on its
+// dimensionless moment of inertia:
+//   FLUTTER  side-to-side rocking: broadside and stalled at each turn,
+//            inclined and gliding fast in between.
+//   TUMBLE   end-over-end rotation with a steady Magnus drift to one side.
+//   CHAOTIC  flutter that occasionally goes over the top into a few tumbles
+//            and then recovers — the transition that paper is named for.
+//   SPIN     a cupped petal autorotating about a near-vertical axis at a
+//            fixed tilt, so its lift sweeps a circle: a descending helix.
+const PETAL_G = 9.8; // u/s^2, one world unit ~ 1 m
+// Edge-on skin drag as a fraction of the normal-force coefficient. Sets how
+// hard a petal accelerates when it knifes through the flow mid-flip.
+const PETAL_CD0_RATIO = 0.07;
+// Rotational-lift gain. At 0 a tumbler falls straight down, which is wrong;
+// much above 1 it skates sideways faster than it falls and floats. 0.7 lands
+// a tumbler at ~0.45 u/s of steady side drift, which is what the trace shows.
+const PETAL_MAGNUS = 0.7;
+// Non-dimensional tumbling rate, omega * c / U. Measured values sit near
+// 0.4-0.9 for plates of this aspect ratio.
+const PETAL_TUMBLE_RATE = 0.6;
+// Flutter attitude is only meaningful at plausible rates: clamp so a gust
+// cannot drive the pitch faster than the frame can resolve.
+const PETAL_RATE_MIN = 1.5;
+const PETAL_RATE_MAX = 12;
+
+const PETAL_MODE_FLUTTER = 0;
+const PETAL_MODE_TUMBLE = 1;
+const PETAL_MODE_CHAOTIC = 2;
+const PETAL_MODE_SPIN = 3;
+
+// Petal lifecycle: HELD (invisible at a blossom anchor, waiting for a gust to
+// work it loose) -> FALLING (aerodynamic descent; below the tree base the
+// petal shrinks away into the void, then recycles to a new anchor). All
+// per-petal constants are precomputed; update() allocates nothing.
 const PETAL_HELD = 0;
 const PETAL_FALLING = 1;
 // With no ground, petals dissolve as they sink past the frame's bottom edge
@@ -2188,17 +2259,21 @@ const PETAL_VOID_FADE_END = -0.75;
 const FLOW_NOISE_SCALE = 0.12; // world -> noise units (~1 big swirl per 8u)
 const FLOW_CURL_EPS = 0.35; // finite-difference step, in noise units
 const FLOW_CURL_STRENGTH = 1.6; // horizontal swirl speed at full gust (u/s)
-// Vertical channel scale (u/s). Kept just above the ~0.2-0.4 terminal band
-// so updrafts visibly slow a petal and occasionally float it, without
-// petals hovering indefinitely.
-const FLOW_LIFT_STRENGTH = 0.45;
+// Vertical channel scale (u/s). Kept below the ~0.6-0.95 terminal band so
+// updrafts visibly slow a petal and occasionally float it, without petals
+// hovering indefinitely.
+const FLOW_LIFT_STRENGTH = 0.6;
 // Gust front that travels downwind across the canopy: modulates both petal
 // release and field strength, so detachment and acceleration sweep through
 // the tree as a moving wave instead of firing uniformly at random.
 const GUST_WAVE_LENGTH = 7; // world units crest-to-crest
 const GUST_WAVE_SPEED = 0.45; // crest travels at LENGTH*SPEED ~ 3.2 u/s
 // Gentle helical swirl in the wake trailing downwind of the trunk.
-const HELIX_STRENGTH = 0.22;
+const HELIX_STRENGTH = 0.28;
+
+function wrapAngle(a: number) {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
 
 class FallingPetalSystem {
   // One InstancedMesh per loose-petal shape variant; petal i lives in
@@ -2209,37 +2284,55 @@ class FallingPetalSystem {
   private anchors: THREE.Vector3[] | null;
   private positions: THREE.Vector3[] = [];
   private velocities: THREE.Vector3[] = [];
-  private rotations: THREE.Euler[] = [];
   private states: Uint8Array;
-  // HELD: remaining release delay (gust-scaled). SETTLED: remaining fade.
+  // HELD: remaining release delay (gust-scaled).
   private timers: Float32Array;
   private fallAges: Float32Array;
+  private modes: Uint8Array;
+  // Broadside terminal speed, and the single aero coefficient g / vTerm^2
+  // that reproduces it.
   private vTerms: Float32Array;
-  private slipAmps: Float32Array;
-  private slipFreqs: Float32Array;
-  private slipPhases: Float32Array;
-  private slipDirXs: Float32Array;
-  private slipDirZs: Float32Array;
-  private rockAmps: Float32Array;
-  // Spiral-descent mode (~25% of petals): helical drift around the fall
-  // axis. Radius 0 marks the ordinary gliding mode.
-  private spiralRads: Float32Array;
-  private spiralRates: Float32Array;
-  private tumbleRates: Float32Array;
-  private tiltX0s: Float32Array;
-  private tiltZ0s: Float32Array;
-  private yaw0s: Float32Array;
+  private kAeros: Float32Array;
+  // Rendered petal width. Sets the flutter frequency through f = St U / c,
+  // so this must track baseScales.
+  private chords: Float32Array;
+  private strouhals: Float32Array;
+  // Airspeed relaxed over ~0.5 s. Pitch rate is driven off this rather than
+  // the instantaneous speed because a real plate has rotational inertia and
+  // does not re-time its flip inside a single beat. Feeding it the raw speed
+  // instead correlates the rotation with the drag pulse and cancels the
+  // Magnus drift outright.
+  private uSmooths: Float32Array;
+  // Azimuth of the vertical plane the petal rocks in, and its drift rate
+  // (fast, for SPIN petals: that is the autorotation).
+  private phis: Float32Array;
+  private phiRates: Float32Array;
+  // Plate inclination from horizontal, its flutter half-swing and phase.
+  private thetas: Float32Array;
+  private thetaAmps: Float32Array;
+  private thetaPhases: Float32Array;
+  // Which way a tumbler rotates, hence which way its Magnus force points.
+  private spinDirs: Float32Array;
+  // CHAOTIC petals only: fall-age at which the current tumble burst ends and
+  // at which the next one starts.
+  private burstEnds: Float32Array;
+  private nextBursts: Float32Array;
   private baseScales: Float32Array;
   // Weighted anchor pick table (indices into this.anchors, peripheral and
   // low anchors repeated more often). Built once in the constructor so
   // hold() samples it without allocating.
   private anchorPick: Uint16Array | null = null;
   private matrix = new THREE.Matrix4();
-  private quat = new THREE.Quaternion();
+  private axisC = new THREE.Vector3();
+  private axisS = new THREE.Vector3();
+  private axisN = new THREE.Vector3();
   private scale = new THREE.Vector3();
   private color = new THREE.Color();
   private tmp = new THREE.Vector3();
-  private wind = new THREE.Vector3(0.16, 0, 0.05);
+  // Base air stream. Peak horizontal air speed is this times the gust
+  // multiplier, ~1.1 u/s, so at the crest a petal is carried sideways faster
+  // than it falls.
+  private wind = new THREE.Vector3(0.22, 0, 0.07);
   // Unit wind direction in the horizontal plane (set in the constructor).
   private windDirX = 1;
   private windDirZ = 0;
@@ -2321,63 +2414,73 @@ class FallingPetalSystem {
     this.states = new Uint8Array(count);
     this.timers = new Float32Array(count);
     this.fallAges = new Float32Array(count);
+    this.modes = new Uint8Array(count);
     this.vTerms = new Float32Array(count);
-    this.slipAmps = new Float32Array(count);
-    this.slipFreqs = new Float32Array(count);
-    this.slipPhases = new Float32Array(count);
-    this.slipDirXs = new Float32Array(count);
-    this.slipDirZs = new Float32Array(count);
-    this.rockAmps = new Float32Array(count);
-    this.spiralRads = new Float32Array(count);
-    this.spiralRates = new Float32Array(count);
-    this.tumbleRates = new Float32Array(count);
-    this.tiltX0s = new Float32Array(count);
-    this.tiltZ0s = new Float32Array(count);
-    this.yaw0s = new Float32Array(count);
+    this.kAeros = new Float32Array(count);
+    this.chords = new Float32Array(count);
+    this.strouhals = new Float32Array(count);
+    this.uSmooths = new Float32Array(count);
+    this.phis = new Float32Array(count);
+    this.phiRates = new Float32Array(count);
+    this.thetas = new Float32Array(count);
+    this.thetaAmps = new Float32Array(count);
+    this.thetaPhases = new Float32Array(count);
+    this.spinDirs = new Float32Array(count);
+    this.burstEnds = new Float32Array(count);
+    this.nextBursts = new Float32Array(count);
     this.baseScales = new Float32Array(count);
 
     for (let i = 0; i < count; i += 1) {
       this.positions.push(new THREE.Vector3());
       this.velocities.push(new THREE.Vector3());
-      this.rotations.push(new THREE.Euler());
-      // Terminal fall speed: a low, tight band (~0.2-0.4 u/s) so a full
-      // descent through the frame takes ~25-35s and each petal's path
-      // stays readable. Drag relaxes v.y toward this instead of gravity
-      // accelerating without bound.
-      this.vTerms[i] = this.rand(0.2, 0.38);
-      // Falling-leaf side slip: long, slow lateral arcs perpendicular to
-      // the descent. Periods of ~11-25s with wide amplitude keep the
-      // lateral speed gentle while each sweep spans a readable arc.
-      const slipAngle = this.rand(0, TAU);
-      this.slipDirXs[i] = Math.cos(slipAngle);
-      this.slipDirZs[i] = Math.sin(slipAngle);
-      this.slipAmps[i] = this.rand(0.3, 0.55);
-      this.slipFreqs[i] = this.rand(0.25, 0.55);
-      this.slipPhases[i] = this.rand(0, TAU);
-      // Lateral speeds are lower across the board, so the bank gain is
-      // raised to keep the roll visible.
-      this.rockAmps[i] = this.rand(0.7, 1.25);
-      this.tumbleRates[i] = this.rand(0.18, 0.5) * (this.rng() < 0.5 ? -1 : 1);
-      this.tiltX0s[i] = this.rand(-0.45, 0.45);
-      this.tiltZ0s[i] = this.rand(-0.45, 0.45);
-      this.yaw0s[i] = this.rand(0, TAU);
-      // ~25% of petals descend in a slow helix around their fall axis; the
-      // yaw follows the spiral rate so the petal faces along its arc, and
-      // the plain side slip is damped so the helix stays clean.
-      if (this.rng() < 0.25) {
-        this.spiralRads[i] = this.rand(0.5, 1.0);
-        this.spiralRates[i] =
-          this.rand(0.5, 1.0) * (this.rng() < 0.5 ? -1 : 1);
-        this.slipAmps[i] *= 0.35;
-        this.tumbleRates[i] = this.spiralRates[i] * 0.9;
+      // Size is biased small: r^2 puts most of the flock near the bottom of
+      // the band and leaves only a few large petals, which is both what a
+      // real tree sheds and what keeps any one petal from reading as a
+      // dinner plate.
+      const r = this.rng();
+      this.baseScales[i] = 0.58 + 0.42 * r * r;
+      // Terminal speed spans the measured sakura band. It is deliberately
+      // NOT correlated with size: for geometrically similar petals of the
+      // same tissue, mass and area both scale with the square of length, so
+      // sqrt(2mg / rho C_D A) is size-independent. The spread here comes
+      // from how curled and how dried each petal is.
+      this.vTerms[i] = this.rand(0.55, 0.85);
+      this.kAeros[i] = PETAL_G / (this.vTerms[i] * this.vTerms[i]);
+      // Rendered width, which is what sets the flutter frequency.
+      this.chords[i] = 0.186 * this.baseScales[i];
+      this.strouhals[i] = this.rand(0.1, 0.15);
+      this.uSmooths[i] = this.vTerms[i];
+      this.phis[i] = this.rand(0, TAU);
+      // Half-swing of the rock. The petal glides along its own plane, so the
+      // path leaves vertical by (90deg - theta): swing too far and it just
+      // knifes straight down. 40-57deg maximises the sideways reach, and
+      // traces out ~2.5 petal lengths of side-to-side travel per beat at
+      // every size in the band.
+      this.thetaAmps[i] = this.rand(0.7, 1.0);
+      this.thetaPhases[i] = this.rand(0, TAU);
+      this.spinDirs[i] = this.rng() < 0.5 ? -1 : 1;
+
+      // Regime mix. Flutter dominates, as it does for real plates in this
+      // inertia range; the rest add the variety you actually see under a
+      // cherry in wind.
+      const roll = this.rng();
+      if (roll < 0.5) {
+        this.modes[i] = PETAL_MODE_FLUTTER;
+        this.phiRates[i] = this.rand(-0.13, 0.13);
+      } else if (roll < 0.72) {
+        this.modes[i] = PETAL_MODE_TUMBLE;
+        this.phiRates[i] = this.rand(-0.1, 0.1);
+      } else if (roll < 0.92) {
+        this.modes[i] = PETAL_MODE_CHAOTIC;
+        this.phiRates[i] = this.rand(-0.13, 0.13);
       } else {
-        this.spiralRads[i] = 0;
-        this.spiralRates[i] = 0;
+        // Autorotation: a cupped petal locks at a shallow tilt and spins
+        // about the vertical, so its lift sweeps a circle.
+        this.modes[i] = PETAL_MODE_SPIN;
+        this.thetas[i] = this.rand(0.42, 0.8) * this.spinDirs[i];
+        this.phiRates[i] = this.rand(2.2, 4.2) * this.spinDirs[i];
       }
-      // Scale band chosen so a petal covers ~2-4 halftone cells on screen:
-      // at the hero framing one world unit is ~67 css px, so the 0.33-long
-      // card at 0.62-1.0 scale spans ~14-22 px long by ~10-17 px wide.
-      this.baseScales[i] = this.rand(0.62, 1.0);
+
       // Same widened instance palette as the attached blossoms, so loose
       // petals match the canopy they fell from.
       sampleBlossomTint(this.rng, this.color);
@@ -2389,19 +2492,17 @@ class FallingPetalSystem {
       if (this.rng() < 0.45) {
         // Pre-seed part of the flock mid-fall so the scene is not empty at
         // load: drop each petal a random way down its own descent and shift
-        // it downwind by the drift it would have accumulated. The drift
-        // time is capped so slow petals seeded near the bottom do not
-        // start beyond the recycle bounds.
+        // it downwind by the drift it would have accumulated.
         this.hold(i, 0);
-        this.release(i);
+        this.release(i, 0.5);
         const p = this.positions[i];
         const drop =
           this.rng() * Math.max(0, p.y - PETAL_VOID_FADE_START - 0.2);
-        const driftT = Math.min(12, drop / this.vTerms[i]);
+        const driftT = Math.min(7, drop / this.vTerms[i]);
         this.fallAges[i] = driftT;
         p.y -= drop;
-        p.x += this.wind.x * this.rand(0.6, 1.6) * driftT;
-        p.z += this.wind.z * this.rand(0.6, 1.6) * driftT;
+        p.x += this.wind.x * this.rand(1, 2.6) * driftT;
+        p.z += this.wind.z * this.rand(1, 2.6) * driftT;
         this.velocities[i].y = -this.vTerms[i] * this.rand(0.6, 1);
       } else {
         this.hold(i, this.rand(0.5, 8));
@@ -2456,19 +2557,32 @@ class FallingPetalSystem {
     this.timers[i] = delay;
   }
 
-  private release(i: number) {
+  private release(i: number, gustHere: number) {
     const p = this.positions[i];
     const v = this.velocities[i];
-    // Gentle initial kick: outward from the trunk axis plus a slight drop.
+    // The gust that tore the petal loose also flings it: the branch tip is
+    // moving downwind at the moment of separation, so the petal inherits
+    // some of that, on top of a small outward push off the corolla.
     const radial = Math.hypot(p.x, p.z) || 1;
-    const out = this.rand(0.02, 0.12);
+    const out = this.rand(0.03, 0.16);
+    const fling = gustHere * this.rand(0.35, 1.05);
     v.set(
-      (p.x / radial) * out + this.rand(-0.03, 0.03),
-      this.rand(-0.12, -0.02),
-      (p.z / radial) * out + this.rand(-0.03, 0.03),
+      (p.x / radial) * out + this.windDirX * fling + this.rand(-0.05, 0.05),
+      this.rand(-0.14, 0.02),
+      (p.z / radial) * out + this.windDirZ * fling + this.rand(-0.05, 0.05),
     );
     this.states[i] = PETAL_FALLING;
     this.fallAges[i] = 0;
+    // A petal separates roughly flat and only develops its instability once
+    // it has some airspeed, so start it near broadside.
+    if (this.modes[i] !== PETAL_MODE_SPIN) {
+      this.thetas[i] = this.rand(-0.25, 0.25);
+      this.thetaPhases[i] = this.rand(-0.2, 0.2);
+    }
+    this.burstEnds[i] = 0;
+    this.nextBursts[i] = this.rand(1.5, 5);
+    // It has no airspeed yet, so it has nothing to flip against.
+    this.uSmooths[i] = 0.12;
   }
 
   // Smooth time-evolving velocity field shared by every petal. The
@@ -2499,8 +2613,8 @@ class FallingPetalSystem {
   update(dt: number, windTime = 0, windStrength = 1) {
     const wind = this.wind;
     const count = this.positions.length;
-    // Same gust envelope as the branch/blossom wind shaders, so airborne
-    // petals drift harder exactly when the canopy leans.
+    // Same gust envelope as the branch/blossom wind shaders, so petals tear
+    // loose and accelerate exactly when the canopy leans.
     const gust = arborGustEnvelope(windTime, 0) * windStrength;
     // Traveling gust front: a plane wave sweeping downwind. Each petal folds
     // its own position into the phase, so both detachment and flow strength
@@ -2513,8 +2627,6 @@ class FallingPetalSystem {
     for (let i = 0; i < count; i += 1) {
       const p = this.positions[i];
       const v = this.velocities[i];
-      const r = this.rotations[i];
-      const state = this.states[i];
 
       // 0..1 crest of the traveling front at this petal, squared to sharpen
       // the leading edge, folded with the global gust envelope.
@@ -2524,25 +2636,25 @@ class FallingPetalSystem {
           Math.sin(
             TAU * ((p.x * dirX + p.z * dirZ) * invWaveLen - wavePhaseT),
           );
-      const gustHere = gust * (0.45 + 0.9 * wave * wave);
+      const gustHere = gust * (0.4 + 0.95 * wave * wave);
 
-      if (state === PETAL_HELD) {
+      if (this.states[i] === PETAL_HELD) {
         // Detachment rides the front: held petals barely age while the crest
         // is elsewhere and shed in a sweep as it passes over their anchor.
-        // The low base rate (with the longer hold delays) keeps the
-        // airborne share down so individual trajectories read.
-        const releaseRate = 0.1 + Math.max(0, gustHere - 0.5) * 5.5;
+        // The threshold is most of the way up the envelope, so a shower of
+        // petals is visibly the consequence of the canopy being pushed over.
+        const releaseRate = 0.06 + Math.max(0, gustHere - 0.55) * 8;
         this.timers[i] -= dt * releaseRate;
-        if (this.timers[i] <= 0) this.release(i);
-      } else if (state === PETAL_FALLING) {
+        if (this.timers[i] <= 0) this.release(i, gustHere);
+      } else {
         const t = (this.fallAges[i] += dt);
-        // One shared flow field for the whole flock: base wind stream plus
-        // curl noise, both scaled by the local gust front.
+
+        // --- air velocity at this point -------------------------------
         this.sampleFlow(p.x, p.z, windTime, gustHere);
-        const airMul = 0.5 + gustHere * 3.4;
-        let targetX = wind.x * airMul + this.flowX;
-        let targetZ = wind.z * airMul + this.flowZ;
-        let targetY = -this.vTerms[i] + this.flowY;
+        const airMul = 0.55 + gustHere * 3.6;
+        let airX = wind.x * airMul + this.flowX;
+        let airZ = wind.z * airMul + this.flowZ;
+        let airY = this.flowY;
 
         // Gentle helix in the wake downwind of the trunk: petals passing
         // through it corkscrew around the wind axis, so streams curve
@@ -2558,49 +2670,121 @@ class FallingPetalSystem {
             (1 - smoothstep(1.1, 2.6, Math.abs(lat)));
           if (zone > 0.001) {
             const helixPhase = dw * 1.1 - windTime * 1.6;
-            targetY += Math.sin(helixPhase) * zone;
-            targetX += dirZ * Math.cos(helixPhase) * zone;
-            targetZ -= dirX * Math.cos(helixPhase) * zone;
+            airY += Math.sin(helixPhase) * zone;
+            airX += dirZ * Math.cos(helixPhase) * zone;
+            airZ -= dirX * Math.cos(helixPhase) * zone;
           }
         }
 
-        // Drag: relax toward the field velocity instead of integrating
-        // unbounded gravity. Lazy relax rates let a petal carry momentum
-        // through a flow-field change, stretching each turn into a long
-        // glide instead of a kink.
-        v.y += (targetY - v.y) * Math.min(1, 1.6 * dt);
-        v.x += (targetX - v.x) * Math.min(1, 1.05 * dt);
-        v.z += (targetZ - v.z) * Math.min(1, 1.05 * dt);
-        p.addScaledVector(v, dt);
+        // --- velocity relative to the air ------------------------------
+        let rx = v.x - airX;
+        let ry = v.y - airY;
+        let rz = v.z - airZ;
+        let U = Math.sqrt(rx * rx + ry * ry + rz * rz);
+        if (U < 1e-4) U = 1e-4;
+        const invU = 1 / U;
 
-        // Falling-leaf side slip: long slow arcs perpendicular to the
-        // descent. Spiral-mode petals add a helical drift around their
-        // fall axis on top.
-        const phase = this.slipFreqs[i] * t + this.slipPhases[i];
-        const slipVel =
-          this.slipAmps[i] * this.slipFreqs[i] * Math.cos(phase);
-        let latVX = this.slipDirXs[i] * slipVel;
-        let latVZ = this.slipDirZs[i] * slipVel;
-        const spiralR = this.spiralRads[i];
-        if (spiralR > 0) {
-          const sPhase = this.spiralRates[i] * t + this.slipPhases[i];
-          latVX += Math.cos(sPhase) * spiralR * this.spiralRates[i];
-          latVZ -= Math.sin(sPhase) * spiralR * this.spiralRates[i];
-        }
-        p.x += latVX * dt;
-        p.z += latVZ * dt;
-        // Bank into the actual lateral velocity (flow drift + slip +
-        // spiral): the card rolls about the axis perpendicular to where it
-        // is really sliding, so rocking always matches the trajectory.
-        const bank = this.rockAmps[i];
-        r.set(
-          this.tiltX0s[i] +
-            THREE.MathUtils.clamp((v.z + latVZ) * bank, -0.85, 0.85),
-          this.yaw0s[i] + this.tumbleRates[i] * t,
-          this.tiltZ0s[i] -
-            THREE.MathUtils.clamp((v.x + latVX) * bank, -0.85, 0.85),
-          "XYZ",
+        // --- attitude ---------------------------------------------------
+        const mode = this.modes[i];
+        const chord = this.chords[i];
+        // Strouhal law: the faster it flies and the smaller it is, the
+        // quicker it flips.
+        const uS = (this.uSmooths[i] += (U - this.uSmooths[i]) *
+          Math.min(1, 2 * dt));
+        const rate = THREE.MathUtils.clamp(
+          (TAU * this.strouhals[i] * uS) / chord,
+          PETAL_RATE_MIN,
+          PETAL_RATE_MAX,
         );
+        let theta: number;
+        let pitchRate = 0;
+        if (mode === PETAL_MODE_SPIN) {
+          theta = this.thetas[i];
+        } else if (
+          mode === PETAL_MODE_TUMBLE ||
+          (mode === PETAL_MODE_CHAOTIC && t < this.burstEnds[i])
+        ) {
+          pitchRate = (this.spinDirs[i] * PETAL_TUMBLE_RATE * uS) / chord;
+          theta = this.thetas[i] += pitchRate * dt;
+        } else {
+          if (mode === PETAL_MODE_CHAOTIC && this.burstEnds[i] > 0) {
+            // Coming out of a tumble: pick up the rock from whatever pitch
+            // the rotation left the plate at, so there is no snap.
+            this.burstEnds[i] = 0;
+            this.nextBursts[i] = t + this.rand(2.5, 8);
+            this.thetaPhases[i] = Math.asin(
+              THREE.MathUtils.clamp(
+                wrapAngle(this.thetas[i]) / this.thetaAmps[i],
+                -1,
+                1,
+              ),
+            );
+          }
+          this.thetaPhases[i] += rate * dt;
+          // The rocking builds over the first second: a petal that has just
+          // let go has no airspeed and nothing to be unstable about.
+          theta =
+            this.thetaAmps[i] *
+            Math.sin(this.thetaPhases[i]) *
+            smoothstep(0, 1, t);
+          this.thetas[i] = theta;
+          if (mode === PETAL_MODE_CHAOTIC && t >= this.nextBursts[i]) {
+            this.burstEnds[i] = t + this.rand(0.7, 2.2);
+          }
+        }
+
+        const phi = (this.phis[i] += this.phiRates[i] * dt);
+        const ex = Math.cos(phi);
+        const ez = Math.sin(phi);
+        const sinT = Math.sin(theta);
+        const cosT = Math.cos(theta);
+        // Plate frame: chord across the rocking plane, span along the
+        // horizontal rotation axis, normal off the face.
+        const cxA = ex * cosT;
+        const cyA = sinT;
+        const czA = ez * cosT;
+        const sxA = ez;
+        const szA = -ex;
+        const nxA = -sinT * ex;
+        const nyA = cosT;
+        const nzA = -sinT * ez;
+
+        // --- flat-plate aerodynamics -----------------------------------
+        const k = this.kAeros[i];
+        // Signed sin(angle of attack): +-1 broadside, 0 edge-on.
+        const sDot = (nxA * rx + nyA * ry + nzA * rz) * invU;
+        const sAbs = Math.abs(sDot);
+        const sg = sDot < 0 ? -1 : 1;
+        // Along-flow part (form drag at this incidence, plus the skin
+        // floor). Applied implicitly below so a gust can never blow the
+        // integrator up.
+        const cDrag = k * (sAbs * sAbs + PETAL_CD0_RATIO) * U;
+        // Cross-flow part: the component of the face-normal force
+        // perpendicular to the flow. Its size works out to
+        // k U^2 sin(2a) / 2 exactly, and it flips sign with the plate, so
+        // the rocking IS what drives the zig-zag.
+        const liftMag = k * sAbs * U * U;
+        let ax = -(nxA * sg - sAbs * rx * invU) * liftMag;
+        let ay = -(nyA * sg - sAbs * ry * invU) * liftMag;
+        let az = -(nzA * sg - sAbs * rz * invU) * liftMag;
+
+        // Magnus: a spinning plate drags circulation round with it and gets
+        // pushed across the flow. This is the whole reason a tumbling petal
+        // travels sideways instead of dropping.
+        if (pitchRate !== 0) {
+          const m = PETAL_MAGNUS * k * chord * pitchRate;
+          ax += m * -szA * ry;
+          ay += m * (szA * rx - sxA * rz);
+          az += m * sxA * ry;
+        }
+
+        // --- integrate --------------------------------------------------
+        const damp = 1 / (1 + cDrag * dt);
+        rx = (rx + ax * dt) * damp;
+        ry = (ry + (ay - PETAL_G) * dt) * damp;
+        rz = (rz + az * dt) * damp;
+        v.set(rx + airX, ry + airY, rz + airZ);
+        p.addScaledVector(v, dt);
 
         // No ground: once a petal has fully dissolved below the tree base
         // (or drifted far out of frame), recycle it to a new anchor.
@@ -2609,28 +2793,32 @@ class FallingPetalSystem {
           Math.abs(p.z) > 9 ||
           p.y < PETAL_VOID_FADE_END
         ) {
-          this.hold(i, this.rand(1.5, 7));
+          this.hold(i, this.rand(1.5, 8));
+        } else {
+          this.axisC.set(cxA, cyA, czA);
+          this.axisS.set(sxA, 0, szA);
+          this.axisN.set(nxA, nyA, nzA);
         }
       }
 
-      // Fade in from zero over ~0.6s at release (so recycled petals never
+      // Fade in from zero over ~0.5s at release (so recycled petals never
       // pop into view), then a scale-out ramp as the petal sinks past the
       // tree base into the void.
-      const stateNow = this.states[i];
       const voidFade = clamp01(
         (p.y - PETAL_VOID_FADE_END) /
           (PETAL_VOID_FADE_START - PETAL_VOID_FADE_END),
       );
       const s =
-        stateNow === PETAL_FALLING
+        this.states[i] === PETAL_FALLING
           ? this.baseScales[i] *
-            smoothstep(0, 0.6, this.fallAges[i]) *
+            smoothstep(0, 0.5, this.fallAges[i]) *
             voidFade
           : 0;
 
-      this.quat.setFromEuler(r);
       this.scale.setScalar(s);
-      this.matrix.compose(p, this.quat, this.scale);
+      this.matrix.makeBasis(this.axisC, this.axisS, this.axisN);
+      this.matrix.scale(this.scale);
+      this.matrix.setPosition(p);
       this.meshes[i % PETAL_VARIANT_COUNT].setMatrixAt(
         (i / PETAL_VARIANT_COUNT) | 0,
         this.matrix,
