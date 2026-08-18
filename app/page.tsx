@@ -41,9 +41,9 @@ export default function Home() {
             <span className="ml-[-0.095em] text-[0.58em] font-normal tracking-[-0.05em]">
               Kevin
             </span>
-            {/* Bodoni Moda has real italic weights — 500 gives the heavier
-                presence without the fake-bold inflation. */}
-            <span className="mr-[-0.1em] text-[0.58em] font-medium font-serif-display italic mix-blend-difference">
+            {/* Apparel Regular Italic — the reference site's own cut; a real
+                Bold Italic (700) is loaded too if more weight is wanted. */}
+            <span className="mr-[-0.1em] text-[0.58em] font-normal font-serif-display italic mix-blend-difference">
               He.
             </span>
           </div>
