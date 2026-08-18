@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, Inter } from "next/font/google";
+import { Bodoni_Moda, Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -9,12 +9,13 @@ const inter = Inter({
   weight: ["300", "400", "500"],
 });
 
-const instrumentSerif = Instrument_Serif({
+// Closest free stand-in for the reference serif (Apparel It, commercial):
+// a high-contrast fashion didone with true italic weights 400-900.
+const displaySerif = Bodoni_Moda({
   display: "swap",
   style: ["normal", "italic"],
   subsets: ["latin"],
   variable: "--font-instrument-serif",
-  weight: "400",
 });
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      className={`${inter.variable} ${instrumentSerif.variable}`}
+      className={`${inter.variable} ${displaySerif.variable}`}
       lang="en"
     >
       <body>{children}</body>

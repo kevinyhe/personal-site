@@ -1,6 +1,6 @@
 import HeroIntro from "@/components/HeroIntro";
 
-const socialLinks = ["Behance", "LinkedIn", "GitHub"];
+const socialLinks = ["X", "LinkedIn", "GitHub"];
 const menuLinks = ["Work", "Info", "Contact"];
 
 export default function Home() {
@@ -38,10 +38,12 @@ export default function Home() {
             {/* One shared baseline, both words the same size (0.62 of the
                 full-width base formula — the largest that keeps a gap
                 between the words on one line). */}
-            <span className="ml-[-0.095em] text-[0.62em] font-light tracking-[-0.05em]">
+            <span className="ml-[-0.095em] text-[0.58em] font-normal tracking-[-0.05em]">
               Kevin
             </span>
-            <span className="mr-[-0.1em] text-[0.62em] font-serif-display italic mix-blend-difference">
+            {/* Bodoni Moda has real italic weights — 500 gives the heavier
+                presence without the fake-bold inflation. */}
+            <span className="mr-[-0.1em] text-[0.58em] font-medium font-serif-display italic mix-blend-difference">
               He.
             </span>
           </div>
@@ -58,8 +60,8 @@ export default function Home() {
           data-hero-animate
           style={{ textShadow: "0 0 8px rgba(255,255,255,0.25)" }}
         >
-          <p aria-label="Version 3.0" className="hidden sm:block">
-            {"→"}V3.0
+          <p aria-label="Copyright" className="hidden sm:block">
+            {"©"} {new Date().getFullYear()}
           </p>
 
           <p className="flex items-center justify-center gap-3">
