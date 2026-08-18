@@ -940,12 +940,13 @@ function applyBlossomWind(
   material.customProgramCacheKey = () => "blossom-wind-v9";
 }
 
-// Sakura palette shared by attached blossoms and falling petals:
-// near-white petal edges, soft pink mid petal, deeper pink base, and a
-// magenta-crimson flower center / calyx.
-const PETAL_EDGE_COLOR = new THREE.Color("#fdeef2");
-const PETAL_MID_COLOR = new THREE.Color("#f7cdd8");
-const PETAL_BASE_COLOR = new THREE.Color("#e88fa8");
+// Sakura palette shared by attached blossoms and falling petals: cool
+// lavender-pink throughout (matched to the full-bloom Yoshino reference),
+// light petal edges, saturated pink base, and a magenta-crimson flower
+// center / calyx.
+const PETAL_EDGE_COLOR = new THREE.Color("#fdeff8");
+const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
+const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
 const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
 const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
 const PEDICEL_BASE_COLOR = new THREE.Color("#6f7b4c");
@@ -954,27 +955,33 @@ const STAMEN_FILAMENT_COLOR = new THREE.Color("#f6dce4");
 const STAMEN_ANTHER_COLOR = new THREE.Color("#edd28c");
 
 // Per-instance tint ramp shared by attached flowers and falling petals:
-// near-white through soft pink to deeper rose, weighted toward pale, with
-// independent saturation/lightness jitter on top. Multiplies the baked
-// vertex-color gradient via instanceColor. Build-time only (no per-frame
-// calls); lerpColors/offsetHSL mutate in place, so nothing is allocated.
-const BLOSSOM_TINT_PALE = new THREE.Color("#fff4f6");
-const BLOSSOM_TINT_SOFT = new THREE.Color("#f8c8d6");
-const BLOSSOM_TINT_ROSE = new THREE.Color("#ee9dbb");
+// a fairly uniform saturated lavender-pink band (the reference canopy reads
+// as one pink mass, not a white-to-rose mix), with small hue/sat/light
+// jitter on top and only a token pale-white share for sparkle. Multiplies
+// the baked vertex-color gradient via instanceColor. Build-time only (no
+// per-frame calls); lerpColors/offsetHSL mutate in place, so nothing is
+// allocated.
+const BLOSSOM_TINT_PALE = new THREE.Color("#f7c4e0");
+const BLOSSOM_TINT_SOFT = new THREE.Color("#f1aed6");
+const BLOSSOM_TINT_ROSE = new THREE.Color("#e693c4");
+const BLOSSOM_TINT_BRIGHT = new THREE.Color("#fbdff0");
 
 function sampleBlossomTint(rng: () => number, target: THREE.Color) {
-  // pow-curve weighting: most draws land near 0 (pale), the tail reaches
-  // the deeper rose end.
-  const t = Math.pow(rng(), 2.1);
+  // Gentle pow-curve: draws spread across the whole pink band with a mild
+  // lean toward the lighter end. Variation stays inside pink.
+  const t = Math.pow(rng(), 1.25);
   if (t < 0.5) {
     target.lerpColors(BLOSSOM_TINT_PALE, BLOSSOM_TINT_SOFT, t * 2);
   } else {
     target.lerpColors(BLOSSOM_TINT_SOFT, BLOSSOM_TINT_ROSE, (t - 0.5) * 2);
   }
+  // Small pale-white share (was the dominant mode before): occasional
+  // brighter flowers keep the mass from going flat.
+  if (rng() < 0.08) target.lerp(BLOSSOM_TINT_BRIGHT, 0.55);
   target.offsetHSL(
-    (rng() * 2 - 1) * 0.011,
-    -0.08 + rng() * 0.18,
-    -0.05 + rng() * 0.09,
+    (rng() * 2 - 1) * 0.008,
+    -0.05 + rng() * 0.13,
+    -0.035 + rng() * 0.06,
   );
   return target;
 }
@@ -1027,7 +1034,10 @@ const BLOSSOM_PEDICEL_LENGTH = 0.55;
 // is baked as vertex colors so the standard material shades it directly.
 // `openness` < 1 builds a half-open variant: shorter, narrower petals cupped
 // steeply toward the axis, stamens still hidden inside.
-function createSakuraBlossomGeometry(openness = 1) {
+// `lowDetail` builds a ~3x cheaper variant (2x2-quad petals, no stamens,
+// coarser center disc) used for the smallest/deepest instances so the sleeve
+// coverage model can raise instance counts without ballooning vertex work.
+function createSakuraBlossomGeometry(openness = 1, lowDetail = false) {
   const positions: number[] = [];
   const colors: number[] = [];
   const uvs: number[] = [];
@@ -1114,11 +1124,12 @@ function createSakuraBlossomGeometry(openness = 1) {
     }
   }
 
-  // Five petals, each a 4x4-quad grid: cupped toward the flower center,
-  // gently ruffled, wide enough to overlap neighbours, alternating z-tilt
-  // so the overlaps layer instead of z-fighting.
-  const petalRows = 4;
-  const petalCols = 4;
+  // Five petals, each a 4x4-quad grid (2x2 for the low-detail variant):
+  // cupped toward the flower center, gently ruffled, wide enough to overlap
+  // neighbours, alternating z-tilt so the overlaps layer instead of
+  // z-fighting.
+  const petalRows = lowDetail ? 2 : 4;
+  const petalCols = lowDetail ? 2 : 4;
   const petalLength = 0.5 * lerp(0.78, 1, openness);
   const petalRootRadius = 0.055;
   const petalMaxHalfWidth = 0.27 * lerp(0.78, 1, openness);
@@ -1178,7 +1189,7 @@ function createSakuraBlossomGeometry(openness = 1) {
 
   // Center disc: small domed magenta-crimson heart of the flower.
   {
-    const spokes = 6;
+    const spokes = lowDetail ? 4 : 6;
     const centerIdx = pushVertex(0, 0, zF + 0.035, 0.5, 0, BLOSSOM_CENTER_COLOR);
     const rim: number[] = [];
     color.copy(BLOSSOM_CENTER_COLOR).lerp(PETAL_BASE_COLOR, 0.55);
@@ -1202,8 +1213,8 @@ function createSakuraBlossomGeometry(openness = 1) {
 
   // Stamen suggestion: five tiny quads leaning out between the petals,
   // pale filaments with soft yellow anther tips. A half-open corolla still
-  // furls over its stamens, so they are skipped there.
-  for (let s = 0; s < (openness > 0.75 ? 5 : 0); s += 1) {
+  // furls over its stamens, and the low-detail variant drops them entirely.
+  for (let s = 0; s < (openness > 0.75 && !lowDetail ? 5 : 0); s += 1) {
     const a = (s / 5) * TAU + 0.31 + TAU / 10 + rand(-0.12, 0.12);
     const dirX = Math.cos(a);
     const dirY = Math.sin(a);
@@ -1462,25 +1473,29 @@ function createPetalDetailTexture() {
 }
 
 function createBarkTextures() {
-  const width = 256;
-  const height = 512;
+  const width = 384;
+  const height = 768;
   const colorCanvas = document.createElement("canvas");
   const bumpCanvas = document.createElement("canvas");
+  const roughCanvas = document.createElement("canvas");
   colorCanvas.width = width;
   colorCanvas.height = height;
   bumpCanvas.width = width;
   bumpCanvas.height = height;
+  roughCanvas.width = width;
+  roughCanvas.height = height;
 
   const colorContext = colorCanvas.getContext("2d");
   const bumpContext = bumpCanvas.getContext("2d");
-  if (!colorContext || !bumpContext) {
+  const roughContext = roughCanvas.getContext("2d");
+  if (!colorContext || !bumpContext || !roughContext) {
     // Canvas 2D unavailable: hand back a 1x1 mid-bark texture so the
     // branches still render dark bark instead of the bare (near-white)
     // material color.
     const fallback = new THREE.DataTexture(new Uint8Array([84, 68, 60, 255]));
     fallback.colorSpace = THREE.SRGBColorSpace;
     fallback.needsUpdate = true;
-    return { colorMap: fallback, bumpMap: null };
+    return { colorMap: fallback, bumpMap: null, roughnessMap: null };
   }
 
   // fbm made periodic across the u wrap: inside the last wrapMargin of u
@@ -1503,6 +1518,8 @@ function createBarkTextures() {
 
   // Cherry lenticels: horizontal lens-shaped pores at random heights,
   // elongated along the circumference (u). Seeded so rebuilds are stable.
+  // Denser than before: the horizontal banding is a primary cherry-bark cue
+  // and has to survive the dark scene lighting.
   const lenticelRng = makeRng(0xba7c11);
   const lenticels: {
     vCenter: number;
@@ -1511,25 +1528,48 @@ function createBarkTextures() {
     vSigma: number;
     strength: number;
   }[] = [];
-  for (let i = 0; i < 15; i += 1) {
+  for (let i = 0; i < 24; i += 1) {
     lenticels.push({
       vCenter: lenticelRng(),
       uCenter: lenticelRng(),
-      uHalfLength: 0.13 + lenticelRng() * 0.2,
-      vSigma: 0.005 + lenticelRng() * 0.005,
-      strength: 0.7 + lenticelRng() * 0.3,
+      uHalfLength: 0.13 + lenticelRng() * 0.22,
+      vSigma: 0.005 + lenticelRng() * 0.006,
+      strength: 0.75 + lenticelRng() * 0.35,
+    });
+  }
+
+  // Knots: dark sunken cores with a raised rim ring, scattered and seeded.
+  // du wraps around the tube seam like the lenticels do.
+  const knotRng = makeRng(0x6b07);
+  const knots: {
+    uCenter: number;
+    vCenter: number;
+    uRadius: number;
+    vRadius: number;
+    strength: number;
+  }[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    knots.push({
+      uCenter: knotRng(),
+      vCenter: knotRng(),
+      uRadius: 0.06 + knotRng() * 0.07,
+      vRadius: 0.028 + knotRng() * 0.035,
+      strength: 0.6 + knotRng() * 0.4,
     });
   }
 
   // Bark color ramp stops (sRGB bytes): purple-brown shadow, warm
   // gray-brown mid, slightly desaturated highlight. The mid stop is shared
-  // by both halves of the ramp so the transition stays continuous.
-  const rampShadow = [48, 35, 41];
-  const rampMid = [108, 88, 76];
-  const rampHighlight = [154, 140, 128];
+  // by both halves of the ramp so the transition stays continuous. Wider
+  // spread than before: the dark stage lighting flattens subtle bump, so
+  // the fissure/ridge contrast is baked into the albedo aggressively.
+  const rampShadow = [28, 20, 25];
+  const rampMid = [104, 84, 74];
+  const rampHighlight = [174, 158, 144];
 
   const colorImage = colorContext.createImageData(width, height);
   const bumpImage = bumpContext.createImageData(width, height);
+  const roughImage = roughContext.createImageData(width, height);
   const rowLenticels: typeof lenticels = [];
   for (let y = 0; y < height; y += 1) {
     const v = y / height;
@@ -1552,28 +1592,43 @@ function createBarkTextures() {
           0.55 +
         fbmWrapU(u, 44.0, v * 2.1, v * 9.5 - 3.4, 3) * 0.45;
       // Contrast stretch so the fissure threshold below has real spread.
-      const vertical = clamp01((verticalRaw - 0.5) * 1.55 + 0.5);
+      const vertical = clamp01((verticalRaw - 0.5) * 1.75 + 0.5);
       const fineGrain = fbmWrapU(u, 96.0, -6.8, v * 32.0 + 2.4, 3);
+      // Second, higher-frequency cross-grain octave: tight striations that
+      // keep the surface busy between the deep fissures.
+      const crossGrain =
+        fbmWrapU(u, 168.0, 12.3, v * 64.0 + 7.7, 2) - 0.5;
+      // Wider threshold + deeper floor than before: fissures claim more
+      // area and cut harder.
       const fissure =
-        smoothstep(0.58, 0.88, vertical) *
-        (0.65 + smoothstep(0.55, 0.82, fineGrain) * 0.35);
-      const knot =
-        Math.exp(
-          -(
-            Math.pow((u - 0.34 - Math.sin(v * 3.0) * 0.08) / 0.095, 2) +
-            Math.pow((v - 0.38) / 0.052, 2)
-          ),
-        ) *
-          0.45 +
-        Math.exp(
-          -(
-            Math.pow((u - 0.72 + Math.sin(v * 2.7) * 0.05) / 0.12, 2) +
-            Math.pow((v - 0.68) / 0.07, 2)
-          ),
-        ) *
-          0.34;
+        smoothstep(0.5, 0.8, vertical) *
+        (0.6 + smoothstep(0.5, 0.8, fineGrain) * 0.4);
+      // Knots: sunken dark core inside a raised rim ring, with a slight
+      // helical wobble on the center like real occluded branch stubs.
+      let knotCore = 0;
+      let knotRim = 0;
+      for (const knot of knots) {
+        let du = u - knot.uCenter - Math.sin(v * 9.0) * 0.02;
+        du -= Math.round(du);
+        const dv = v - knot.vCenter;
+        if (Math.abs(dv) > knot.vRadius * 3) continue;
+        const d = Math.sqrt(
+          (du * du) / (knot.uRadius * knot.uRadius) +
+            (dv * dv) / (knot.vRadius * knot.vRadius),
+        );
+        if (d > 2.6) continue;
+        knotCore += knot.strength * Math.exp(-d * d * 1.6);
+        knotRim +=
+          knot.strength * Math.exp(-Math.pow((d - 1.35) / 0.42, 2));
+      }
+      knotCore = clamp01(knotCore);
+      knotRim = clamp01(knotRim);
       const ridge = clamp01(
-        0.42 + vertical * 0.45 + fineGrain * 0.18 - fissure * 0.32,
+        0.42 +
+          vertical * 0.45 +
+          fineGrain * 0.18 +
+          crossGrain * 0.22 -
+          fissure * 0.36,
       );
 
       // Lenticel profile: gaussian falloff in v, lens taper plus fbm
@@ -1606,26 +1661,40 @@ function createBarkTextures() {
       lenticelCore = clamp01(lenticelCore);
       lenticelRim = clamp01(lenticelRim);
 
+      // Horizontal peeling bands (slow in u, fast in v), a cherry-bark cue.
+      const peelBand = fbmWrapU(u, 1.6, 7.7, v * 26.0, 2) - 0.5;
+
       const bump = clamp01(
         0.42 +
           ridge * 0.42 -
-          fissure * 0.46 +
-          knot * 0.18 +
+          fissure * 0.58 +
+          knotRim * 0.34 -
+          knotCore * 0.26 +
+          crossGrain * 0.16 +
+          peelBand * 0.14 +
           lenticelCore * 0.3 -
           lenticelRim * 0.08,
       );
 
-      // Horizontal peeling bands (slow in u, fast in v), a cherry-bark cue.
-      const peelBand = fbmWrapU(u, 1.6, 7.7, v * 26.0, 2) - 0.5;
       // Crevice occlusion baked into the color so fissures still read
-      // where bump nuance is lost (distance, software rendering). The
-      // coefficients here are tuned as a pair with the bump mix above:
-      // retune both together or the albedo shading drifts from the relief.
-      const shade =
+      // where bump nuance is lost (distance, software rendering, and this
+      // scene's dim stage lighting). The coefficients here are tuned as a
+      // pair with the bump mix above: retune both together or the albedo
+      // shading drifts from the relief. The occlusion floor is deeper than
+      // before (0.34 vs 0.5) and a final contrast stretch keeps the
+      // fissures near-black under the warm key.
+      let shade =
         clamp01(
-          0.5 + ridge * 0.5 - fissure * 0.48 + knot * 0.13 + peelBand * 0.2,
+          0.5 +
+            ridge * 0.5 -
+            fissure * 0.62 +
+            knotRim * 0.2 -
+            knotCore * 0.3 +
+            crossGrain * 0.2 +
+            peelBand * 0.34,
         ) *
-        (0.5 + 0.5 * bump);
+        (0.34 + 0.66 * bump);
+      shade = clamp01((shade - 0.5) * 1.4 + 0.5);
 
       // Warm gray-brown ramp: purple-brown shadows, desaturated highlights.
       let r: number;
@@ -1677,23 +1746,48 @@ function createBarkTextures() {
       bumpImage.data[index + 1] = bumpValue;
       bumpImage.data[index + 2] = bumpValue;
       bumpImage.data[index + 3] = 255;
+
+      // Baked roughness variation: crevices stay matte, exposed ridge tops
+      // and the waxy lenticel bands turn slightly glossier so the warm key
+      // and rose backlight pick up the relief as broken micro-highlights
+      // instead of one smooth gradient.
+      const roughValue = Math.floor(
+        clamp01(
+          0.88 +
+            fissure * 0.12 -
+            smoothstep(0.62, 0.95, shade) * 0.34 -
+            lenticelCore * 0.3 -
+            knotRim * 0.1 +
+            crossGrain * 0.08,
+        ) * 255,
+      );
+      roughImage.data[index] = roughValue;
+      roughImage.data[index + 1] = roughValue;
+      roughImage.data[index + 2] = roughValue;
+      roughImage.data[index + 3] = 255;
     }
   }
 
   colorContext.putImageData(colorImage, 0, 0);
   bumpContext.putImageData(bumpImage, 0, 0);
+  roughContext.putImageData(roughImage, 0, 0);
   const colorMap = new THREE.CanvasTexture(colorCanvas);
   colorMap.colorSpace = THREE.SRGBColorSpace;
   colorMap.wrapS = THREE.RepeatWrapping;
   colorMap.wrapT = THREE.RepeatWrapping;
   // Integer u repeat: the map is periodic in u, and a whole number of
-  // repeats keeps that periodicity intact across the tube seam.
-  colorMap.repeat.set(3, 1.9);
+  // repeats keeps that periodicity intact across the tube seam. Raised from
+  // (3, 1.9) so the grain reads at trunk scale.
+  colorMap.repeat.set(4, 2.6);
   const bumpMap = new THREE.CanvasTexture(bumpCanvas);
   bumpMap.wrapS = THREE.RepeatWrapping;
   bumpMap.wrapT = THREE.RepeatWrapping;
   bumpMap.repeat.copy(colorMap.repeat);
-  return { colorMap, bumpMap };
+  const roughnessMap = new THREE.CanvasTexture(roughCanvas);
+  roughnessMap.wrapS = THREE.RepeatWrapping;
+  roughnessMap.wrapT = THREE.RepeatWrapping;
+  roughnessMap.repeat.copy(colorMap.repeat);
+  return { colorMap, bumpMap, roughnessMap };
 }
 
 // A single loose falling petal: same obcordate outline with the tip notch
@@ -2118,6 +2212,7 @@ class WeepingCherryGenerator {
   group = new THREE.Group();
   branchMesh: THREE.Mesh | null = null;
   blossomMesh: THREE.InstancedMesh | null = null;
+  lowBlossomMesh: THREE.InstancedMesh | null = null;
   halfBlossomMesh: THREE.InstancedMesh | null = null;
   budMesh: THREE.InstancedMesh | null = null;
   petals: FallingPetalSystem | null = null;
@@ -2208,6 +2303,7 @@ class WeepingCherryGenerator {
       group: this.group,
       branchMesh: this.branchMesh,
       blossomMesh: this.blossomMesh,
+      lowBlossomMesh: this.lowBlossomMesh,
       halfBlossomMesh: this.halfBlossomMesh,
       budMesh: this.budMesh,
       petals: this.petals,
@@ -3307,11 +3403,16 @@ class WeepingCherryGenerator {
     const textures = createBarkTextures();
     const material = new THREE.MeshStandardMaterial({
       bumpMap: textures.bumpMap ?? undefined,
-      bumpScale: 0.12,
+      // Raised so the fissures actually deflect the warm key / rose rim in
+      // this dim scene (0.12 read as smooth plastic).
+      bumpScale: 0.3,
       color: 0xcfc9c4,
       map: textures.colorMap ?? undefined,
       metalness: 0,
-      roughness: 0.82,
+      // With the baked roughness map the material slider acts as a
+      // multiplier, so it goes to 1 and the map carries the variation.
+      roughness: textures.roughnessMap ? 1 : 0.82,
+      roughnessMap: textures.roughnessMap ?? undefined,
       // Vertex colors carry only the trunk-base void fade (white elsewhere).
       vertexColors: true,
     });
@@ -3322,99 +3423,127 @@ class WeepingCherryGenerator {
     this.group.add(mesh);
   }
 
-  // Every blossom sits ON a twig: spur points are sampled along terminal
-  // twig curves (tip-biased, cherry style), and each spur carries a cluster
-  // of 3-6 flowers/buds whose geometry pedicels start exactly at the spur.
-  // No canopy-lobe scatter — the lobes only steered branch growth.
+  // Sleeve coverage model (matched to the full-bloom Yoshino reference):
+  // the canopy reads as a continuous mass, so spur points WALK along every
+  // fine branch curve at 0.5-0.8 cluster-diameter spacing — all of depth
+  // 4-6, plus the outer ~60% of the depth 2-3 limbs — and every spur
+  // scatters its flowers in a small 3D shell AROUND the branch. Adjacent
+  // puffs overlap into unbroken pink sleeves; dark wood stays visible only
+  // on the trunk and the innermost limb runs. No tip bias, no canopy-lobe
+  // scatter — the lobes only steered branch growth.
   private createBlossomPlacements() {
     const flowers: BlossomPlacement[] = [];
-    // Half-open variant: shares the flower budget (~22% of it) so the total
+    // Low-poly open-flower variant for the smallest/deepest instances.
+    const flowersLow: BlossomPlacement[] = [];
+    // Half-open variant: shares the flower budget (~16% of it) so the total
     // instance count is unchanged across quality tiers.
     const halves: BlossomPlacement[] = [];
     const buds: BlossomPlacement[] = [];
-    const terminals = this.branches.filter(
-      (branch) => branch.terminal && branch.lobeId >= 0,
-    );
-    if (terminals.length === 0) return { flowers, halves, buds };
+
+    type SleeveRun = { branch: Branch; tStart: number; runLength: number };
+    const runs: SleeveRun[] = [];
+    let totalRunLength = 0;
+    for (const branch of this.branches) {
+      if (branch.lobeId < 0) continue;
+      const tStart =
+        branch.depth >= 4 ? 0.02 : branch.depth >= 2 ? 0.4 : -1;
+      if (tStart < 0) continue;
+      const runLength = branch.curve.getLength() * (1 - tStart);
+      if (runLength < 0.06) continue;
+      runs.push({ branch, tStart, runLength });
+      totalRunLength += runLength;
+    }
+    if (runs.length === 0) return { flowers, flowersLow, halves, buds };
 
     const totalOverride = this.options.blossomCount;
     const flowerTarget =
       totalOverride != null
-        ? Math.max(1, Math.round(totalOverride * 0.7))
+        ? Math.max(1, Math.round(totalOverride * 0.73))
         : this.quality === "low"
-          ? 5400
+          ? 7400
           : this.quality === "medium"
-            ? 10400
-            : 17200;
+            ? 14200
+            : 23500;
     const budTarget =
       totalOverride != null
         ? Math.max(0, totalOverride - flowerTarget)
         : this.quality === "low"
-          ? 2200
+          ? 2600
           : this.quality === "medium"
-            ? 4100
-            : 6800;
+            ? 5000
+            : 8500;
+    const totalTarget = flowerTarget + budTarget;
 
-    // Weight twigs by length so spurs land evenly along the fine strands,
-    // with a mild bias toward the finest drooping orders.
-    const cumulative: number[] = [];
-    let totalWeight = 0;
-    for (const branch of terminals) {
-      const lobe = this.lobes[branch.lobeId];
-      const depthBias =
-        branch.depth >= 6 ? 1.5 : branch.depth === 5 ? 1.3 : 1;
-      totalWeight += branch.curve.getLength() * lobe.density * depthBias;
-      cumulative.push(totalWeight);
-    }
-
-    const pickTerminal = () => {
-      const roll = this.rng() * totalWeight;
-      let low = 0;
-      let high = cumulative.length - 1;
-      while (low < high) {
-        const mid = Math.floor((low + high) / 2);
-        if (roll <= cumulative[mid]) high = mid;
-        else low = mid + 1;
-      }
-      return terminals[low];
-    };
+    // Approximate world-space diameter of one spur puff: corolla shell
+    // radius (branch surface + pedicel + jitter) times two, plus a corolla
+    // width. Spur spacing is expressed in fractions of this.
+    const clusterDiameter = 0.4;
+    // Spacing self-calibrates against the run length so the walk lands on
+    // the tier budget: high tier stays inside the 0.5-0.8 diameter band
+    // (sleeves), lower tiers may stretch further apart instead of leaving
+    // whole strands bare.
+    const spacingClamp: [number, number] =
+      this.quality === "low"
+        ? [0.6, 1.7]
+        : this.quality === "medium"
+          ? [0.55, 1.15]
+          : [0.5, 0.8];
+    const spacing = THREE.MathUtils.clamp(
+      (totalRunLength * 6.5) / totalTarget,
+      spacingClamp[0] * clusterDiameter,
+      spacingClamp[1] * clusterDiameter,
+    );
+    // Cluster size range derived from the same budget: at the target
+    // spacing each spur needs avgClusterGoal flowers on average.
+    const avgClusterGoal = THREE.MathUtils.clamp(
+      totalTarget / (totalRunLength / spacing),
+      3,
+      9,
+    );
+    const clusterLo = Math.max(2, Math.round(avgClusterGoal - 1.6));
+    const clusterHi = Math.min(9, Math.round(avgClusterGoal + 1.9));
 
     const zAxis = new THREE.Vector3(0, 0, 1);
     const outward = new THREE.Vector3();
     const dir = new THREE.Vector3();
     const roll = new THREE.Quaternion();
-    const budFraction = budTarget / Math.max(1, budTarget + flowerTarget);
+    const budFraction = budTarget / Math.max(1, totalTarget);
 
-    // Places one spur cluster (3-6 flowers/buds) on `branch` at curve
-    // parameter t. Shared by the per-strand guarantee pass and the
-    // tip-biased weighted fill below; both respect the flower/bud budgets.
+    // Places one spur puff on `branch` at curve parameter t: clusterLo..Hi
+    // flowers/buds scattered at random azimuths around the tangent, spur
+    // points on the branch surface with small radial jitter, orientations
+    // outward-random with a mild droop — a shell around the wood, not a
+    // flat fan.
     const placeCluster = (branch: Branch, t: number) => {
       const frame = getBranchFrame(branch, t);
       const wind = getBranchWindVectors(branch, t);
       const lobe = this.lobes[branch.lobeId];
-      const clusterSize = this.int(3, 6);
+      const clusterSize = this.int(clusterLo, clusterHi);
       const baseAzimuth = this.rand(0, TAU);
 
       for (let k = 0; k < clusterSize; k += 1) {
-        const flowersPlaced = flowers.length + halves.length;
+        const flowersPlaced =
+          flowers.length + flowersLow.length + halves.length;
         const wantBud =
           buds.length < budTarget &&
           (flowersPlaced >= flowerTarget || this.rng() < budFraction);
         if (!wantBud && flowersPlaced >= flowerTarget) continue;
 
         const azimuth =
-          baseAzimuth + (k / clusterSize) * TAU + this.rand(-0.55, 0.55);
+          baseAzimuth + (k / clusterSize) * TAU + this.rand(-0.7, 0.7);
         outward
           .copy(frame.normal)
           .multiplyScalar(Math.cos(azimuth))
           .addScaledVector(frame.binormal, Math.sin(azimuth));
-        // Cherry blossoms hang: mostly outward, clearly downward, jittered.
+        // Outward-random puff orientation: mostly radial off the branch,
+        // drifted along the tangent, with only a mild downward pull so the
+        // sleeve wraps the wood on all sides.
         dir
           .copy(outward)
-          .multiplyScalar(this.rand(0.5, 0.9))
-          .addScaledVector(DOWN, this.rand(0.45, 1.15))
-          .addScaledVector(frame.tangent, this.rand(-0.12, 0.3))
-          .addScaledVector(this.randomVector(0.6), 0.12)
+          .multiplyScalar(this.rand(0.75, 1.15))
+          .addScaledVector(DOWN, this.rand(0.05, 0.5))
+          .addScaledVector(frame.tangent, this.rand(-0.3, 0.45))
+          .addScaledVector(this.randomVector(0.8), 0.22)
           .normalize();
 
         const quaternion = new THREE.Quaternion().setFromUnitVectors(
@@ -3430,9 +3559,13 @@ class WeepingCherryGenerator {
           THREE.MathUtils.lerp(0.96, 1.12, clamp01(lobe.density));
         const color = new THREE.Color();
         const placement: BlossomPlacement = {
+          // Spur point on the branch surface, jittered radially and slid a
+          // touch along the tangent so consecutive spurs blur into a run
+          // instead of reading as rings.
           position: frame.point
             .clone()
-            .addScaledVector(outward, frame.radius * 0.7),
+            .addScaledVector(outward, frame.radius * 0.65 + this.rand(0, 0.07))
+            .addScaledVector(frame.tangent, this.rand(-0.09, 0.09)),
           quaternion,
           scale: flowerScale,
           wind1: wind.wind1,
@@ -3447,9 +3580,10 @@ class WeepingCherryGenerator {
         if (wantBud) {
           placement.scale = flowerScale * this.rand(0.52, 0.72);
           placement.emissive = this.rand(0.55, 1.15);
+          // Buds sit a step deeper pink than the corolla tint band.
           color
-            .set("#e2679c")
-            .lerp(new THREE.Color("#c94a7f"), this.rng())
+            .set("#e07ab8")
+            .lerp(new THREE.Color("#c9559f"), this.rng())
             .offsetHSL(
               this.rand(-0.012, 0.012),
               this.rand(-0.08, 0.08),
@@ -3457,13 +3591,12 @@ class WeepingCherryGenerator {
             );
           buds.push(placement);
         } else {
-          // Pale-weighted near-white -> rose ramp with independent
-          // saturation/lightness jitter; biased lobes lean deeper.
+          // Lavender-pink band with small jitter; biased lobes lean deeper.
           sampleBlossomTint(this.rng, color);
           if (this.rng() < lobe.colorBias * 0.6) {
             color.lerp(BLOSSOM_TINT_ROSE, 0.4);
           }
-          if (this.rng() < 0.22) {
+          if (this.rng() < 0.16) {
             // Half-open flower: a touch smaller and pinker (the furled
             // petals read deeper than a spread corolla).
             placement.scale = flowerScale * this.rand(0.72, 0.88);
@@ -3472,60 +3605,67 @@ class WeepingCherryGenerator {
             halves.push(placement);
           } else {
             placement.emissive = this.rand(0.7, 1.45);
-            flowers.push(placement);
+            // The finest drooping strands and the smallest corollas take
+            // the cheap geometry; they are the most numerous and the least
+            // individually readable inside the mass.
+            if (branch.depth >= 5 || flowerScale < 0.118) {
+              flowersLow.push(placement);
+            } else {
+              flowers.push(placement);
+            }
           }
         }
       }
     };
 
-    // Guarantee pass: every terminal strand gets one mid-strand cluster
-    // before the tip-biased fill, so short interior strands never read as
-    // bare wires with 2-3 blossoms at the tip. Shuffled and budget-capped so
-    // lower quality tiers thin uniformly and the dense outer clusters donate
-    // the budget.
-    const shuffledTerminals = [...terminals];
-    for (let i = shuffledTerminals.length - 1; i > 0; i -= 1) {
+    // Shuffle the run order so, if the budget caps out slightly before the
+    // walk finishes, the unfilled remainder scatters across the canopy
+    // instead of truncating one side of the tree.
+    const shuffledRuns = [...runs];
+    for (let i = shuffledRuns.length - 1; i > 0; i -= 1) {
       const j = Math.floor(this.rng() * (i + 1));
-      [shuffledTerminals[i], shuffledTerminals[j]] = [
-        shuffledTerminals[j],
-        shuffledTerminals[i],
-      ];
-    }
-    const guaranteeCap = Math.floor((flowerTarget + budTarget) * 0.6);
-    for (const branch of shuffledTerminals) {
-      if (flowers.length + halves.length + buds.length >= guaranteeCap) break;
-      placeCluster(branch, this.rand(0.3, 0.9));
+      [shuffledRuns[i], shuffledRuns[j]] = [shuffledRuns[j], shuffledRuns[i]];
     }
 
-    let guard = (flowerTarget + budTarget) * 30;
-    while (
-      (flowers.length + halves.length < flowerTarget ||
-        buds.length < budTarget) &&
-      guard-- > 0
-    ) {
-      // Spur position along the twig, concentrated toward the tip.
-      placeCluster(pickTerminal(), 1 - Math.pow(this.rng(), 1.55) * 0.88);
+    const budgetDone = () =>
+      flowers.length + flowersLow.length + halves.length >= flowerTarget &&
+      buds.length >= budTarget;
+
+    for (const run of shuffledRuns) {
+      if (budgetDone()) break;
+      const branchLength = run.branch.curve.getLength();
+      // Continuous overlapping walk from the run start to the branch tip,
+      // spacing jittered +-20% so the sleeve stays organic.
+      let distance =
+        branchLength * run.tStart + this.rand(0, spacing * 0.6);
+      while (distance < branchLength - 0.02) {
+        placeCluster(run.branch, distance / branchLength);
+        if (budgetDone()) break;
+        distance += spacing * this.rand(0.8, 1.2);
+      }
     }
 
-    return { flowers, halves, buds };
+    return { flowers, flowersLow, halves, buds };
   }
 
-  // Three InstancedMeshes (open flowers + half-open flowers + closed buds)
-  // sharing one material. Per-instance wind: each blossom bakes the branch
-  // wind vec4 pair evaluated at its spur t (see getBranchWindVectors), so
-  // the shader reproduces the exact displacement of the twig point it grows
-  // from.
+  // Four InstancedMeshes (open flowers full + low-detail, half-open
+  // flowers, closed buds) sharing one material. Per-instance wind: each
+  // blossom bakes the branch wind vec4 pair evaluated at its spur t (see
+  // getBranchWindVectors), so the shader reproduces the exact displacement
+  // of the branch point it grows from.
   private buildBlossomMeshes() {
-    const { flowers, halves, buds } = this.createBlossomPlacements();
+    const { flowers, flowersLow, halves, buds } =
+      this.createBlossomPlacements();
     this.petalDetailTexture = createPetalDetailTexture();
     // Raised emissive lift for the dark void scene: clusters luminesce
     // slightly against the black background instead of relying on skylight.
     // emissiveIntensity is the base; the blossomEmissive instance attribute
-    // scales it 0.55-1.5x per flower.
+    // scales it 0.55-1.5x per flower. Emissive sits on the same cool
+    // lavender-pink as the tint band so the glow does not warm the mass.
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      emissive: 0xffb9ce,
-      emissiveIntensity: 0.3,
+      emissive: 0xffa3d6,
+      emissiveIntensity: 0.32,
       map: this.petalDetailTexture ?? undefined,
       metalness: 0,
       roughness: 0.55,
@@ -3604,6 +3744,11 @@ class WeepingCherryGenerator {
       flowers,
       "Attached cherry blossom corollas",
     );
+    this.lowBlossomMesh = buildInstancedMesh(
+      createSakuraBlossomGeometry(1, true),
+      flowersLow,
+      "Attached cherry blossom corollas (low detail)",
+    );
     this.halfBlossomMesh = buildInstancedMesh(
       createSakuraBlossomGeometry(0.45),
       halves,
@@ -3622,10 +3767,11 @@ class WeepingCherryGenerator {
       (this.quality === "low" ? 100 : this.quality === "medium" ? 180 : 280);
     if (count <= 0) return;
     const material = new THREE.MeshStandardMaterial({
-      color: 0xffe3ed,
+      color: 0xffddef,
       // Small emissive lift so loose petals stay readable while tumbling
-      // through the unlit void below the canopy.
-      emissive: 0xf2a9c1,
+      // through the unlit void below the canopy. Same lavender-pink band
+      // as the attached blossoms.
+      emissive: 0xf09ed0,
       emissiveIntensity: 0.22,
       // Same procedural vein/blush texture as the attached blossoms (the
       // loose-petal geometry shares the petal UV layout).
@@ -3642,13 +3788,26 @@ class WeepingCherryGenerator {
     // automatically track any change in blossom density. Lobes remain the
     // fallback when no blossoms were built.
     const anchors: THREE.Vector3[] = [];
-    const blossoms = this.blossomMesh;
-    if (blossoms && blossoms.count > 0) {
+    // Sample across both open-flower meshes so detachment points cover the
+    // whole sleeve, including the low-detail deep strands.
+    const sources = [this.blossomMesh, this.lowBlossomMesh].filter(
+      (mesh): mesh is THREE.InstancedMesh => mesh != null && mesh.count > 0,
+    );
+    const totalBlossoms = sources.reduce((sum, mesh) => sum + mesh.count, 0);
+    if (totalBlossoms > 0) {
       const anchorMatrix = new THREE.Matrix4();
-      const sampleCount = Math.min(blossoms.count, count * 2);
+      const sampleCount = Math.min(totalBlossoms, count * 2);
       for (let i = 0; i < sampleCount; i += 1) {
-        const index = Math.floor(this.rng() * blossoms.count);
-        blossoms.getMatrixAt(index, anchorMatrix);
+        let index = Math.floor(this.rng() * totalBlossoms);
+        let mesh = sources[0];
+        for (const source of sources) {
+          if (index < source.count) {
+            mesh = source;
+            break;
+          }
+          index -= source.count;
+        }
+        mesh.getMatrixAt(index, anchorMatrix);
         anchors.push(new THREE.Vector3().setFromMatrixPosition(anchorMatrix));
       }
     }
@@ -3847,30 +4006,64 @@ export default function WeepingCherryTreeCanvas({
       roseGlow.position.set(2.7, 1.1, -4.5);
       scene.add(roseGlow);
 
-      // Void backdrop: one large soft radial gradient far behind the tree, a
-      // barely-lifted deep rose/plum near-black melting to the clear color at
-      // its edges, so the darkness reads as a glowing canvas instead of a
-      // dead fill. toneMapped stays false so the edge matches the clear
-      // color exactly and the plane disappears into it.
+      // Void backdrop: the plum glow behind the tree rendered as an
+      // ordered-dither halftone raster instead of a smooth gradient — a
+      // Bayer-thresholded dot grid whose density follows the glow, so the
+      // darkness reads as printed dot-matrix texture. Dot cells are sized to
+      // land around 4-6 screen px at the hero framing. toneMapped stays
+      // false so the un-dotted base matches the clear color exactly and the
+      // plane disappears into it.
       const createVoidBackdrop = () => {
         const gradientCanvas = document.createElement("canvas");
-        gradientCanvas.width = 256;
-        gradientCanvas.height = 256;
+        gradientCanvas.width = 2048;
+        gradientCanvas.height = 1152;
         const gradientCtx = gradientCanvas.getContext("2d");
         if (!gradientCtx) return null;
-        const gradient = gradientCtx.createRadialGradient(
-          128,
-          128,
-          0,
-          128,
-          128,
-          128,
-        );
-        gradient.addColorStop(0, "#17101a");
-        gradient.addColorStop(0.55, "#100c13");
-        gradient.addColorStop(1, "#0a0a0a");
-        gradientCtx.fillStyle = gradient;
-        gradientCtx.fillRect(0, 0, 256, 256);
+        gradientCtx.fillStyle = "#0a0a0a";
+        gradientCtx.fillRect(0, 0, 2048, 1152);
+        // 8x8 Bayer matrix, thresholds 0..63.
+        const bayer = [
+          [0, 32, 8, 40, 2, 34, 10, 42],
+          [48, 16, 56, 24, 50, 18, 58, 26],
+          [12, 44, 4, 36, 14, 46, 6, 38],
+          [60, 28, 52, 20, 62, 30, 54, 22],
+          [3, 35, 11, 43, 1, 33, 9, 41],
+          [51, 19, 59, 27, 49, 17, 57, 25],
+          [15, 47, 7, 39, 13, 45, 5, 37],
+          [63, 31, 55, 23, 61, 29, 53, 21],
+        ];
+        const cell = 4;
+        const cols = 2048 / cell;
+        const rows = 1152 / cell;
+        // Glow center matches where the canopy sits on the plane.
+        const cx = cols * 0.5;
+        const cy = rows * 0.44;
+        const dotTones = ["#171020", "#1f132a", "#281735"];
+        for (let gy = 0; gy < rows; gy += 1) {
+          for (let gx = 0; gx < cols; gx += 1) {
+            const dx = (gx - cx) / (cols * 0.5);
+            const dy = (gy - cy) / (rows * 0.62);
+            const radial = clamp01(1 - Math.hypot(dx, dy));
+            // fbm breakup keeps the dot field from reading as perfect rings.
+            const breakup = 0.72 + 0.28 * fbm2(gx * 0.045, gy * 0.045, 2);
+            const glow = Math.pow(radial, 1.6) * breakup;
+            const threshold = bayer[gy % 8][gx % 8] / 64;
+            // Density-modulated dither: stronger glow lights more cells.
+            if (glow * 0.92 <= threshold) continue;
+            const tone =
+              glow > 0.55 ? dotTones[2] : glow > 0.3 ? dotTones[1] : dotTones[0];
+            gradientCtx.fillStyle = tone;
+            gradientCtx.beginPath();
+            gradientCtx.arc(
+              gx * cell + cell / 2,
+              gy * cell + cell / 2,
+              cell * 0.38,
+              0,
+              TAU,
+            );
+            gradientCtx.fill();
+          }
+        }
         const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
         gradientTexture.colorSpace = THREE.SRGBColorSpace;
         const backdrop = new THREE.Mesh(
