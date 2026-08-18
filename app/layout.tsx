@@ -51,7 +51,25 @@ export default function RootLayout({
       className={`${inter.variable} ${displaySerif.variable}`}
       lang="en"
     >
-      <body>{children}</body>
+      <body>
+        {children}
+
+        {/* Page-transition wipe. TransitionLink slides it up over the
+            outgoing page; app/template.tsx slides it off the incoming one.
+            It parks below the viewport (translateY 101%) between runs. */}
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0a0a] will-change-transform"
+          id="page-veil"
+          style={{ transform: "translateY(101%)" }}
+        >
+          <div className="absolute inset-x-0 top-0 h-px bg-white/30" />
+          <span
+            className="font-serif-display text-[clamp(2rem,6vw,4rem)] italic tracking-[-0.02em] text-[#f0f0f0]"
+            id="page-veil-label"
+          />
+        </div>
+      </body>
     </html>
   );
 }
