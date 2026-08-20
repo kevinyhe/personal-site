@@ -111,6 +111,73 @@ void main() {
 }
 `;
 
+// Void backdrop: an animated fluid gradient — a few large, soft pink blobs
+// drifting and morphing slowly on near-black, replacing the old static
+// radial glow. Runs on the backdrop plane behind the tree; the halftone
+// post-pass dithers it along with the rest of the frame (intended). The
+// scene target holds the LINEAR frame, so this shader outputs linear
+// values (its color uniforms are THREE.Color, already converted to the
+// linear working space) and the halftone pass applies ACES + sRGB once —
+// same pipeline the old sRGB-texture backdrop went through, no
+// double-brightening.
+const VOID_BACKDROP_VERTEX_SHADER = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
+uniform float uTime;
+uniform vec3 uBase;
+uniform vec3 uRose;
+uniform vec3 uMagenta;
+uniform vec3 uPlum;
+varying vec2 vUv;
+
+// Soft anisotropic gaussian: stretch > 1 on an axis narrows the blob on
+// that axis, so blobs can smear vertically like the reference gradients.
+float blob(vec2 p, vec2 c, vec2 stretch, float r) {
+  vec2 d = (p - c) * stretch;
+  return exp(-dot(d, d) / (r * r));
+}
+
+void main() {
+  // Plane-local coords corrected for the 110x62 plane aspect so radii are
+  // isotropic. The camera sees roughly x in [-0.47, 0.45] and
+  // y in [-0.27, 0.24] of this space.
+  vec2 p = vec2((vUv.x - 0.5) * 1.774, vUv.y - 0.5);
+  float t = uTime;
+
+  // Blob centers orbit slowly (periods ~1-2 min) and radii breathe, so the
+  // field reads as one liquid mass morphing rather than sprites sliding.
+  vec2 cRose = vec2(0.24, 0.0) +
+    0.11 * vec2(cos(t * 0.073), sin(t * 0.089 + 1.3));
+  float rRose = 0.24 * (1.0 + 0.22 * sin(t * 0.051 + 0.7));
+  vec2 cMag = vec2(-0.30, 0.16) +
+    0.13 * vec2(cos(t * 0.059 + 2.6), sin(t * 0.047));
+  float rMag = 0.21 * (1.0 + 0.2 * sin(t * 0.043 + 2.1));
+  vec2 cPlum = vec2(0.02, -0.14) +
+    0.09 * vec2(cos(1.1 - t * 0.041), sin(t * 0.062 + 4.0));
+  vec2 cTop = vec2(-0.04, 0.27) +
+    0.12 * vec2(cos(t * 0.052 + 4.4), 0.6 * sin(t * 0.067 + 0.9));
+
+  // Additive mix over the void base: one bright rose mass right of center,
+  // a dimmer magenta counterweight upper-left, a broad deep-plum wash low,
+  // and a small magenta drifter along the top edge.
+  vec3 col = uBase;
+  col += uRose * (0.55 * blob(p, cRose, vec2(1.5, 0.85), rRose));
+  col += uMagenta * (0.45 * blob(p, cMag, vec2(1.2, 0.8), rMag));
+  col += uPlum * (0.9 * blob(p, cPlum, vec2(0.8, 1.0), 0.5));
+  col += uMagenta * (0.3 * blob(p, cTop, vec2(1.7, 1.0), 0.19));
+  // Reinhard-style rolloff clamps overlapping peaks back into the dark
+  // range, keeping the backdrop moody so the tree stays the subject.
+  col = col / (1.0 + 1.7 * col);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
 type BareThreeCanvasProps = {
   introActive?: boolean;
   onIntroComplete?: () => void;
@@ -2101,7 +2168,10 @@ const PETAL_VOID_FADE_END = -0.75;
 const FLOW_NOISE_SCALE = 0.12; // world -> noise units (~1 big swirl per 8u)
 const FLOW_CURL_EPS = 0.35; // finite-difference step, in noise units
 const FLOW_CURL_STRENGTH = 1.6; // horizontal swirl speed at full gust (u/s)
-const FLOW_LIFT_STRENGTH = 0.6; // vertical channel scale (u/s)
+// Vertical channel scale (u/s). Kept just above the ~0.2-0.4 terminal band
+// so updrafts visibly slow a petal and occasionally float it, without
+// petals hovering indefinitely.
+const FLOW_LIFT_STRENGTH = 0.45;
 // Gust front that travels downwind across the canopy: modulates both petal
 // release and field strength, so detachment and acceleration sweep through
 // the tree as a moving wave instead of firing uniformly at random.
@@ -2140,6 +2210,10 @@ class FallingPetalSystem {
   private tiltZ0s: Float32Array;
   private yaw0s: Float32Array;
   private baseScales: Float32Array;
+  // Weighted anchor pick table (indices into this.anchors, peripheral and
+  // low anchors repeated more often). Built once in the constructor so
+  // hold() samples it without allocating.
+  private anchorPick: Uint16Array | null = null;
   private matrix = new THREE.Matrix4();
   private quat = new THREE.Quaternion();
   private scale = new THREE.Vector3();
@@ -2170,6 +2244,45 @@ class FallingPetalSystem {
     this.rng = rng;
     this.lobes = lobes;
     this.anchors = anchors && anchors.length > 0 ? anchors : null;
+    if (this.anchors) {
+      // Real petals detach where wind and gravity work them loose: the
+      // canopy rim and underside, not the sheltered interior. Weight each
+      // anchor by horizontal distance from the canopy axis (squared, so
+      // the rim dominates) and by how low it sits, then expand into a
+      // pick table with 1..10 slots per anchor. A rim-bottom anchor sheds
+      // ~10x as often as an interior-top one, which still releases
+      // occasionally.
+      const list = this.anchors;
+      let cx = 0;
+      let cz = 0;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const a of list) {
+        cx += a.x;
+        cz += a.z;
+        minY = Math.min(minY, a.y);
+        maxY = Math.max(maxY, a.y);
+      }
+      cx /= list.length;
+      cz /= list.length;
+      let maxR = 0;
+      for (const a of list) {
+        maxR = Math.max(maxR, Math.hypot(a.x - cx, a.z - cz));
+      }
+      const invR = 1 / (maxR || 1);
+      const invH = 1 / (maxY - minY || 1);
+      const table: number[] = [];
+      for (let i = 0; i < list.length; i += 1) {
+        const a = list[i];
+        const rim = Math.hypot(a.x - cx, a.z - cz) * invR;
+        const under = 1 - (a.y - minY) * invH;
+        const w = (0.08 + 0.92 * rim * rim) * (0.3 + 0.7 * under);
+        table.push(i);
+        const copies = Math.round(w * 9);
+        for (let c = 0; c < copies; c += 1) table.push(i);
+      }
+      this.anchorPick = new Uint16Array(table);
+    }
     const windLen = Math.hypot(this.wind.x, this.wind.z) || 1;
     this.windDirX = this.wind.x / windLen;
     this.windDirZ = this.wind.z / windLen;
@@ -2207,21 +2320,24 @@ class FallingPetalSystem {
       this.positions.push(new THREE.Vector3());
       this.velocities.push(new THREE.Vector3());
       this.rotations.push(new THREE.Euler());
-      // Terminal fall speed: a low, tight band so the whole flock descends
-      // at an unhurried, deliberate pace. Drag relaxes v.y toward this
-      // instead of gravity accelerating without bound.
-      this.vTerms[i] = this.rand(0.28, 0.55);
+      // Terminal fall speed: a low, tight band (~0.2-0.4 u/s) so a full
+      // descent through the frame takes ~25-35s and each petal's path
+      // stays readable. Drag relaxes v.y toward this instead of gravity
+      // accelerating without bound.
+      this.vTerms[i] = this.rand(0.2, 0.38);
       // Falling-leaf side slip: long, slow lateral arcs perpendicular to
-      // the descent (low frequency, larger amplitude), so the path reads
-      // as gliding sweeps instead of jitter on top of the flow field.
+      // the descent. Periods of ~11-25s with wide amplitude keep the
+      // lateral speed gentle while each sweep spans a readable arc.
       const slipAngle = this.rand(0, TAU);
       this.slipDirXs[i] = Math.cos(slipAngle);
       this.slipDirZs[i] = Math.sin(slipAngle);
-      this.slipAmps[i] = this.rand(0.16, 0.3);
-      this.slipFreqs[i] = this.rand(0.55, 1.1);
+      this.slipAmps[i] = this.rand(0.3, 0.55);
+      this.slipFreqs[i] = this.rand(0.25, 0.55);
       this.slipPhases[i] = this.rand(0, TAU);
-      this.rockAmps[i] = this.rand(0.55, 1.0);
-      this.tumbleRates[i] = this.rand(0.25, 0.7) * (this.rng() < 0.5 ? -1 : 1);
+      // Lateral speeds are lower across the board, so the bank gain is
+      // raised to keep the roll visible.
+      this.rockAmps[i] = this.rand(0.7, 1.25);
+      this.tumbleRates[i] = this.rand(0.18, 0.5) * (this.rng() < 0.5 ? -1 : 1);
       this.tiltX0s[i] = this.rand(-0.45, 0.45);
       this.tiltZ0s[i] = this.rand(-0.45, 0.45);
       this.yaw0s[i] = this.rand(0, TAU);
@@ -2229,16 +2345,19 @@ class FallingPetalSystem {
       // yaw follows the spiral rate so the petal faces along its arc, and
       // the plain side slip is damped so the helix stays clean.
       if (this.rng() < 0.25) {
-        this.spiralRads[i] = this.rand(0.45, 0.95);
+        this.spiralRads[i] = this.rand(0.5, 1.0);
         this.spiralRates[i] =
-          this.rand(0.7, 1.4) * (this.rng() < 0.5 ? -1 : 1);
+          this.rand(0.5, 1.0) * (this.rng() < 0.5 ? -1 : 1);
         this.slipAmps[i] *= 0.35;
         this.tumbleRates[i] = this.spiralRates[i] * 0.9;
       } else {
         this.spiralRads[i] = 0;
         this.spiralRates[i] = 0;
       }
-      this.baseScales[i] = this.rand(0.45, 0.95);
+      // Scale band chosen so a petal covers ~2-4 halftone cells on screen:
+      // at the hero framing one world unit is ~67 css px, so the 0.33-long
+      // card at 0.62-1.0 scale spans ~14-22 px long by ~10-17 px wide.
+      this.baseScales[i] = this.rand(0.62, 1.0);
       // Same widened instance palette as the attached blossoms, so loose
       // petals match the canopy they fell from.
       sampleBlossomTint(this.rng, this.color);
@@ -2247,23 +2366,25 @@ class FallingPetalSystem {
         this.color,
       );
 
-      if (this.rng() < 0.6) {
+      if (this.rng() < 0.45) {
         // Pre-seed part of the flock mid-fall so the scene is not empty at
         // load: drop each petal a random way down its own descent and shift
-        // it downwind by the drift it would have accumulated.
+        // it downwind by the drift it would have accumulated. The drift
+        // time is capped so slow petals seeded near the bottom do not
+        // start beyond the recycle bounds.
         this.hold(i, 0);
         this.release(i);
         const p = this.positions[i];
         const drop =
           this.rng() * Math.max(0, p.y - PETAL_VOID_FADE_START - 0.2);
-        const driftT = drop / this.vTerms[i];
+        const driftT = Math.min(12, drop / this.vTerms[i]);
         this.fallAges[i] = driftT;
         p.y -= drop;
         p.x += this.wind.x * this.rand(0.6, 1.6) * driftT;
         p.z += this.wind.z * this.rand(0.6, 1.6) * driftT;
         this.velocities[i].y = -this.vTerms[i] * this.rand(0.6, 1);
       } else {
-        this.hold(i, this.rand(0.2, 6));
+        this.hold(i, this.rand(0.5, 8));
       }
     }
 
@@ -2281,23 +2402,32 @@ class FallingPetalSystem {
   private hold(i: number, delay: number) {
     const p = this.positions[i];
     if (this.anchors) {
-      // Spawn from a real blossom cluster: nudged slightly outward from the
-      // trunk axis and downward, like a petal separating from a corolla.
-      const a = this.anchors[Math.floor(this.rng() * this.anchors.length)];
+      // Spawn from a real blossom cluster, drawn through the weighted pick
+      // table (rim and underside anchors dominate), nudged slightly
+      // outward from the trunk axis and downward, like a petal separating
+      // from a corolla.
+      const pick = this.anchorPick;
+      const a = pick
+        ? this.anchors[pick[Math.floor(this.rng() * pick.length)]]
+        : this.anchors[Math.floor(this.rng() * this.anchors.length)];
       const radial = Math.hypot(a.x, a.z) || 1;
       const out = this.rand(0.04, 0.2);
       p.set(
         a.x + (a.x / radial) * out + this.rand(-0.06, 0.06),
-        a.y - this.rand(0.02, 0.16),
+        a.y - this.rand(0.04, 0.22),
         a.z + (a.z / radial) * out + this.rand(-0.06, 0.06),
       );
     } else {
+      // Lobe fallback (no blossoms built): shell-biased sample with the
+      // top hemisphere squashed, so even here petals leave from the rim
+      // and underside rather than the crown.
       const lobe = this.lobes[Math.floor(this.rng() * this.lobes.length)];
       const local = randomPointInUnitSphere(this.rng, this.tmp);
       local.multiplyScalar(0.75 + this.rng() * 0.35);
+      if (local.y > 0) local.y *= 0.45;
       p.set(
         lobe.center.x + local.x * lobe.radius.x,
-        lobe.center.y + local.y * lobe.radius.y + this.rand(0.2, 0.8),
+        lobe.center.y + local.y * lobe.radius.y + this.rand(-0.1, 0.3),
         lobe.center.z + local.z * lobe.radius.z,
       );
     }
@@ -2379,7 +2509,9 @@ class FallingPetalSystem {
       if (state === PETAL_HELD) {
         // Detachment rides the front: held petals barely age while the crest
         // is elsewhere and shed in a sweep as it passes over their anchor.
-        const releaseRate = 0.14 + Math.max(0, gustHere - 0.5) * 5.5;
+        // The low base rate (with the longer hold delays) keeps the
+        // airborne share down so individual trajectories read.
+        const releaseRate = 0.1 + Math.max(0, gustHere - 0.5) * 5.5;
         this.timers[i] -= dt * releaseRate;
         if (this.timers[i] <= 0) this.release(i);
       } else if (state === PETAL_FALLING) {
@@ -2412,11 +2544,13 @@ class FallingPetalSystem {
           }
         }
 
-        // Drag: relax toward the field velocity (same constants as before)
-        // instead of integrating unbounded gravity.
-        v.y += (targetY - v.y) * Math.min(1, 2.4 * dt);
-        v.x += (targetX - v.x) * Math.min(1, 1.5 * dt);
-        v.z += (targetZ - v.z) * Math.min(1, 1.5 * dt);
+        // Drag: relax toward the field velocity instead of integrating
+        // unbounded gravity. Lazy relax rates let a petal carry momentum
+        // through a flow-field change, stretching each turn into a long
+        // glide instead of a kink.
+        v.y += (targetY - v.y) * Math.min(1, 1.6 * dt);
+        v.x += (targetX - v.x) * Math.min(1, 1.05 * dt);
+        v.z += (targetZ - v.z) * Math.min(1, 1.05 * dt);
         p.addScaledVector(v, dt);
 
         // Falling-leaf side slip: long slow arcs perpendicular to the
@@ -2455,11 +2589,11 @@ class FallingPetalSystem {
           Math.abs(p.z) > 9 ||
           p.y < PETAL_VOID_FADE_END
         ) {
-          this.hold(i, this.rand(0.4, 4.5));
+          this.hold(i, this.rand(1.5, 7));
         }
       }
 
-      // Fade in from zero over ~0.4s at release (so recycled petals never
+      // Fade in from zero over ~0.6s at release (so recycled petals never
       // pop into view), then a scale-out ramp as the petal sinks past the
       // tree base into the void.
       const stateNow = this.states[i];
@@ -2470,7 +2604,7 @@ class FallingPetalSystem {
       const s =
         stateNow === PETAL_FALLING
           ? this.baseScales[i] *
-            smoothstep(0, 0.4, this.fallAges[i]) *
+            smoothstep(0, 0.6, this.fallAges[i]) *
             voidFade
           : 0;
 
@@ -4342,37 +4476,30 @@ export default function WeepingCherryTreeCanvas({
       roseGlow.position.set(2.7, 1.1, -4.5);
       scene.add(roseGlow);
 
-      // Void backdrop: a smooth plum glow behind the tree. Kept smooth on
-      // purpose — the halftone post-pass rasterizes the whole frame into
-      // dots, so a dot grid baked into this texture would double-dither.
-      // toneMapped stays false so the gradient's dark edge matches the clear
-      // color exactly and the plane disappears into the void.
+      // Void backdrop: animated fluid pink gradient (shaders at the top of
+      // the file). Kept smooth on purpose — the halftone post-pass
+      // rasterizes the whole frame into dots, so any texture baked here
+      // would double-dither. The color uniforms are THREE.Color values,
+      // which land in the linear working space; the shader writes them to
+      // the linear scene target and the halftone pass applies ACES + sRGB
+      // once, exactly as it did for the old sRGB-texture backdrop.
+      // Animation is a single uTime uniform driven from the render loop;
+      // the fragment cost (~4 gaussians at <=1x DPR) is negligible on
+      // every quality tier.
+      const voidBackdropUniforms = {
+        uTime: { value: 0 },
+        uBase: { value: new THREE.Color(0x0a0a0a) },
+        uRose: { value: new THREE.Color(0xd94379) },
+        uMagenta: { value: new THREE.Color(0xa92d5e) },
+        uPlum: { value: new THREE.Color(0x5a1f3a) },
+      };
       const createVoidBackdrop = () => {
-        const gradientCanvas = document.createElement("canvas");
-        gradientCanvas.width = 256;
-        gradientCanvas.height = 256;
-        const gradientCtx = gradientCanvas.getContext("2d");
-        if (!gradientCtx) return null;
-        // Glow center matches where the canopy sits on the plane.
-        const gradient = gradientCtx.createRadialGradient(
-          128,
-          112,
-          8,
-          128,
-          112,
-          158,
-        );
-        gradient.addColorStop(0, "#17101a");
-        gradient.addColorStop(0.55, "#100c13");
-        gradient.addColorStop(1, "#0a0a0a");
-        gradientCtx.fillStyle = gradient;
-        gradientCtx.fillRect(0, 0, 256, 256);
-        const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
-        gradientTexture.colorSpace = THREE.SRGBColorSpace;
         const backdrop = new THREE.Mesh(
           new THREE.PlaneGeometry(110, 62),
-          new THREE.MeshBasicMaterial({
-            map: gradientTexture,
+          new THREE.ShaderMaterial({
+            uniforms: voidBackdropUniforms,
+            vertexShader: VOID_BACKDROP_VERTEX_SHADER,
+            fragmentShader: VOID_BACKDROP_FRAGMENT_SHADER,
             fog: false,
             depthWrite: false,
             toneMapped: false,
@@ -4387,8 +4514,7 @@ export default function WeepingCherryTreeCanvas({
       };
       // Added to the scene (not worldGroup) so the backdrop never inherits
       // any world transform.
-      const voidBackdrop = createVoidBackdrop();
-      if (voidBackdrop) scene.add(voidBackdrop);
+      scene.add(createVoidBackdrop());
       await reportSceneBuildProgress();
 
       const generator = new WeepingCherryGenerator({
@@ -4592,6 +4718,7 @@ export default function WeepingCherryTreeCanvas({
         lastRenderedAt = now;
         const dt = Math.min(0.033, clock.getDelta());
         const elapsed = clock.elapsedTime;
+        voidBackdropUniforms.uTime.value = elapsed;
         tree.petals?.update(
           dt,
           elapsed,
