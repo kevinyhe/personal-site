@@ -1,0 +1,8 @@
+Model: "TV , Old TV , Retro TV" by Denys Hroshko
+Source: Sketchfab (downloaded by the site owner from
+https://sketchfab.com/3d-models/ — folder tv-old-tv-retro-tv)
+License: per the Sketchfab listing this model is CC Attribution-NonCommercial
+(CC BY-NC 4.0) — credit Denys Hroshko; NonCommercial terms apply. Review
+before any commercial use of the site.
+Conversion: source FBX converted to GLB with FBX2glTF; PBR textures from the
+download are bound at runtime; no other modifications.
