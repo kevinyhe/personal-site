@@ -377,7 +377,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         // Discrete steps instead of a continuous camera move; only opacity
         // actually animates.
         tl.to(heroLayer, { autoAlpha: 0, duration: 0.16 }, 0.02)
-          .set(sceneFx, { crtProgress: 1, halftone: 0, treeGrow: 1 }, 0.3)
+          .set(sceneFx, { crtProgress: 1, halftone: 0, treeDrop: 1 }, 0.3)
           .to(tagline, { autoAlpha: 1, duration: 0.14, y: 0 }, 0.78);
         return;
       }
@@ -414,15 +414,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { crtProgress: 1, duration: 0.5, ease: "power1.inOut" },
           0.12,
         )
-        // The tree grows WITH the pull-back, filling the display as it
-        // extends to the tube's taller ratio.
-        // Ungrow rides with the text exit but outlasts it — every strand
-        // of the choreography ends at its own time: text ~0.22, tree 0.36,
-        // dots 0.48, camera 0.62, tagline 0.92.
+        // The tree drops straight down out of the frame, starting with the
+        // letter exit and moving faster than the text, so it is gone before
+        // the text has finished fading. Every strand of the choreography
+        // ends at its own time: tree 0.18, text ~0.22, dots 0.48, camera
+        // 0.62, tagline 0.92.
         .to(
           sceneFx,
-          { treeGrow: 1, duration: 0.3, ease: "power1.inOut" },
-          0.06,
+          { treeDrop: 1, duration: 0.16, ease: "power2.in" },
+          0.02,
         )
         // The halftone dots dissolve into the smooth render as the pull-back
         // reveals the glass: full-screen the dots are the site's texture,
@@ -447,7 +447,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // ctx.revert() rewinds the scrubbed tweens, but belt-and-braces: a
       // remount must never start with the camera half-pulled-back.
       sceneFx.crtProgress = 0;
-      sceneFx.treeGrow = 0;
+      sceneFx.treeDrop = 0;
       sceneFx.halftone = 1;
       delete (window as unknown as Record<string, unknown>).__lenis;
       delete (window as unknown as Record<string, unknown>).__sceneFx;

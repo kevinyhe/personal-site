@@ -23,11 +23,13 @@ export const sceneFx = {
    */
   crtProgress: 0,
   /**
-   * 0..1 tree growth during the CRT transition: the tree scales up as the
-   * display extends to the tube's ratio, growing into the taller frame
-   * instead of pooling at the bottom of it.
+   * 0..1 tree drop during the scroll-out. 0 = the tree at its tuned
+   * placement, 1 = the whole tree (wood, blossoms, loose petals) translated
+   * straight down until it is fully below the frame. Pure translation — no
+   * scaling or fading — timed to finish before the page text has faded, so
+   * the tree is gone by the time the text is.
    */
-  treeGrow: 0,
+  treeDrop: 0,
   /**
    * Projected corners of the monitor's screen region in NDC, written by the
    * canvas render loop every frame while crtProgress > 0. Order: TL, TR,
