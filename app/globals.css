@@ -22,27 +22,154 @@
   box-sizing: border-box;
 }
 
-/* The home hero pins the viewport; every other route scrolls normally.
-   The lock rides on [data-home-lock], rendered only by the home page. */
-html:has([data-home-lock]),
-html:has([data-home-lock]) body {
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-
 html {
   background: #0a0a0a;
 }
 
+/* Transparent on purpose: .site-bg sits at z-index -1, and a negative-z child
+   of body paints BEFORE body's own background in the root stacking context.
+   Giving body a colour here would bury the whole background field. The colour
+   lives on html, which still propagates to the canvas and the overscroll
+   area. */
 body {
   margin: 0;
   min-height: 100%;
-  background: #0a0a0a;
+  background: transparent;
   color: #f0f0f0;
   font-family: var(--font-inter), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
+}
+
+/* ---------------------------------------------------------------------------
+   Site background field
+   --------------------------------------------------------------------------- */
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #0a0a0a;
+}
+
+.site-bg::before,
+.site-bg::after {
+  content: "";
+  position: absolute;
+  /* Oversized well past the viewport. A 90px blur samples from outside the
+     element, so an inset-0 layer would show a washed-out rim all the way
+     round where the filter runs out of pixels to average. */
+  inset: -30%;
+  filter: blur(90px);
+  will-change: transform;
+}
+
+/* Warm core: the bright pinks, upper right, echoing where the hero canvas
+   puts its own light. */
+.site-bg::before {
+  background:
+    radial-gradient(38% 46% at 64% 16%, #ff5f9a 0%, rgba(255, 95, 154, 0) 68%),
+    radial-gradient(46% 38% at 80% 44%, #d6246b 0%, rgba(214, 36, 107, 0) 70%),
+    radial-gradient(34% 42% at 46% 64%, #7d1338 0%, rgba(125, 19, 56, 0) 72%);
+  animation: site-bg-drift-a 64s ease-in-out infinite alternate;
+}
+
+/* Cool counterweight: violet to the right, a single warm ember upper left,
+   and a deep plum sink at the bottom so the field has somewhere to fall to. */
+.site-bg::after {
+  background:
+    radial-gradient(40% 34% at 90% 68%, #5c2f7a 0%, rgba(92, 47, 122, 0) 72%),
+    radial-gradient(28% 34% at 26% 24%, #ff8f6a 0%, rgba(255, 143, 106, 0) 70%),
+    radial-gradient(54% 44% at 68% 92%, #2a0a1c 0%, rgba(42, 10, 28, 0) 76%);
+  opacity: 0.9;
+  animation: site-bg-drift-b 87s ease-in-out infinite alternate;
+}
+
+/* Corners back to black, so the field reads as light in a dark room instead
+   of as wallpaper, and so body copy always has somewhere quiet to sit. */
+.site-bg-vignette {
+  position: absolute;
+  inset: 0;
+  /* Required, not cosmetic. ::before paints before an element's in-flow
+     children but ::after paints AFTER them, so at z-index auto this vignette
+     lands between the two blob layers and only darkens the first one. The
+     ::after blobs then sit on top at full strength, which is why the warm
+     ember was washing out the wordmark. */
+  z-index: 3;
+  background:
+    /* Top scrim. The subpage nav sits in the first ~90px, and the warm blob
+       drifts through that corner: without this the wordmark measures 4.57:1
+       against a 4.5 requirement at one phase of the loop, which is not a
+       margin worth shipping on something that moves. */
+    linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0.62) 0%,
+      rgba(10, 10, 10, 0) 20%
+    ),
+    radial-gradient(
+      124% 104% at 68% 28%,
+      rgba(10, 10, 10, 0) 32%,
+      rgba(10, 10, 10, 0.88) 100%
+    ),
+    linear-gradient(
+      to bottom right,
+      rgba(10, 10, 10, 0.92),
+      rgba(10, 10, 10, 0) 46%
+    );
+}
+
+/* Dither. The field is dark and its ramp is gentle, so it crosses only ~20-35
+   of the 256 available levels per channel across a whole 1280px viewport.
+   That leaves each level sitting as a 26-43px flat plateau with a 1/255 edge
+   against its neighbour, and those edges are what read as hard contour lines.
+   Nothing about the blur fixes it — the compositor quantises to 8 bits after
+   the filter runs.
+   A fine noise layer breaks the contours up so the eye stops locking onto
+   them. It sits above the vignette because the vignette is a gradient too and
+   bands on its own. */
+.site-bg-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  /* 0.035, not higher: an opacity sweep showed 0.035 and 0.05 both cut the
+     worst flat run from 45px to 7px, but 0.05 lifts the near-black areas by
+     ~4 levels against 0.035's ~2.7. Same fix, less milk in the blacks. */
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+@keyframes site-bg-drift-a {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-4%, 3%, 0) scale(1.09);
+  }
+  100% {
+    transform: translate3d(3%, -2%, 0) scale(1.03);
+  }
+}
+
+@keyframes site-bg-drift-b {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.04);
+  }
+  50% {
+    transform: translate3d(5%, -3%, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(-3%, 4%, 0) scale(1.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-bg::before,
+  .site-bg::after {
+    animation: none;
+  }
 }
 
 canvas {
@@ -59,14 +186,30 @@ canvas {
    Subpage sections ([data-reveal]) start hidden the same way and are
    revealed with a stagger as they enter the viewport. */
 [data-hero-animate],
+[data-hero-tagline],
 [data-reveal] {
   opacity: 0;
+}
+
+/* Name letters never fade — they are hidden by being parked below the
+   hairline and revealed by sliding up through it. The start offset lives in
+   CSS rather than only in GSAP so there is no frame where the letters paint
+   at their final position before the timeline takes over. */
+[data-hero-letter] {
+  transform: translateY(180%);
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-hero-animate],
   [data-reveal] {
     opacity: 1;
+  }
+  /* [data-hero-tagline] deliberately NOT restored here: even under reduced
+     motion it must stay hidden until its scroll position, and the scrubbed
+     timeline (which runs either way) owns its opacity from mount. */
+
+  [data-hero-letter] {
+    transform: none;
   }
 }
 

@@ -99,7 +99,7 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-[#0a0a0a] px-6 pb-6 pt-7 text-[#f0f0f0] sm:px-16 sm:pb-9 sm:pt-12"
+      className="flex min-h-screen flex-col px-6 pb-6 pt-7 text-[#f0f0f0] sm:px-16 sm:pb-9 sm:pt-12"
       ref={rootRef}
     >
       <header

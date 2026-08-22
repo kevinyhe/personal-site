@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import localFont from "next/font/local";
+import SiteBackground from "@/components/SiteBackground";
 import "./globals.css";
 
 const inter = Inter({
@@ -52,6 +53,7 @@ export default function RootLayout({
       lang="en"
     >
       <body>
+        <SiteBackground />
         {children}
 
         {/* Page-transition wipe. TransitionLink slides it up over the
