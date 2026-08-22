@@ -39,13 +39,6 @@ export const sceneFx = {
    */
   screenQuad: new Float32Array(8),
   /**
-   * 0..1 opacity of the closing tagline. Drawn INTO the display texture
-   * (under the glass shader, lit by the room) rather than as DOM, so it
-   * picks up the scanlines and bloom like everything else on the tube.
-   * Stays 0 until the camera has settled on the monitor.
-   */
-  tagline: 0,
-  /**
    * Loading bar painted on the monitor's glass during the television
    * loading shot: `loader` is the fill (0..1, the same displayed value as
    * the DOM bar over the black veil, so the two read as one bar), and

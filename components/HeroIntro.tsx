@@ -19,32 +19,25 @@ type HeroIntroProps = {
 };
 
 // The two poses of the scene. The page LOADS as the television shot: camera
-// pulled all the way back, the glass showing the closing line and the
-// loading bar, the tree parked below the frame. The reveal then runs the
-// old scroll choreography in reverse, automatically, into the flat hero.
+// pulled all the way back, the glass showing the loading bar, the tree
+// parked below the frame. The reveal then runs the old scroll choreography
+// in reverse, automatically, into the flat hero.
 const LOADING_POSE = {
   crtProgress: 1,
   halftone: 0,
   treeDrop: 1,
-  tagline: 1,
   loaderAlpha: 1,
 };
 const HERO_POSE = {
   crtProgress: 0,
   halftone: 1,
   treeDrop: 0,
-  tagline: 0,
   loaderAlpha: 0,
 };
 
-// Until the monitor model has landed, the bar stops short of full: the GLB
-// is the last real piece of loading, and the bar should visibly finish ON
-// the glass rather than arrive there already complete.
-const LOADER_CAP_BEFORE_CRT = 0.88;
-// How long the finished television shot holds before the reveal starts. It
-// is the loading screen the user asked for; a cut the instant the bar fills
-// would read as a flash.
-const TV_DWELL_MS = 900;
+// How long the filled bar holds on the glass before the reveal starts; a
+// cut the instant it fills would read as a flash.
+const TV_DWELL_MS = 500;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -66,9 +59,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     : 0;
   const sceneProgressRef = useRef(0);
   sceneProgressRef.current = progress;
-  const crtReadyRef = useRef(false);
-  crtReadyRef.current = crtReady;
   const tvShownAtRef = useRef(0);
+  const sceneReadyRef = useRef(false);
+  sceneReadyRef.current = sceneReady;
   const progressPercent = `${progress * 100}%`;
 
   const handleSceneProgress = useCallback(
@@ -115,8 +108,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // waiting, so the bar never stops moving; real progress snaps it forward.
   // The same displayed value drives the DOM bar (over the black veil) and
   // the bar painted on the monitor's glass (sceneFx.loader), so the two
-  // read as one bar that moved onto the screen. Once the television is
-  // showing and the bar has filled, this is also what starts the reveal.
+  // read as one bar that moved onto the screen. The television is usually
+  // up within the first phase (the model is ~750 KB all in), so nearly the
+  // whole bar plays out on the glass. Once the bar has filled on the
+  // television and the tree scene is in, this is what starts the reveal.
   useEffect(() => {
     if (revealStarted) return undefined;
     let displayed = 0;
@@ -127,8 +122,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       const target = sceneProgressRef.current;
       creep = Math.min(creep + 0.0035, 0.85 / SCENE_BUILD_MILESTONE_TOTAL);
       if (target >= 1) creep = 0;
-      const cap = crtReadyRef.current ? 1 : LOADER_CAP_BEFORE_CRT;
-      const goal = Math.min(cap, target + (target < 1 ? creep : 0));
+      const goal = Math.min(1, target + (target < 1 ? creep : 0));
       displayed += (goal - displayed) * 0.12;
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
@@ -139,6 +133,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       if (
         !started &&
         tvShownAtRef.current > 0 &&
+        sceneReadyRef.current &&
         displayed >= 0.995 &&
         performance.now() - tvShownAtRef.current >= TV_DWELL_MS &&
         !holdForCapture
@@ -153,16 +148,17 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     return () => cancelAnimationFrame(raf);
   }, [revealStarted]);
 
-  // The television appears once BOTH the tree scene and the monitor model
-  // are in: before the GLB lands the rig renders a crude placeholder body,
-  // which must never be seen. The black veil (with the DOM bar) fades off
-  // and the same bar is now on the glass.
+  // The television appears as soon as the canvas reports it drawn with the
+  // model and its textures in (before that the rig renders a crude
+  // placeholder body, which must never be seen) — normally while the tree
+  // is still building, so the bar runs on the glass. The black veil (with
+  // the DOM bar) fades off and the same bar is now on the screen.
   useEffect(() => {
-    if (sceneReady && crtReady && !tvShown) {
+    if (crtReady && !tvShown) {
       setTvShown(true);
       tvShownAtRef.current = performance.now();
     }
-  }, [crtReady, sceneReady, tvShown]);
+  }, [crtReady, tvShown]);
 
   // Separate effect so the fade is only ever killed on unmount: a cleanup
   // tied to the readiness flags above ran the moment tvShown flipped and
@@ -186,7 +182,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // canvas also reports "ready" on load failure, so this is belt and braces.
   useEffect(() => {
     if (!sceneReady || crtReady) return undefined;
-    const timeout = window.setTimeout(() => setCrtReady(true), 12000);
+    const timeout = window.setTimeout(() => setCrtReady(true), 8000);
     return () => window.clearTimeout(timeout);
   }, [crtReady, sceneReady]);
 
@@ -270,7 +266,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       );
 
       // Two seconds, automatic. Every strand ends at its own time: the bar
-      // and the line leave the glass first (0.45), the camera pushes in
+      // leaves the glass first (0.35), the camera pushes in
       // from the room to nose-against-the-glass (0.15 -> 1.75) while the
       // halftone dots come up under it (0.95 -> 1.65) so the flat page's
       // texture is fully in before the switch to the flat path; the tree
@@ -284,7 +280,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       });
       timeline
         .to(sceneFx, { loaderAlpha: 0, duration: 0.35, ease: "power2.out" }, 0)
-        .to(sceneFx, { tagline: 0, duration: 0.45, ease: "power2.out" }, 0.05)
         .to(
           sceneFx,
           { crtProgress: 0, duration: 1.6, ease: "power2.inOut" },
@@ -357,13 +352,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       >
         {children}
       </div>
-
-      {/* The closing line is painted onto the monitor's glass by the canvas
-          (see the tagline overlay in BareThreeCanvas), so the visible copy
-          is pixels. This one is for screen readers only. */}
-      <p className="sr-only" data-hero-tagline>
-        I build robots, software, and systems that bring ideas to life.
-      </p>
 
       {/* Black veil with the bar while the scene builds; it lifts to the
           television once the model is in, and the bar continues on the

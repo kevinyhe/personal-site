@@ -392,7 +392,7 @@ type BareThreeCanvasProps = {
   onCrtReady?: () => void;
 };
 
-export const SCENE_BUILD_MILESTONE_TOTAL = 5;
+export const SCENE_BUILD_MILESTONE_TOTAL = 9;
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -763,7 +763,9 @@ function getBranchFrame(branch: Branch, t: number): BranchFrame {
 
 class SpatialHash {
   private cellSize: number;
-  private buckets = new Map<string, OccupiedPoint[]>();
+  // Numeric cell keys: the string template key allocated on every lookup,
+  // and twig placement runs hundreds of thousands of lookups.
+  private buckets = new Map<number, OccupiedPoint[]>();
 
   constructor(cellSize: number) {
     this.cellSize = cellSize;
@@ -774,7 +776,8 @@ class SpatialHash {
   }
 
   private keyFromCell(x: number, y: number, z: number) {
-    return `${x},${y},${z}`;
+    // Cells within +-512 of the origin (the tree spans ~30 cells).
+    return ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
   }
 
   private cell(v: number) {
@@ -804,8 +807,9 @@ class SpatialHash {
         for (let z = cz - cr; z <= cz + cr; z += 1) {
           const bucket = this.buckets.get(this.keyFromCell(x, y, z));
           if (!bucket) continue;
+          const r2 = radius * radius;
           for (const point of bucket) {
-            if (point.position.distanceTo(position) <= radius)
+            if (point.position.distanceToSquared(position) <= r2)
               results.push(point);
           }
         }
@@ -817,19 +821,24 @@ class SpatialHash {
 }
 
 class BranchGeometryBuilder {
-  positions: number[] = [];
-  normals: number[] = [];
-  colors: number[] = [];
-  uvs: number[] = [];
-  windParams1: number[] = [];
-  windParams2: number[] = [];
-  indices: number[] = [];
-  private barkColor = new THREE.Color();
+  // Preallocated typed arrays, sized by reserve() from the branch list:
+  // pushing ~400k vertices through number[] (with array spreads for the
+  // wind vec4s) was the single largest slice of the scene build (~0.9 s).
+  positions = new Float32Array(0);
+  normals = new Float32Array(0);
+  colors = new Float32Array(0);
+  uvs = new Float32Array(0);
+  windParams1 = new Float32Array(0);
+  windParams2 = new Float32Array(0);
+  indices = new Uint32Array(0);
+  private vertexCount = 0;
+  private indexCount = 0;
   private center = new THREE.Vector3();
   private tangent = new THREE.Vector3();
   private normal = new THREE.Vector3();
   private binormal = new THREE.Vector3();
   private point = new THREE.Vector3();
+  private scratch = new THREE.Vector3();
 
   private getTubularSegments(branch: Branch) {
     return branch.depth === 0
@@ -865,15 +874,93 @@ class BranchGeometryBuilder {
                 : 3;
   }
 
+  // Exact vertex/index budget for a branch list, so append() never grows.
+  reserve(branches: Branch[]) {
+    let vertices = 0;
+    let indices = 0;
+    for (const branch of branches) {
+      const tubular = this.getTubularSegments(branch);
+      const radial = this.getRadialSegments(branch);
+      vertices += (tubular + 1) * radial;
+      indices += tubular * radial * 6;
+      const caps = (branch.depth === 0 ? 1 : 0) + (branch.terminal ? 1 : 0);
+      vertices += caps * (1 + radial);
+      indices += caps * radial * 3;
+    }
+    this.positions = new Float32Array(vertices * 3);
+    this.normals = new Float32Array(vertices * 3);
+    this.colors = new Float32Array(vertices * 3);
+    this.uvs = new Float32Array(vertices * 2);
+    this.windParams1 = new Float32Array(vertices * 4);
+    this.windParams2 = new Float32Array(vertices * 4);
+    this.indices = new Uint32Array(indices);
+    this.vertexCount = 0;
+    this.indexCount = 0;
+  }
+
+  private pushVertex(
+    px: number,
+    py: number,
+    pz: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    u: number,
+    v: number,
+    wind1: [number, number, number, number],
+    wind2: [number, number, number, number],
+    fade: number,
+  ) {
+    const i = this.vertexCount;
+    const i3 = i * 3;
+    const i4 = i * 4;
+    this.positions[i3] = px;
+    this.positions[i3 + 1] = py;
+    this.positions[i3 + 2] = pz;
+    this.normals[i3] = nx;
+    this.normals[i3 + 1] = ny;
+    this.normals[i3 + 2] = nz;
+    this.uvs[i * 2] = u;
+    this.uvs[i * 2 + 1] = v;
+    this.windParams1[i4] = wind1[0];
+    this.windParams1[i4 + 1] = wind1[1];
+    this.windParams1[i4 + 2] = wind1[2];
+    this.windParams1[i4 + 3] = wind1[3];
+    this.windParams2[i4] = wind2[0];
+    this.windParams2[i4 + 1] = wind2[1];
+    this.windParams2[i4 + 2] = wind2[2];
+    this.windParams2[i4 + 3] = wind2[3];
+    // Vertex color is a multiplier on the bark map: white everywhere
+    // except the last stretch of trunk below the frame's bottom edge
+    // (world y ~0.55, local ~0.52), where it ramps toward black so the
+    // off-screen cut end melts into the void. On screen this reads as
+    // only a subtle darkening right at the frame edge.
+    this.colors[i3] = fade;
+    this.colors[i3 + 1] = fade;
+    this.colors[i3 + 2] = fade;
+    this.vertexCount = i + 1;
+    return i;
+  }
+
+  private pushTriangle(a: number, b: number, c: number) {
+    const k = this.indexCount;
+    this.indices[k] = a;
+    this.indices[k + 1] = b;
+    this.indices[k + 2] = c;
+    this.indexCount = k + 3;
+  }
+
   append(branch: Branch) {
     const depth = branch.depth;
     const tubularSegments = this.getTubularSegments(branch);
     const radialSegments = this.getRadialSegments(branch);
-    const baseIndex = this.positions.length / 3;
+    const baseIndex = this.vertexCount;
     const depthFactor = clamp01(depth / 4);
     const transportedNormal = new THREE.Vector3();
     const previousTangent = new THREE.Vector3();
     let hasTransportedFrame = false;
+    const ridgeA = THREE.MathUtils.lerp(0.1, 0.025, depthFactor);
+    const ridgeB = THREE.MathUtils.lerp(0.036, 0.006, depthFactor);
 
     for (let i = 0; i <= tubularSegments; i += 1) {
       const t = i / tubularSegments;
@@ -896,7 +983,7 @@ class BranchGeometryBuilder {
 
       if (!hasTransportedFrame) {
         const helper =
-          Math.abs(this.tangent.y) > 0.88 ? new THREE.Vector3(1, 0, 0) : UP;
+          Math.abs(this.tangent.y) > 0.88 ? this.scratch.set(1, 0, 0) : UP;
         this.normal.crossVectors(helper, this.tangent).normalize();
         transportedNormal.copy(this.normal);
         previousTangent.copy(this.tangent);
@@ -909,16 +996,12 @@ class BranchGeometryBuilder {
         );
         if (tangentAlignment < 0.999) {
           transportedNormal
-            .sub(
-              this.tangent
-                .clone()
-                .multiplyScalar(transportedNormal.dot(this.tangent)),
-            )
+            .addScaledVector(this.tangent, -transportedNormal.dot(this.tangent))
             .normalize();
         }
         if (transportedNormal.lengthSq() < 1e-6) {
           const helper =
-            Math.abs(this.tangent.y) > 0.88 ? new THREE.Vector3(1, 0, 0) : UP;
+            Math.abs(this.tangent.y) > 0.88 ? this.scratch.set(1, 0, 0) : UP;
           transportedNormal.crossVectors(helper, this.tangent).normalize();
         }
         this.normal.copy(transportedNormal);
@@ -929,38 +1012,34 @@ class BranchGeometryBuilder {
       for (let j = 0; j < radialSegments; j += 1) {
         const theta = (j / radialSegments) * TAU;
         const ridge =
-          Math.sin(theta * 7.0 + i * 0.36 + depth * 1.3) *
-            THREE.MathUtils.lerp(0.1, 0.025, depthFactor) +
-          Math.sin(theta * 15.0 + i * 0.71) *
-            THREE.MathUtils.lerp(0.036, 0.006, depthFactor);
+          Math.sin(theta * 7.0 + i * 0.36 + depth * 1.3) * ridgeA +
+          Math.sin(theta * 15.0 + i * 0.71) * ridgeB;
         const ringRadius = radius * (1 + ridge);
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
 
-        const nx =
-          Math.cos(theta) * this.normal.x + Math.sin(theta) * this.binormal.x;
-        const ny =
-          Math.cos(theta) * this.normal.y + Math.sin(theta) * this.binormal.y;
-        const nz =
-          Math.cos(theta) * this.normal.z + Math.sin(theta) * this.binormal.z;
+        const nx = cosT * this.normal.x + sinT * this.binormal.x;
+        const ny = cosT * this.normal.y + sinT * this.binormal.y;
+        const nz = cosT * this.normal.z + sinT * this.binormal.z;
 
         this.point
           .copy(this.center)
-          .addScaledVector(this.normal, Math.cos(theta) * ringRadius)
-          .addScaledVector(this.binormal, Math.sin(theta) * ringRadius);
+          .addScaledVector(this.normal, cosT * ringRadius)
+          .addScaledVector(this.binormal, sinT * ringRadius);
 
-        this.positions.push(this.point.x, this.point.y, this.point.z);
-        this.normals.push(nx, ny, nz);
-        this.uvs.push(j / radialSegments, t);
-        this.windParams1.push(...wind.wind1);
-        this.windParams2.push(...wind.wind2);
-
-        // Vertex color is a multiplier on the bark map: white everywhere
-        // except the last stretch of trunk below the frame's bottom edge
-        // (world y ~0.55, local ~0.52), where it ramps toward black so the
-        // off-screen cut end melts into the void. On screen this reads as
-        // only a subtle darkening right at the frame edge.
-        const baseFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.point.y);
-        this.barkColor.setScalar(baseFade);
-        this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
+        this.pushVertex(
+          this.point.x,
+          this.point.y,
+          this.point.z,
+          nx,
+          ny,
+          nz,
+          j / radialSegments,
+          t,
+          wind.wind1,
+          wind.wind2,
+          0.05 + 0.95 * smoothstep(-0.1, 0.8, this.point.y),
+        );
       }
     }
 
@@ -971,68 +1050,67 @@ class BranchGeometryBuilder {
         const c = baseIndex + (i + 1) * radialSegments + j;
         const d =
           baseIndex + (i + 1) * radialSegments + ((j + 1) % radialSegments);
-        this.indices.push(a, c, b, b, c, d);
+        this.pushTriangle(a, c, b);
+        this.pushTriangle(b, c, d);
       }
     }
 
     const addCap = (t: 0 | 1) => {
       const ringStart =
         baseIndex + (t === 0 ? 0 : tubularSegments * radialSegments);
-      const centerIndex = this.positions.length / 3;
       branch.curve.getPointAt(t, this.center);
       branch.curve.getTangentAt(t, this.tangent).normalize();
       if (t === 0) this.tangent.multiplyScalar(-1);
-
-      this.positions.push(this.center.x, this.center.y, this.center.z);
-      this.normals.push(this.tangent.x, this.tangent.y, this.tangent.z);
-      this.uvs.push(0.5, t);
       const capWind = getBranchWindVectors(branch, t);
-      this.windParams1.push(...capWind.wind1);
-      this.windParams2.push(...capWind.wind2);
       // Same void fade as the ring vertices: the trunk's bottom cap sits at
       // y=0, below the frame edge, and reads near-black.
       const capFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.center.y);
-      this.barkColor.setScalar(capFade);
-      this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
+      const centerIndex = this.pushVertex(
+        this.center.x,
+        this.center.y,
+        this.center.z,
+        this.tangent.x,
+        this.tangent.y,
+        this.tangent.z,
+        0.5,
+        t,
+        capWind.wind1,
+        capWind.wind2,
+        capFade,
+      );
 
-      const capRingStart = this.positions.length / 3;
+      const capRingStart = this.vertexCount;
+      const w1: [number, number, number, number] = [0, 0, 0, 0];
+      const w2: [number, number, number, number] = [0, 0, 0, 0];
       for (let j = 0; j < radialSegments; j += 1) {
+        // Duplicate the ring vertex with the cap's flat normal.
         const source = ringStart + j;
-        const positionOffset = source * 3;
-        const uvOffset = source * 2;
-        const colorOffset = source * 3;
-        this.positions.push(
-          this.positions[positionOffset],
-          this.positions[positionOffset + 1],
-          this.positions[positionOffset + 2],
-        );
-        this.normals.push(this.tangent.x, this.tangent.y, this.tangent.z);
-        this.uvs.push(this.uvs[uvOffset], t);
-        const windOffset = source * 4;
-        this.windParams1.push(
-          this.windParams1[windOffset],
-          this.windParams1[windOffset + 1],
-          this.windParams1[windOffset + 2],
-          this.windParams1[windOffset + 3],
-        );
-        this.windParams2.push(
-          this.windParams2[windOffset],
-          this.windParams2[windOffset + 1],
-          this.windParams2[windOffset + 2],
-          this.windParams2[windOffset + 3],
-        );
-        this.colors.push(
-          this.colors[colorOffset],
-          this.colors[colorOffset + 1],
-          this.colors[colorOffset + 2],
+        const p3 = source * 3;
+        const p4 = source * 4;
+        for (let k = 0; k < 4; k += 1) {
+          w1[k] = this.windParams1[p4 + k];
+          w2[k] = this.windParams2[p4 + k];
+        }
+        this.pushVertex(
+          this.positions[p3],
+          this.positions[p3 + 1],
+          this.positions[p3 + 2],
+          this.tangent.x,
+          this.tangent.y,
+          this.tangent.z,
+          this.uvs[source * 2],
+          t,
+          w1,
+          w2,
+          this.colors[p3],
         );
       }
 
       for (let j = 0; j < radialSegments; j += 1) {
         const a = capRingStart + j;
         const b = capRingStart + ((j + 1) % radialSegments);
-        if (t === 0) this.indices.push(centerIndex, b, a);
-        else this.indices.push(centerIndex, a, b);
+        if (t === 0) this.pushTriangle(centerIndex, b, a);
+        else this.pushTriangle(centerIndex, a, b);
       }
     };
 
@@ -1041,29 +1119,28 @@ class BranchGeometryBuilder {
   }
 
   build() {
+    if (this.vertexCount * 3 !== this.positions.length) {
+      throw new Error(
+        `BranchGeometryBuilder: reserved ${this.positions.length / 3} vertices, wrote ${this.vertexCount}`,
+      );
+    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
       "position",
-      new THREE.Float32BufferAttribute(this.positions, 3),
+      new THREE.BufferAttribute(this.positions, 3),
     );
-    geometry.setAttribute(
-      "normal",
-      new THREE.Float32BufferAttribute(this.normals, 3),
-    );
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(this.uvs, 2));
-    geometry.setAttribute(
-      "color",
-      new THREE.Float32BufferAttribute(this.colors, 3),
-    );
+    geometry.setAttribute("normal", new THREE.BufferAttribute(this.normals, 3));
+    geometry.setAttribute("uv", new THREE.BufferAttribute(this.uvs, 2));
+    geometry.setAttribute("color", new THREE.BufferAttribute(this.colors, 3));
     geometry.setAttribute(
       "windParams1",
-      new THREE.Float32BufferAttribute(this.windParams1, 4),
+      new THREE.BufferAttribute(this.windParams1, 4),
     );
     geometry.setAttribute(
       "windParams2",
-      new THREE.Float32BufferAttribute(this.windParams2, 4),
+      new THREE.BufferAttribute(this.windParams2, 4),
     );
-    geometry.setIndex(this.indices);
+    geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
     geometry.computeBoundingSphere();
     return geometry;
   }
@@ -2152,8 +2229,13 @@ function createPetalDetailTexture() {
 }
 
 function createBarkTextures() {
-  const width = 384;
-  const height = 768;
+  // 256x512, not 384x768: every texel runs ~15 value-noise evaluations
+  // (four wrapped fbm stacks plus the lenticel stroke), which made this
+  // the single largest slice of the scene build (0.79 s at 384x768). The
+  // bark is seen through the halftone at a few hundred px, so half the
+  // resolution is not visible, and the build drops by ~0.45 s.
+  const width = 256;
+  const height = 512;
   const colorCanvas = document.createElement("canvas");
   const bumpCanvas = document.createElement("canvas");
   const roughCanvas = document.createElement("canvas");
@@ -3524,7 +3606,18 @@ class WeepingCherryGenerator {
     return radial.normalize();
   }
 
-  generate() {
+  // Phased so the page can draw between the heavy steps: each `await
+  // onPhase()` yields a frame to the loading loop (the television with the
+  // bar) and bumps the progress bar. Phase timings land on
+  // window.__treeBuildTimings for profiling.
+  async generate(onPhase?: () => Promise<void>) {
+    const timings: Record<string, number> = {};
+    let phaseStart = performance.now();
+    const phase = async (name: string) => {
+      timings[name] = Math.round(performance.now() - phaseStart);
+      await onPhase?.();
+      phaseStart = performance.now();
+    };
     this.group.name = "Procedural Weeping Cherry Tree";
     // Frozen placement, chosen live with the ?tune panel. Lifted 2.25u and
     // pushed 4.35u toward the camera, scaled to 0.76x of the original to hold
@@ -3552,14 +3645,20 @@ class WeepingCherryGenerator {
       ...tertiaries,
     ]);
     this.createSubTwigs();
+    await phase("skeleton");
 
     this.solveRadii(trunk);
     this.computeWeights(trunk);
     this.applySagging(trunk);
     this.computeWindChains(trunk);
+    await phase("radii");
     this.buildBranchMesh();
+    await phase("branchMesh");
     this.buildBlossomMeshes();
+    await phase("blossoms");
     this.buildPetals();
+    timings.petals = Math.round(performance.now() - phaseStart);
+    (window as unknown as Record<string, unknown>).__treeBuildTimings = timings;
 
     if (this.options.showDebugLobes) this.addDebugLobes();
     return {
@@ -4469,9 +4568,12 @@ class WeepingCherryGenerator {
     }
 
     const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.42);
-    // Short fine twigs do not need the default 200 cached arc-length samples;
-    // this keeps generation time flat despite the much larger twig count.
-    if (depth >= 4) curve.arcLengthDivisions = 48;
+    // Arc-length tables sized to the branch: the default 200 samples per
+    // curve, over thousands of short twigs, was ~0.3 s of the build in
+    // getUtoTmapping alone. Short fine twigs are a few segments long and
+    // need far fewer; only the trunk and primaries keep the default.
+    curve.arcLengthDivisions =
+      depth >= 5 ? 20 : depth >= 4 ? 32 : depth >= 2 ? 64 : 200;
     return curve;
   }
 
@@ -4665,6 +4767,7 @@ class WeepingCherryGenerator {
 
   private buildBranchMesh() {
     const builder = new BranchGeometryBuilder();
+    builder.reserve(this.branches);
     for (const branch of this.branches) builder.append(branch);
     const geometry = builder.build();
     const textures = createBarkTextures();
@@ -5117,22 +5220,36 @@ class WeepingCherryGenerator {
     const colors = geometry?.getAttribute("color");
     const positions = geometry?.getAttribute("position");
     if (!colors || !positions) return;
+    // Raw typed arrays, not getX/setXYZ: ~400k vertices through the
+    // accessor path (with its normalisation checks) was 0.24 s of the
+    // build on its own.
+    const pos = positions.array as Float32Array;
+    const col = colors.array as Float32Array;
     const point = new THREE.Vector3();
     const shade: [number, number, number, number] = [0, 1, 0, 1];
+    const kdx = kx / klen;
+    const kdy = ky / klen;
+    const kdz = kz / klen;
+    // Sampled every third vertex and shared with the next two: ring
+    // neighbours sit within a twig radius of each other, far below the
+    // occlusion grid's cell size, so they see the same value.
+    const stride = 3;
+    let f = 1;
     for (let i = 0; i < colors.count; i += 1) {
-      point.fromBufferAttribute(positions, i);
-      occlusion.sample(point, shade);
-      // Gentler than the blossoms take: bark is already near-black in this
-      // scene and crushing it further just loses the branch structure. The
-      // key-shadow term adds the sun side / shade side split.
-      const keySh = occlusion.keyShadow(point, kx / klen, ky / klen, kz / klen);
-      const f = (0.55 + 0.45 * shade[3]) * (0.78 + 0.22 * keySh);
-      colors.setXYZ(
-        i,
-        colors.getX(i) * f,
-        colors.getY(i) * f,
-        colors.getZ(i) * f,
-      );
+      const i3 = i * 3;
+      if (i % stride === 0) {
+        point.set(pos[i3], pos[i3 + 1], pos[i3 + 2]);
+        occlusion.sample(point, shade);
+        // Gentler than the blossoms take: bark is already near-black in
+        // this scene and crushing it further just loses the branch
+        // structure. The key-shadow term adds the sun side / shade side
+        // split.
+        const keySh = occlusion.keyShadow(point, kdx, kdy, kdz);
+        f = (0.55 + 0.45 * shade[3]) * (0.78 + 0.22 * keySh);
+      }
+      col[i3] *= f;
+      col[i3 + 1] *= f;
+      col[i3 + 2] *= f;
     }
     colors.needsUpdate = true;
   }
@@ -5427,86 +5544,11 @@ export default function WeepingCherryTreeCanvas({
       const halftoneScene = new THREE.Scene();
       halftoneScene.add(halftoneMesh);
       const halftoneCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      // ---- Tagline on the glass ------------------------------------------
-      // The closing line is composited INTO displayTarget rather than laid
-      // over the page as DOM: the glass shader (scanlines, phosphor mask,
-      // bloom) and the room lighting act on whatever is in that texture, so
-      // the text reads as light coming off the tube instead of a caption
-      // floating in front of the monitor. A 2D canvas paints the sentence
-      // once in Apparel italic with a pink phosphor halo baked in; a small
-      // quad blends it into the extended display above the site's band,
-      // with sceneFx.tagline as its opacity.
-      const TAGLINE_TEXT =
-        "I build robots, software, and systems that bring ideas to life.";
-      const TAGLINE_CANVAS_W = 1536;
-      const TAGLINE_FONT_PX = 112;
-      const TAGLINE_LINE_HEIGHT = 1.16;
-      const TAGLINE_MAX_CH = 26;
-      // Halo radius in canvas px; the canvas is padded by this much so the
-      // bloom is not clipped at its edges.
-      const TAGLINE_PAD = 120;
-      // Line height as a fraction of the glass height, and the block's
-      // centre as a fraction up the glass. Above the site band's hero so it
-      // never shares a pixel with the "Kevin He." lockup.
-      const TAGLINE_LINE_FRAC = 0.085;
-      const TAGLINE_CENTER_V = 0.62;
-      const taglineCanvas = document.createElement("canvas");
-      taglineCanvas.width = TAGLINE_CANVAS_W;
-      taglineCanvas.height = TAGLINE_PAD * 2 + TAGLINE_FONT_PX * 2;
-      // The canvas already holds premultiplied pixels; uploading them as
-      // such (and blending as such) skips an un-premultiply/re-multiply
-      // round-trip that darkens the faint outer halo into a grey fringe.
-      const taglineTexture = new THREE.CanvasTexture(taglineCanvas);
-      taglineTexture.premultiplyAlpha = true;
-      taglineTexture.generateMipmaps = false;
-      taglineTexture.minFilter = THREE.LinearFilter;
-      taglineTexture.magFilter = THREE.LinearFilter;
-      // NoColorSpace on purpose: displayTarget holds the halftone pass's
-      // already sRGB-ENCODED output, and the canvas pixels are sRGB too, so
-      // they copy straight through. Tagging the texture sRGB would have the
-      // GPU decode it to linear on sample and the text would land washed
-      // out next to the encoded site view.
-      taglineTexture.colorSpace = THREE.NoColorSpace;
-      const taglineUniforms = {
-        uMap: { value: taglineTexture },
-        // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
-        uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
-        uOpacity: { value: 0 },
-      };
-      const taglineMaterial = new THREE.RawShaderMaterial({
-        uniforms: taglineUniforms,
-        vertexShader: /* glsl */ `
-precision highp float;
-attribute vec3 position;
-uniform vec4 uRect;
-varying vec2 vUv;
-void main() {
-  vUv = position.xy * 0.5 + 0.5;
-  gl_Position = vec4(uRect.xy + position.xy * uRect.zw, 0.0, 1.0);
-}
-`,
-        fragmentShader: /* glsl */ `
-precision highp float;
-uniform sampler2D uMap;
-uniform float uOpacity;
-varying vec2 vUv;
-void main() {
-  // Premultiplied in, premultiplied out (One / OneMinusSrcAlpha below).
-  gl_FragColor = texture2D(uMap, vUv) * uOpacity;
-}
-`,
-        transparent: true,
-        blending: THREE.CustomBlending,
-        blendSrc: THREE.OneFactor,
-        blendDst: THREE.OneMinusSrcAlphaFactor,
-        blendSrcAlpha: THREE.OneFactor,
-        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      });
-      const taglineGeometry = new THREE.BufferGeometry();
-      taglineGeometry.setAttribute(
+      // ---- Overlays on the glass -----------------------------------------
+      // A clip-space quad shared by the overlays composited into
+      // displayTarget after the halftone pass (uRect places it in NDC).
+      const overlayQuadGeometry = new THREE.BufferGeometry();
+      overlayQuadGeometry.setAttribute(
         "position",
         new THREE.BufferAttribute(
           new Float32Array([
@@ -5515,17 +5557,13 @@ void main() {
           3,
         ),
       );
-      const taglineMesh = new THREE.Mesh(taglineGeometry, taglineMaterial);
-      taglineMesh.frustumCulled = false;
-      const taglineScene = new THREE.Scene();
-      taglineScene.add(taglineMesh);
 
       // Loading bar on the glass: the page loads AS the television shot,
       // and the same bar the black veil showed continues here (sceneFx
       // .loader is the shared displayed fill). Procedural — a hairline
-      // track with a pink-white fill — drawn with the tagline's quad so it
+      // track with a pink-white fill — composited into displayTarget so it
       // rides through the same raster/scanline/bloom treatment.
-      const LOADER_CENTER_V = 0.44;
+      const LOADER_CENTER_V = 0.5;
       const loaderUniforms = {
         uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
         uFill: { value: 0 },
@@ -5549,7 +5587,7 @@ uniform float uFill;
 uniform float uOpacity;
 varying vec2 vUv;
 void main() {
-  // Track at 15% white, fill in the tagline's warm pink-white, with a soft
+  // Track at 22% white, fill in warm pink-white, with a soft
   // leading edge so the fill reads as light, not a hard bar. Premultiplied.
   float filled = 1.0 - smoothstep(uFill - 0.01, uFill + 0.004, vUv.x);
   vec3 track = vec3(0.22);
@@ -5569,153 +5607,19 @@ void main() {
         depthWrite: false,
         toneMapped: false,
       });
-      const loaderMesh = new THREE.Mesh(taglineGeometry, loaderMaterial);
+      const loaderMesh = new THREE.Mesh(overlayQuadGeometry, loaderMaterial);
       loaderMesh.frustumCulled = false;
       const loaderScene = new THREE.Scene();
       loaderScene.add(loaderMesh);
       // Bar geometry: 26% of the glass width, a raster line and a half
       // tall (NDC spans 2 over the raster's line count, so half a height of
-      // 1.5 lines is 1.5 / lines), centred under the tagline. Thinner than
+      // 1.5 lines is 1.5 / lines), centred on the glass. Thinner than
       // a line and the glass shader's cell filter plus the scanline gap
       // average it away to nothing — a 1.6 px bar was invisible.
       const updateLoaderRect = () => {
-        const halfW = 0.13;
+        const halfW = 0.22;
         const halfH = 1.5 / crtRasterLines();
         loaderUniforms.uRect.value.set(0, LOADER_CENTER_V * 2 - 1, halfW, halfH);
-      };
-      // Paints the sentence: word-wrapped to ~26ch, centred, tight tracking
-      // like the DOM lockup had, then a wide dim magenta bloom, a tighter
-      // pink halo, a faint horizontal smear (phosphor persistence), and the
-      // crisp warm-white glyphs on top.
-      const paintTagline = (family: string) => {
-        const ctx = taglineCanvas.getContext("2d") as
-          | (CanvasRenderingContext2D & { letterSpacing?: string })
-          | null;
-        if (!ctx) return;
-        const font = `italic 400 ${TAGLINE_FONT_PX}px ${family}`;
-        ctx.font = font;
-        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
-        // ch is the advance of "0", same as the CSS unit the DOM used —
-        // but never wider than the canvas minus the halo padding, or the
-        // first and last glyphs of a line get cut off.
-        const maxWidth = Math.min(
-          ctx.measureText("0").width * TAGLINE_MAX_CH,
-          taglineCanvas.width - TAGLINE_PAD * 2,
-        );
-        const wrap = (width: number) => {
-          const out: string[] = [];
-          let line = "";
-          for (const word of TAGLINE_TEXT.split(" ")) {
-            const probe = line ? `${line} ${word}` : word;
-            if (line && ctx.measureText(probe).width > width) {
-              out.push(line);
-              line = word;
-            } else {
-              line = probe;
-            }
-          }
-          if (line) out.push(line);
-          return out;
-        };
-        // text-balance, like the DOM version had: greedy wrapping strands
-        // "life." alone on the last line. Tighten the width until one more
-        // line would be needed, and keep the narrowest width before that.
-        let lines = wrap(maxWidth);
-        for (let w = maxWidth * 0.97; w > maxWidth * 0.5; w *= 0.97) {
-          const tighter = wrap(w);
-          if (tighter.length > lines.length) break;
-          lines = tighter;
-        }
-        const lineH = TAGLINE_FONT_PX * TAGLINE_LINE_HEIGHT;
-        const height = Math.round(TAGLINE_PAD * 2 + lineH * lines.length);
-        // Resizing resets the context state, so the font is set again
-        // below either way.
-        if (taglineCanvas.height !== height) taglineCanvas.height = height;
-        ctx.clearRect(0, 0, taglineCanvas.width, taglineCanvas.height);
-        ctx.font = font;
-        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const cx = taglineCanvas.width / 2;
-        const drawLines = (dx: number) => {
-          lines.forEach((text, i) => {
-            ctx.fillText(text, cx + dx, TAGLINE_PAD + lineH * (i + 0.5));
-          });
-        };
-        // Wide, dim magenta bloom: the glow the phosphor throws into the
-        // glass around bright strokes.
-        ctx.shadowColor = "rgba(214, 60, 120, 0.85)";
-        ctx.shadowBlur = TAGLINE_PAD * 0.7;
-        ctx.fillStyle = "rgba(255, 143, 174, 0.7)";
-        drawLines(0);
-        // Tighter pink halo hugging the glyphs.
-        ctx.shadowColor = "rgba(255, 143, 174, 0.9)";
-        ctx.shadowBlur = TAGLINE_FONT_PX * 0.22;
-        ctx.fillStyle = "rgba(255, 180, 200, 0.7)";
-        drawLines(0);
-        // Horizontal smear: the beam's persistence trails a little to each
-        // side along the scanline direction.
-        ctx.shadowBlur = 0;
-        ctx.shadowColor = "transparent";
-        ctx.fillStyle = "rgba(255, 160, 190, 0.16)";
-        for (const dx of [-0.09, -0.05, 0.05, 0.09]) {
-          drawLines(dx * TAGLINE_FONT_PX);
-        }
-        // The crisp glyphs.
-        ctx.fillStyle = "#ffe9f2";
-        drawLines(0);
-        taglineTexture.needsUpdate = true;
-      };
-      // Apparel is the site's display serif, loaded by next/font/local under
-      // a hashed family name; read it off the CSS variable rather than
-      // guessing. Paint immediately with whatever the browser resolves (a
-      // serif fallback if the face is not in yet), then repaint once the
-      // italic cut has actually loaded so the glyphs match the "He." lockup.
-      let taglineDisposed = false;
-      {
-        const cssFamily = getComputedStyle(document.documentElement)
-          .getPropertyValue("--font-instrument-serif")
-          .trim();
-        const family = cssFamily
-          ? `${cssFamily}, Georgia, serif`
-          : "Georgia, serif";
-        paintTagline(family);
-        if (cssFamily && typeof document.fonts?.load === "function") {
-          const probe = `italic 400 ${TAGLINE_FONT_PX}px ${cssFamily}`;
-          document.fonts
-            .load(probe, "I build")
-            .then(() => document.fonts.ready)
-            .then(() => {
-              if (taglineDisposed) return;
-              paintTagline(family);
-            })
-            .catch(() => {
-              // Keep the fallback paint; the line still reads.
-            });
-        }
-      }
-      // Sizes the quad so one text line is TAGLINE_LINE_FRAC of the glass
-      // height and the block is centred at TAGLINE_CENTER_V, in the
-      // extended display's own aspect. Cheap enough to run per drawn frame,
-      // which also covers resizes and the late font repaint for free.
-      const updateTaglineRect = () => {
-        const lineH = TAGLINE_FONT_PX * TAGLINE_LINE_HEIGHT;
-        let halfH = (taglineCanvas.height / lineH) * TAGLINE_LINE_FRAC;
-        let halfW =
-          halfH *
-          (taglineCanvas.width / taglineCanvas.height) *
-          (crtExt.extH / crtExt.extW);
-        // Never wider than the glass (portrait viewports).
-        if (halfW > 0.96) {
-          halfH *= 0.96 / halfW;
-          halfW = 0.96;
-        }
-        taglineUniforms.uRect.value.set(
-          0,
-          TAGLINE_CENTER_V * 2 - 1,
-          halfW,
-          halfH,
-        );
       };
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
@@ -5798,13 +5702,13 @@ void main() {
               // monitor, hot in the middle, fading to plum then black with
               // a steep falloff. Gaussian rather than smoothstep so the
               // outer edge never shows a visible rim.
-              // Biased to the left, the key light's side, so the wall
+              // Biased to the right, the key light's side, so the wall
               // reads lit from one direction like the machine.
-              vec2 pp = (q - vec2(-0.16, -0.12)) * vec2(1.05, 1.9);
+              vec2 pp = (q - vec2(0.2, -0.12)) * vec2(1.05, 1.9);
               float pool = exp(-dot(pp, pp) * 3.4);
               // Violet practical, off to the upper left and weak.
               vec2 vp = (q - vec2(-0.55 * aspect, 0.48)) * vec2(1.2, 1.6);
-              float violet = exp(-dot(vp, vp) * 2.2) * 0.55;
+              float violet = exp(-dot(vp, vp) * 2.2) * 0.22;
               // Floor pool: a low band hugging the bottom edge.
               float floorGlow = exp(-uv.y * uv.y * 26.0) * 0.32;
               vec3 c = BASE;
@@ -5870,7 +5774,7 @@ void main() {
         envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
         crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
-        crtScene.environmentIntensity = 0.9;
+        crtScene.environmentIntensity = 0.28;
         envTex.dispose();
         pmrem.dispose();
       }
@@ -6074,13 +5978,15 @@ void main() {
         // read as a sticker.
         screen: { cx: 0, cy: 2.4829, cz: 0.375, w: 1.62, h: 1.35, pitch: 0 },
         yaw: -Math.PI / 2,
+        // WebP re-encodes of the download's 2K PNG set (296 KB for all
+        // four, down from 7.3 MB): colour at 2K, the rest at 1K — the set
+        // is seen ~450 px wide at the end pose.
         textures: {
-          map: "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_BaseColor.png",
-          normalMap: "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Normal.png",
-          metalnessMap:
-            "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Metallic.png",
+          map: "/models/tv-old-tv-retro-tv/textures/crt-basecolor.webp",
+          normalMap: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp",
+          metalnessMap: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp",
           roughnessMap:
-            "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Roughness.png",
+            "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp",
         },
       };
       // Reference pose: front turned toward the viewer's right, left cheek
@@ -6110,7 +6016,11 @@ void main() {
       // to the flat render — the old baked 0.15 bulge warped corner content
       // ~11% in a single frame, which was the visible "sudden" pop.
       const buildScreenGeometry = () => {
-        const geo = new THREE.PlaneGeometry(crtScreenState.aspect, 1, 48, 36);
+        // 24x18: the dome is smooth, and every vertex costs a raycast
+        // against the whole model when the GLB lands (no BVH) — 48x36 was
+        // ~0.5 s on the main thread right when the television is about to
+        // appear.
+        const geo = new THREE.PlaneGeometry(crtScreenState.aspect, 1, 24, 18);
         const count = geo.attributes.position.count;
         const heights = new Float32Array(count).fill(0.15);
         const normals = new Float32Array(count * 3);
@@ -6397,17 +6307,18 @@ void main() {
       // backdrop, and a plum practical low on the left keeps the bezel,
       // buttons and badge readable instead of crushing to black. Dim
       // violet hemisphere only — form shading must survive.
-      // One-sided, like a single motivated source: a strong warm-pink key
-      // from the upper LEFT and in front (the side the camera sees the
-      // cheek of — CRT_YAW turns the front toward the viewer's right), so
-      // the left face and the left of the bezel take the light and the
-      // right side falls into the shadow that the screen's own spill then
-      // fills. Everything else is kept low enough to stay a shadow side,
-      // not a second source.
-      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.12);
+      // One-sided. A single motivated source: a strong warm-pink key from
+      // the upper right and in front, raking across the face so the right
+      // cheek and the right of the bezel take the light and the left side
+      // falls away into the shadow it throws toward the back-left (the
+      // ~10 o'clock floor shadow). Everything else is kept far below the
+      // key so the dark side stays dark: no ambient to speak of, a fill
+      // you only notice when it is gone, and a thin rim to cut the dark
+      // edge out of the black.
+      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.04);
       crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.4);
-      crtKey.position.set(-3.4, 3.2, 2.4);
+      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.6);
+      crtKey.position.set(3.4, 2.8, 2.0);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
       crtKey.shadow.camera.near = 0.1;
@@ -6418,20 +6329,16 @@ void main() {
       crtKey.shadow.camera.bottom = -4;
       crtKey.shadow.bias = -0.0005;
       crtScene.add(crtKey);
-      // Fill from the shadow side: barely there, cool, just enough that
-      // the right cheek is a dark plum plane rather than a hole.
-      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.18);
-      crtFill.position.set(2.8, 0.6, 1.6);
+      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.1);
+      crtFill.position.set(-2.8, 0.6, 1.6);
       crtScene.add(crtFill);
-      // Rim from behind on the shadow side: a thin violet edge that cuts
-      // the dark right side out of the black backdrop.
-      const crtRim = new THREE.DirectionalLight(0x9a6cff, 1.4);
-      crtRim.position.set(2.2, 3.0, -2.6);
+      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.9);
+      crtRim.position.set(-2.0, 3.0, -2.6);
       crtScene.add(crtRim);
       // Practical on the KEY side, low: the same lamp the key stands in
-      // for, pooling on the near-left of the body. Distance-limited.
-      const crtPractical = new THREE.PointLight(0xd63c78, 3.5, 6, 2);
-      crtPractical.position.set(-2.6, -0.5, 0.8);
+      // for, pooling on the near-right of the body. Distance-limited.
+      const crtPractical = new THREE.PointLight(0xd63c78, 2.5, 6, 2);
+      crtPractical.position.set(2.6, -0.5, 0.8);
       crtScene.add(crtPractical);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
@@ -6683,12 +6590,31 @@ void main() {
           lines,
         );
         crtScreenUniforms.uCellLod.value = Math.log2(crtExt.extH / lines);
-        crtGlow.intensity = 13 * fx;
+        crtGlow.intensity = 5 * fx;
       };
 
-      // Model load: async, never blocks scene-ready.
+      // Model load: async, never blocks scene-ready. The page loads AS the
+      // television shot, so "the television is ready" means the GLB AND
+      // its four textures are decoded (one LoadingManager queue — the
+      // textures are queued inside the GLB callback, so the manager's
+      // onLoad fires once, after the last of them) AND the loading loop
+      // below has drawn at least one frame of it.
+      let crtAssetsReady = false;
+      let loadingFramesDrawn = 0;
+      let reportedCrtReady = false;
+      const maybeReportCrtReady = () => {
+        if (reportedCrtReady || disposed) return;
+        if (!crtAssetsReady || loadingFramesDrawn === 0) return;
+        reportedCrtReady = true;
+        onCrtReadyRef.current?.();
+      };
       {
-        const loader = new GLTFLoader();
+        const manager = new THREE.LoadingManager();
+        manager.onLoad = () => {
+          crtAssetsReady = true;
+          maybeReportCrtReady();
+        };
+        const loader = new GLTFLoader(manager);
         loader.load(
           CRT_MODEL.url,
           (gltf) => {
@@ -6713,7 +6639,7 @@ void main() {
             // The FBX referenced texture files that were not embedded; bind
             // the download's 2K PBR set explicitly. flipY=false is the glTF
             // texture convention GLTFLoader geometry expects.
-            const texLoader = new THREE.TextureLoader();
+            const texLoader = new THREE.TextureLoader(manager);
             const maxAniso = renderer.capabilities.getMaxAnisotropy();
             const loadTex = (url: string, srgb: boolean) => {
               const t = texLoader.load(url);
@@ -6729,7 +6655,7 @@ void main() {
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
               roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
-              envMapIntensity: 1.8,
+              envMapIntensity: 0.7,
             });
             model.traverse((obj) => {
               if (!(obj as THREE.Mesh).isMesh) return;
@@ -6805,8 +6731,8 @@ void main() {
               // Normals from the baked height field via central differences
               // on the grid (49 x 37 vertices).
               const nAttr = geo.attributes.aNormal as THREE.BufferAttribute;
-              const cols = 49;
-              const rows = 37;
+              const cols = geo.parameters.widthSegments + 1;
+              const rows = geo.parameters.heightSegments + 1;
               const cellW = crtScreenState.aspect / (cols - 1);
               const cellH = 1 / (rows - 1);
               for (let r = 0; r < rows; r += 1) {
@@ -6833,13 +6759,13 @@ void main() {
             crtGround.position.y = worldBox.min.y + 0.001;
             renderer.shadowMap.needsUpdate = true;
             updateCrtRegion();
-            if (!disposed) onCrtReadyRef.current?.();
           },
           undefined,
           () => {
             // Keep the placeholder on failure; the scene still works, and
             // the page must not wait forever for a model that never comes.
-            if (!disposed) onCrtReadyRef.current?.();
+            crtAssetsReady = true;
+            maybeReportCrtReady();
           },
         );
       }
@@ -6882,22 +6808,8 @@ void main() {
         );
         renderer.setRenderTarget(displayTarget);
         renderer.render(halftoneScene, halftoneCamera);
-        // Tagline onto the glass, over the halftoned display. autoClear
-        // would wipe the site view first; off just for this blend. A
-        // slight mains-hum flicker on the alpha, a few percent, sells the
-        // tube without reading as a glitch.
-        if (sceneFx.tagline > 0.001) {
-          updateTaglineRect();
-          taglineUniforms.uOpacity.value =
-            sceneFx.tagline *
-            (0.965 +
-              0.025 * Math.sin(elapsed * 37.0) +
-              0.01 * Math.sin(elapsed * 7.3));
-          const hadAutoClear = renderer.autoClear;
-          renderer.autoClear = false;
-          renderer.render(taglineScene, halftoneCamera);
-          renderer.autoClear = hadAutoClear;
-        }
+        // Loading bar onto the glass, over the display. autoClear would
+        // wipe the site view first; off just for this blend.
         if (sceneFx.loaderAlpha > 0.001) {
           updateLoaderRect();
           loaderUniforms.uFill.value = clamp01(sceneFx.loader);
@@ -7033,6 +6945,32 @@ void main() {
       // Added to the scene (not worldGroup) so the backdrop never inherits
       // any world transform.
       scene.add(createVoidBackdrop());
+
+      // Loading loop. From here on the television can be drawn — the CRT
+      // stage, the glass, the post pass and the void backdrop all exist —
+      // while the tree is still being built. The build is chunked (see
+      // generate()), and each chunk boundary yields a frame, so this loop
+      // gets one frame per phase: the bar on the glass moves with the
+      // build exactly as the DOM bar does. The main loop replaces it.
+      let loadingRaf = 0;
+      let loadingLoopActive = true;
+      const loadingClock = new THREE.Clock();
+      const loadingLoop = () => {
+        if (disposed || !loadingLoopActive) return;
+        loadingRaf = requestAnimationFrame(loadingLoop);
+        const elapsed = loadingClock.getElapsedTime();
+        voidBackdropUniforms.uTime.value = elapsed;
+        camera.position.copy(INTRO_CAMERA_POSITION);
+        camera.lookAt(HERO_CAMERA_TARGET);
+        renderComposite(elapsed);
+        loadingFramesDrawn += 1;
+        maybeReportCrtReady();
+      };
+      loadingLoop();
+      const stopLoadingLoop = () => {
+        loadingLoopActive = false;
+        cancelAnimationFrame(loadingRaf);
+      };
       await reportSceneBuildProgress();
 
       const generator = new WeepingCherryGenerator({
@@ -7040,7 +6978,7 @@ void main() {
         quality: sceneQuality,
         showDebugLobes: false,
       });
-      const tree = generator.generate();
+      const tree = await generator.generate(reportSceneBuildProgress);
       await reportSceneBuildProgress();
 
       worldGroup.add(tree.group);
@@ -7470,9 +7408,11 @@ void main() {
           });
         }
       };
+      stopLoadingLoop();
       animate();
 
       cleanup = () => {
+        stopLoadingLoop();
         cancelAnimationFrame(frame);
         removeViewportResize();
         window.removeEventListener("pointermove", onPointerMove);
@@ -7487,11 +7427,8 @@ void main() {
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
-        taglineDisposed = true;
-        taglineTexture.dispose();
-        taglineMaterial.dispose();
         loaderMaterial.dispose();
-        taglineGeometry.dispose();
+        overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();
         crtBloomPass.dispose();
