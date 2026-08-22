@@ -10,6 +10,10 @@ import {
 import { TREE_BASE_SCALE, treeTuning } from "@/components/treeTuning";
 import { sceneFx } from "@/components/sceneFx";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -5813,6 +5817,162 @@ void main() {
         100,
       );
 
+      // ---- Cinematic post pass on the TV composite ------------------------
+      // Once the camera has pulled back, the room render goes through a
+      // short chain: bloom (the lit glass and the plastic's speculars bleed
+      // into the dark room; the dark body stays under the threshold), then
+      // one shader for film grain, vignette, edge chromatic aberration and a
+      // slight black lift. Every strength is scaled by crtPostRamp(), which
+      // is 0 until crtProgress passes 0.02, and at 0 the frame is a plain
+      // renderer.render — the flat->CRT hand-off at crtProgress 0.002 stays
+      // pixel-identical.
+      //
+      // Colour pipeline: three skips tone mapping and sRGB encoding when it
+      // renders into a target. An OutputPass could redo both for the lit
+      // plastic, but the backdrop triangle and the glass shader are
+      // toneMapped:false and write exact display values, and an OutputPass
+      // would push those through ACES a second time. Flagging the composer's
+      // targets isXRRenderTarget makes three treat them like the screen
+      // (per-material ACES + sRGB, toneMapped:false honoured — see
+      // WebGLPrograms.getParameters), so the composer's input is the direct
+      // render byte for byte and the chain works in display space on top of
+      // it. HalfFloat so the vignette and grain math never quantises.
+      const crtPostRamp = () =>
+        smoothstep(0.02, 0.4, clamp01(sceneFx.crtProgress));
+      const markDisplaySpaceTarget = (target: THREE.WebGLRenderTarget) => {
+        target.texture.colorSpace = THREE.SRGBColorSpace;
+        (target as THREE.WebGLRenderTarget & { isXRRenderTarget?: boolean })
+          .isXRRenderTarget = true;
+      };
+      // samples: 4 keeps the edge AA the direct path gets from the
+      // antialias:true canvas; without it the TV's silhouette goes jagged
+      // the moment the chain engages. (The clone inherits it.)
+      const crtPostTarget = new THREE.WebGLRenderTarget(
+        drawingBufferSize.x,
+        drawingBufferSize.y,
+        { type: THREE.HalfFloatType, samples: 4 },
+      );
+      const crtComposer = new EffectComposer(renderer, crtPostTarget);
+      // The composer clones the first target for its second buffer; the
+      // clone does not carry the flag.
+      markDisplaySpaceTarget(crtComposer.renderTarget1);
+      markDisplaySpaceTarget(crtComposer.renderTarget2);
+      // Composer sizes are in device px here: the drawing buffer already
+      // includes the pixel ratio.
+      crtComposer.setPixelRatio(1);
+      crtComposer.addPass(new RenderPass(crtScene, crtCamera));
+      // UnrealBloomPass runs its mip chain at half the size it is given, so
+      // passing the full drawing buffer is already the half-res bloom.
+      // Threshold 0.85 on display-space luminance: only near-white passes
+      // — the glass's hot core, the tube text, the plastic's speculars.
+      // Deliberately high: bloom adds strength x value to any area that
+      // passes, so a lower threshold (0.55 was tried) turns every pale
+      // patch of backdrop into a white wash instead of a glow around the
+      // bright bits. Strength is set per frame from the ramp.
+      const CRT_POST_BLOOM_STRENGTH = 0.4;
+      const crtBloomPass = new UnrealBloomPass(
+        new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+        0,
+        0.4,
+        0.85,
+      );
+      crtComposer.addPass(crtBloomPass);
+      const crtPostPass = new ShaderPass({
+        uniforms: {
+          tDiffuse: { value: null },
+          uAmount: { value: 0 },
+          uTime: { value: 0 },
+          uResolution: {
+            value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+          },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          precision highp float;
+          uniform sampler2D tDiffuse;
+          uniform float uAmount;
+          uniform float uTime;
+          uniform vec2 uResolution;
+          varying vec2 vUv;
+
+          // Hash noise instead of a grain texture: no extra sampler, and a
+          // fresh seed per frame gives the grain its film flicker.
+          float hash12(vec2 p) {
+            vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+          }
+
+          void main() {
+            vec2 c = vUv - 0.5;
+            // 0 at the centre, 1 at the side edges, 2 at the corners.
+            float r2 = dot(c, c) * 4.0;
+
+            // Chromatic aberration: red and blue slide apart radially,
+            // nothing at the centre, ~2 px at the corners.
+            vec2 shift = c * r2 * (1.6 * uAmount) / uResolution;
+            vec4 src = texture2D(tDiffuse, vUv);
+            vec3 col = vec3(
+              texture2D(tDiffuse, vUv + shift).r,
+              src.g,
+              texture2D(tDiffuse, vUv - shift).b
+            );
+
+            // Bloom can push the HalfFloat buffer past 1.0; the S-curve
+            // below folds anything above 1.0 back DOWN (1.3 -> 0.68), which
+            // turned blown highlights yellow. Clamp first.
+            col = clamp(col, 0.0, 1.0);
+            // Filmic contrast: a soft S-curve mixed in lightly, then a black
+            // lift so the darkest room pixels sit at ~4/255, not 0.
+            vec3 curve = col * col * (3.0 - 2.0 * col);
+            col = mix(col, curve, 0.12 * uAmount);
+            col = mix(col, col * 0.985 + 0.015, uAmount);
+
+            // Grain: strongest in the shadows and mids, near-silent in the
+            // highlights, like film.
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            vec2 seed = vec2(fract(uTime * 7.31), fract(uTime * 3.17)) * 1024.0;
+            float n = hash12(gl_FragCoord.xy + seed) - 0.5;
+            col += n * (0.05 * uAmount) * (0.3 + 0.7 * (1.0 - lum));
+
+            // Vignette: untouched inside the middle third, ~18% down at the
+            // corners.
+            col *= 1.0 - smoothstep(0.45, 1.7, r2) * (0.18 * uAmount);
+
+            gl_FragColor = vec4(col, src.a);
+          }
+        `,
+      });
+      crtComposer.addPass(crtPostPass);
+      const resizeCrtPost = () => {
+        crtComposer.setSize(drawingBufferSize.x, drawingBufferSize.y);
+        crtPostPass.uniforms.uResolution.value.set(
+          drawingBufferSize.x,
+          drawingBufferSize.y,
+        );
+      };
+      resizeCrtPost();
+      // Final stage of renderComposite's CRT branch. The composer's last
+      // pass renders to the screen, so the renderer is left on the default
+      // framebuffer either way.
+      const renderCrtPost = (elapsed: number) => {
+        const amount = crtPostRamp();
+        if (amount <= 0) {
+          renderer.render(crtScene, crtCamera);
+          return;
+        }
+        crtPostPass.uniforms.uAmount.value = amount;
+        crtPostPass.uniforms.uTime.value = elapsed;
+        crtBloomPass.strength = CRT_POST_BLOOM_STRENGTH * amount;
+        crtComposer.render();
+      };
+
       // Shipped model: "TV , Old TV , Retro TV" by Denys Hroshko (user's
       // Sketchfab pick; see public/models/crt-LICENSE.txt — CC BY-NC). The
       // GLB (converted from the download's FBX) faces +X, so the loader
@@ -6540,7 +6700,7 @@ void main() {
         }
         renderer.setRenderTarget(null);
         updateCrtRig(elapsed);
-        renderer.render(crtScene, crtCamera);
+        renderCrtPost(elapsed);
       };
 
       await reportSceneBuildProgress();
@@ -6842,6 +7002,7 @@ void main() {
         // drawing buffer (setSize x pixel ratio).
         renderer.getDrawingBufferSize(drawingBufferSize);
         crtBgResolution.value.set(drawingBufferSize.x, drawingBufferSize.y);
+        resizeCrtPost();
         updateCrtRegion();
         halftoneUniforms.uResolution.value.set(
           drawingBufferSize.x,
@@ -7119,6 +7280,10 @@ void main() {
         taglineTexture.dispose();
         taglineMaterial.dispose();
         taglineGeometry.dispose();
+        // Post chain: composer buffers, bloom mip targets, grain material.
+        crtComposer.dispose();
+        crtBloomPass.dispose();
+        crtPostPass.dispose();
         crtScreenMaterial.dispose();
         crtScreenMesh.geometry.dispose();
         // The CRT scene holds GPU allocations of its own (GLB textures, the
