@@ -5729,9 +5729,9 @@ export default function WeepingCherryTreeCanvas({
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
-        // Viewport-aspect sub-rect of the screen carrying the site view
-        // (contain-fit); outside it is dark glass. Values are half-extent
-        // scales relative to the screen rect.
+        // Virtual raster (columns, lines); sized per viewport in
+        // updateCrtRig before the first CRT frame.
+        uRaster: { value: new THREE.Vector2(crtScreenState.aspect * 240, 240) },
       };
       const crtScreenMaterial = new THREE.ShaderMaterial({
         uniforms: crtScreenUniforms,
@@ -5763,9 +5763,28 @@ export default function WeepingCherryTreeCanvas({
           uniform sampler2D uMap;
           uniform float uFx;
           uniform float uTime;
+          // Virtual raster (columns, lines): the tube's own resolution, far
+          // below the display texture's. Chosen per viewport so one line
+          // spans ~2.5 device px at the end pose — the coarsest pitch that
+          // still resolves (see updateCrtRig).
+          uniform vec2 uRaster;
           varying vec2 vUv;
           varying vec3 vNormalW;
           varying vec3 vViewW;
+
+          float hash21(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+
+          // RGB triad profile over one period t in [0, 3): soft-edged
+          // stripes, one per channel.
+          vec3 triadMask(float t) {
+            return vec3(
+              1.0 - smoothstep(0.6, 1.4, abs(t - 0.5)),
+              1.0 - smoothstep(0.6, 1.4, abs(t - 1.5)),
+              1.0 - smoothstep(0.6, 1.4, abs(t - 2.5))
+            );
+          }
 
           void main() {
             // Barrel distortion of the raster itself: the beam sweep bows
@@ -5795,59 +5814,120 @@ export default function WeepingCherryTreeCanvas({
             float inRegion =
               1.0 - smoothstep(-soft, soft + 0.02 * uFx, cornerDist);
 
-            // Phosphor bleed: slight horizontal smear plus chromatic
-            // misconvergence of the triads.
-            float fringe = 0.0014 * uFx;
-            vec2 blur = vec2(0.0011 * uFx, 0.0);
-            vec3 col = vec3(
-              texture2D(uMap, ruv + vec2(fringe, 0.0)).r,
-              texture2D(uMap, ruv).g,
-              texture2D(uMap, ruv - vec2(fringe, 0.0)).b
-            );
-            col = mix(
-              col,
-              0.5 * (texture2D(uMap, ruv + blur).rgb +
-                     texture2D(uMap, ruv - blur).rgb),
-              0.45 * uFx
-            );
+            // Pixel footprint in raster units, from screen-space
+            // derivatives. The scanline profile is box-filtered over it
+            // (sinc factor below), so where lines shrink toward one device
+            // px the modulation fades out instead of beating against the
+            // pixel grid as moiré rings. The raster-pitch mask needs 3+
+            // device px per column to resolve; below that the device-pixel
+            // slot mask and the glow carry the look.
+            vec2 px = 1.0 / uRaster;
+            float lineFw = min(fwidth(ruv.y) * uRaster.y, 1.0);
+            float lineSinc = lineFw < 1e-3
+              ? 1.0
+              : sin(3.14159 * lineFw) / (3.14159 * lineFw);
+            float pxPerCol = px.x / max(fwidth(ruv.x), 1e-5);
+            float gridMaskVis = smoothstep(2.4, 4.0, pxPerCol);
 
-            // Bloom: bright content halates into its surroundings — a wide
-            // 4-tap spread instead of a mip bias (the target carries no
-            // mip chain any more).
-            vec3 haze = 0.25 * (
-              texture2D(uMap, ruv + vec2(0.012, 0.009)).rgb +
-              texture2D(uMap, ruv + vec2(-0.012, 0.009)).rgb +
-              texture2D(uMap, ruv + vec2(0.012, -0.009)).rgb +
-              texture2D(uMap, ruv + vec2(-0.012, -0.009)).rgb
-            );
-            col += haze * haze * (0.45 * uFx);
+            // Interlace: alternate lines sit a hair high or low on
+            // alternate fields, so the raster shimmers instead of sitting
+            // dead still.
+            vec2 cell = floor(ruv * uRaster);
+            float field = step(0.5, fract(uTime * 25.0)) * 2.0 - 1.0;
+            float jit = (mod(cell.y, 2.0) * 2.0 - 1.0) * field *
+              (0.04 * uFx) * px.y;
+            ruv.y += jit;
 
-            // The mask stack below (grille, scanlines, vignette, rim)
-            // removes ~20% of average light as it ramps in; compensate so
-            // the tube's apparent brightness stays constant through the
-            // pull-back instead of suddenly dimming.
-            col *= 1.0 + 0.24 * uFx;
+            // Virtual raster: sample at the CENTRE of each virtual pixel,
+            // so the content is genuinely re-rasterised at the tube's
+            // resolution (edges step, fine detail drops). The snap is
+            // mixed in with uFx — a hard switch to the grid would pop at
+            // the flat/CRT hand-off.
+            vec2 quv = (cell + 0.5) * px;
+            quv.y += jit;
+            vec2 suv = mix(ruv, quv, uFx);
+
+            // Misconvergence: the R and B guns miss the G spot by a growing
+            // amount toward the edges (0.3 -> ~1.8 virtual px). The same
+            // offset taps double as horizontal phosphor smear, so the
+            // virtual pixel is softened across its width for free — the
+            // display texture is several texels per virtual pixel, and a
+            // single centre sample would sparkle on thin detail (twigs).
+            float conv = (0.3 + 3.0 * r2) * px.x * uFx;
+            vec3 tR = texture2D(uMap, suv + vec2(conv, 0.0)).rgb;
+            vec3 tG = texture2D(uMap, suv).rgb;
+            vec3 tB = texture2D(uMap, suv - vec2(conv, 0.0)).rgb;
+            vec3 col = vec3(tR.r, tG.g, tB.b);
+            col = mix(col, (tR + tG + tB) / 3.0, 0.35 * uFx);
+
+            // Vertical spot overlap: taps 0.6 line up and down soften the
+            // pixel vertically and bleed a little into the neighbouring
+            // lines.
+            vec3 above = texture2D(uMap, suv + vec2(0.0, 0.6 * px.y)).rgb;
+            vec3 below = texture2D(uMap, suv - vec2(0.0, 0.6 * px.y)).rgb;
+            col = mix(col, 0.5 * (above + below), 0.3 * uFx);
+
+            // Halation: bright content glows into its surroundings through
+            // the glass. Two rings in the raster's own pitch (3 px
+            // diagonal, 7 px axial) on the CONTINUOUS uv, squared as a
+            // soft bright-pass so only hot content (the text) halates.
+            vec2 h1 = px * 3.0;
+            vec2 h2 = px * 7.0;
+            vec3 haze = 0.125 * (
+              texture2D(uMap, ruv + vec2(h1.x, h1.y)).rgb +
+              texture2D(uMap, ruv + vec2(-h1.x, h1.y)).rgb +
+              texture2D(uMap, ruv + vec2(h1.x, -h1.y)).rgb +
+              texture2D(uMap, ruv + vec2(-h1.x, -h1.y)).rgb +
+              texture2D(uMap, ruv + vec2(h2.x, 0.0)).rgb +
+              texture2D(uMap, ruv - vec2(h2.x, 0.0)).rgb +
+              texture2D(uMap, ruv + vec2(0.0, h2.y)).rgb +
+              texture2D(uMap, ruv - vec2(0.0, h2.y)).rgb
+            );
+            col += haze * haze * (0.95 * uFx);
+
+            // The mask stack below (scanlines, grille, vignette, rim)
+            // removes a good share of the average light as it ramps in;
+            // compensate so the tube's apparent brightness stays constant
+            // through the pull-back instead of suddenly dimming. The
+            // scanline share only applies where scanlines resolve.
+            col *= 1.0 + uFx * (0.16 + 0.2 * lineSinc);
 
             // Dark glass outside the raster: unpowered phosphor, grey-green.
             vec3 glass = vec3(0.016, 0.02, 0.018);
             col = mix(glass, col, inRegion);
 
-            // Slot mask: RGB triads in device pixels with a half-period row
-            // stagger — softer and more tube-like than straight stripes.
-            float triad = mod(gl_FragCoord.x +
+            // Phosphor mask. When the raster pitch resolves (3+ device px
+            // per column) each virtual pixel is one RGB triad with a
+            // half-period row stagger — the true low-res structure.
+            // Otherwise fall back to a triad in device pixels, which is the
+            // finest pattern the canvas can show.
+            float triGrid = fract(ruv.x * uRaster.x +
+              0.5 * mod(cell.y, 2.0)) * 3.0;
+            float triDev = mod(gl_FragCoord.x +
               3.0 * step(1.0, mod(gl_FragCoord.y / 3.0, 2.0)) * 0.5, 3.0);
-            vec3 mask = vec3(
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 0.5)),
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 1.5)),
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 2.5))
-            );
-            col *= mix(vec3(1.0), mask * 1.6 + 0.55, 0.13 * uFx);
+            vec3 mask = mix(triadMask(triDev), triadMask(triGrid),
+              gridMaskVis);
+            col *= mix(vec3(1.0), mask * 1.6 + 0.55,
+              uFx * (0.14 + 0.1 * gridMaskVis));
 
-            // Scanlines whose depth ADAPTS to brightness: bright phosphor
-            // floods the gap between lines, dark areas keep crisp lines.
+            // Scanlines at the raster pitch: a raised-cosine gap between
+            // lines, box-filtered over the device pixel (the sinc term is
+            // the exact average of the cosine across the footprint), with
+            // depth that ADAPTS to brightness — bright phosphor floods the
+            // gap, dark areas keep a crisp dark gap.
             float luma = dot(col, vec3(0.299, 0.587, 0.114));
-            float scan = 0.5 + 0.5 * sin(buv.y * 640.0 * 3.14159);
-            col *= 1.0 - (0.14 * uFx) * scan * (1.0 - 0.6 * luma);
+            float gap = 0.5 + 0.5 * lineSinc *
+              cos(6.28318 * fract(ruv.y * uRaster.y));
+            col *= 1.0 - (0.58 * uFx) * gap * (1.0 - 0.65 * luma);
+
+            // Life: gentle mains-ish flicker (two slow sines, ~4% total)
+            // and a touch of per-pixel signal noise, refreshed per frame.
+            col *= 1.0 + uFx * (0.025 * sin(uTime * 12.6) +
+              0.015 * sin(uTime * 29.0));
+            float noise = hash21(cell + mod(floor(uTime * 60.0), 64.0) * 7.0)
+              - 0.5;
+            col *= 1.0 + (0.07 * uFx) * noise;
+            col += (0.012 * uFx) * noise * inRegion;
 
             // Slow refresh band rolling down the tube.
             float band = fract(buv.y * 0.5 + uTime * 0.045);
@@ -5862,7 +5942,7 @@ export default function WeepingCherryTreeCanvas({
 
             // Electron-beam falloff: hot centre, dim corners.
             col *= 1.0 + 0.07 * uFx * (1.0 - r2 * 4.0);
-            col *= 1.0 - 0.22 * uFx * smoothstep(0.2, 0.5, r2);
+            col *= 1.0 - 0.26 * uFx * smoothstep(0.2, 0.5, r2);
 
             // Curved-glass sheen: a view-dependent fresnel rim picking up
             // the room, strongest where the tube curves away from the eye.
@@ -6164,6 +6244,19 @@ export default function WeepingCherryTreeCanvas({
         const fx = smoothstep(0.08, 0.55, p);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
+        // Virtual raster: ~2.5 device px per line at the END pose (the
+        // canvas renders at DPR 1) — the coarsest pitch whose scanlines
+        // still resolve there without beating against the pixel grid.
+        const glassPx = drawingBufferSize.y / (2 * d1 * CRT_FOV_TAN);
+        const lines = THREE.MathUtils.clamp(
+          Math.round(glassPx / 2.5),
+          110,
+          400,
+        );
+        crtScreenUniforms.uRaster.value.set(
+          lines * crtScreenState.aspect,
+          lines,
+        );
         crtGlow.intensity = 9 * fx;
       };
 
