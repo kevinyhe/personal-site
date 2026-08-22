@@ -5876,7 +5876,7 @@ void main() {
         envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
         crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
-        crtScene.environmentIntensity = 0.1;
+        crtScene.environmentIntensity = 0.04;
         envTex.dispose();
         pmrem.dispose();
       }
@@ -5892,7 +5892,7 @@ void main() {
       renderer.shadowMap.needsUpdate = true;
       const crtGround = new THREE.Mesh(
         new THREE.PlaneGeometry(60, 60),
-        new THREE.ShadowMaterial({ opacity: 0.28 }),
+        new THREE.ShadowMaterial({ opacity: 0.7 }),
       );
       crtGround.rotation.x = -Math.PI / 2;
       crtGround.position.y = -1.4; // refined to the model's base on load
@@ -6437,37 +6437,50 @@ void main() {
       // key so the dark side stays dark: no ambient to speak of, a fill
       // you only notice when it is gone, and a thin rim to cut the dark
       // edge out of the black.
-      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.01);
-      crtScene.add(crtHemi);
-      // Subtle: one pink key, just enough to draw the lit side of the body.
-      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.0);
-      crtKey.position.set(3.6, 2.6, 1.8);
+      // Why the set looked evenly self-lit: the key was a directional
+      // light (the same irradiance on every lit face, no falloff across
+      // the body), the model cast shadows but did not RECEIVE them (no
+      // self-shadowing in the bezel recess or under the lip), and the
+      // environment map, hemisphere, fill, practical and the screen-spill
+      // point light together lit every face from every side. Now one
+      // motivated source does the work: a spot from the upper right-front
+      // with a soft edge, real falloff across the body, and a shadow the
+      // body casts on itself; the rest is either gone or kept far below
+      // it. (A GTAO pass was tried for contact shading and dropped: it
+      // re-renders the scene with a flat depth override, so the glass —
+      // displaced onto the dome in its own vertex shader — lands inside
+      // the model's tube in the AO depth and reads as fully occluded.)
+      // Raking: well round to the right and only a little in front, so
+      // the front face grades from lit at its right edge to dark at its
+      // left instead of taking the light flat-on, and the bezel relief,
+      // the deck's buttons and the lip all throw shadows across it.
+      const crtKey = new THREE.SpotLight(0xffa9c4, 260, 18, 0.55, 0.6, 2);
+      crtKey.position.set(5.8, 3.0, 1.6);
+      crtKey.target.position.set(0, -0.2, 0);
+      crtScene.add(crtKey.target);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
-      crtKey.shadow.camera.near = 0.1;
-      crtKey.shadow.camera.far = 20;
-      crtKey.shadow.camera.left = -4;
-      crtKey.shadow.camera.right = 4;
-      crtKey.shadow.camera.top = 4;
-      crtKey.shadow.camera.bottom = -4;
-      crtKey.shadow.bias = -0.0005;
+      crtKey.shadow.camera.near = 1;
+      crtKey.shadow.camera.far = 16;
+      crtKey.shadow.camera.fov = 70;
+      // Bias pair for self-shadowing on a textured, normal-mapped body:
+      // the normal bias pushes the lookup off the surface along the
+      // normal, which kills acne without the detached-shadow look a large
+      // constant bias gives.
+      crtKey.shadow.bias = -0.00015;
+      crtKey.shadow.normalBias = 0.015;
+      crtKey.shadow.radius = 3;
       crtScene.add(crtKey);
-      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.03);
-      crtFill.position.set(-2.8, 0.6, 1.6);
-      crtScene.add(crtFill);
-      // The rim was the thing still lifting the dark side: at 0.9 it drew
-      // the whole left cheek, not an edge. Barely there now.
-      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.25);
+      // A thin cool rim from behind-left so the dark edge separates from
+      // the black; it must never draw the cheek.
+      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.2);
       crtRim.position.set(-2.0, 3.0, -2.6);
       crtScene.add(crtRim);
-      // Practical on the KEY side, low: the same lamp the key stands in
-      // for, pooling on the near-right of the body. Distance-limited.
-      const crtPractical = new THREE.PointLight(0xd63c78, 2.5, 6, 2);
-      crtPractical.position.set(2.6, -0.5, 0.8);
-      crtScene.add(crtPractical);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
-      const crtGlow = new THREE.PointLight(0xff7fae, 0, 4, 2);
+      // Tight (distance 1.8): it should catch the bezel lip around the
+      // glass, not wash the whole front.
+      const crtGlow = new THREE.PointLight(0xff7fae, 0, 1.8, 2);
       crtGlow.position.set(0, 0, 1.1);
       crtScene.add(crtGlow);
 
@@ -6722,7 +6735,7 @@ void main() {
         const glow = clamp01(sceneFx.screenGlow);
         const glowPulse =
           1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
-        crtGlow.intensity = 3 * fx * glowPulse;
+        crtGlow.intensity = 2 * fx * glowPulse;
         crtBgUniforms.uScreenLight.value = fx * (0.18 + 0.1 * glow) * glowPulse;
       };
 
@@ -6804,7 +6817,7 @@ void main() {
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
               roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
-              envMapIntensity: 0.45,
+              envMapIntensity: 0.25,
             });
             model.traverse((obj) => {
               if (!(obj as THREE.Mesh).isMesh) return;
@@ -6813,6 +6826,9 @@ void main() {
               mesh.material = tvMaterial;
               prev?.dispose();
               mesh.castShadow = true;
+              // Self-shadowing: the bezel recess, the lip over the glass
+              // and the deck under the front all shade themselves.
+              mesh.receiveShadow = true;
             });
 
             const sc = CRT_MODEL.screen;
