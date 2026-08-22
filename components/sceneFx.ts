@@ -45,4 +45,12 @@ export const sceneFx = {
    * Stays 0 until the camera has settled on the monitor.
    */
   tagline: 0,
+  /**
+   * Loading bar painted on the monitor's glass during the television
+   * loading shot: `loader` is the fill (0..1, the same displayed value as
+   * the DOM bar over the black veil, so the two read as one bar), and
+   * `loaderAlpha` its opacity, faded out as the reveal starts.
+   */
+  loader: 0,
+  loaderAlpha: 0,
 };
