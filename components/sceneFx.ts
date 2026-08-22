@@ -39,11 +39,21 @@ export const sceneFx = {
    */
   screenQuad: new Float32Array(8),
   /**
-   * Loading bar painted on the monitor's glass during the television
-   * loading shot: `loader` is the fill (0..1, the same displayed value as
-   * the DOM bar over the black veil, so the two read as one bar), and
-   * `loaderAlpha` its opacity, faded out as the reveal starts.
+   * 0..1 opacity of the name painted on the monitor's glass while the page
+   * loads as the television shot (see the glass-name overlay in
+   * BareThreeCanvas).
    */
-  loader: 0,
-  loaderAlpha: 0,
+  glassName: 0,
+  /**
+   * 0..1 warm-up glow of the tube during the television shot: brighter,
+   * breathing and flickering glass, heavier bloom into the room. Fades
+   * out as the reveal starts.
+   */
+  screenGlow: 0,
+  /**
+   * Level of the tree scene's void backdrop, 1 = the page's look. Held
+   * down while the scene is the picture on the television and brought up
+   * as the camera pushes in.
+   */
+  backdropLevel: 1,
 };
