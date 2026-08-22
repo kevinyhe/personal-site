@@ -5578,12 +5578,17 @@ export default function WeepingCherryTreeCanvas({
         drawingBufferSize.x,
         drawingBufferSize.y,
       );
-      // No mipmaps: regenerating a full chain for this near-viewport-sized
-      // target every frame was a real share of the scroll cost, and at the
-      // final pose the screen still covers most of the frame, so linear
-      // minification holds up without them.
-      displayTarget.texture.generateMipmaps = false;
-      displayTarget.texture.minFilter = THREE.LinearFilter;
+      // Mip chain ON. It was off for scroll cost, but the glass shader now
+      // re-rasterises the page at a low-res virtual tube raster and needs a
+      // box average over each raster cell (5-13 texels wide): an explicit
+      // LOD tap up this chain gives that in ONE tap per channel, where a
+      // tap grid inside the cell needed 9+ and still point-sampled the
+      // 4.1 px halftone dots into crawling moire. The halation blur is two
+      // more taps up the same chain. Net: ~6 taps per glass fragment
+      // instead of 13, over most of the frame at the end pose, against
+      // one ~0.5 Mpx mip regeneration per display render.
+      displayTarget.texture.generateMipmaps = true;
+      displayTarget.texture.minFilter = THREE.LinearMipmapLinearFilter;
 
       renderer.setClearColor(0x000000, 0);
       const crtScene = new THREE.Scene();
@@ -5723,15 +5728,44 @@ export default function WeepingCherryTreeCanvas({
         return geo;
       };
 
+      // Virtual raster line count for this viewport: ~2.5 device px per
+      // line at the END pose (the canvas renders at DPR 1), the coarsest
+      // pitch whose scanlines still resolve there. Glass height at the end
+      // pose is drawingBufferSize.y * CRT_END_FILL / monitor height. The
+      // monitor height is a CONSTANT measured off the GLB (2.19 model
+      // units over a 1.35 screen height), deliberately not
+      // crtScreenState.monitorHeight: that is a placeholder until the GLB
+      // lands, and sizing the raster from it re-pitched every line by ~30%
+      // in one frame if the user was already scrolled in.
+      const CRT_MONITOR_H = 1.62;
+      const CRT_PX_PER_LINE = 2.5;
+      const crtRasterLines = () =>
+        THREE.MathUtils.clamp(
+          Math.round(
+            (drawingBufferSize.y * CRT_END_FILL) /
+              (CRT_MONITOR_H * CRT_PX_PER_LINE),
+          ),
+          110,
+          400,
+        );
       const crtScreenUniforms = {
         uMap: { value: displayTarget.texture },
         uFx: { value: 0 },
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
-        // Virtual raster (columns, lines); sized per viewport in
-        // updateCrtRig before the first CRT frame.
-        uRaster: { value: new THREE.Vector2(crtScreenState.aspect * 240, 240) },
+        // Virtual raster (columns, lines). The display texture is at least
+        // the drawing buffer tall, so log2(buffer px per line) is a floor
+        // for the cell LOD until updateCrtRig knows the extended height.
+        uRaster: {
+          value: new THREE.Vector2(
+            crtRasterLines() * crtScreenState.aspect,
+            crtRasterLines(),
+          ),
+        },
+        uCellLod: {
+          value: Math.log2(drawingBufferSize.y / crtRasterLines()),
+        },
       };
       const crtScreenMaterial = new THREE.ShaderMaterial({
         uniforms: crtScreenUniforms,
@@ -5766,13 +5800,19 @@ export default function WeepingCherryTreeCanvas({
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
           // spans ~2.5 device px at the end pose — the coarsest pitch that
-          // still resolves (see updateCrtRig).
+          // still resolves (see crtRasterLines).
           uniform vec2 uRaster;
+          // log2(display texels per raster cell): the mip level whose
+          // texel is one raster cell.
+          uniform float uCellLod;
           varying vec2 vUv;
           varying vec3 vNormalW;
           varying vec3 vViewW;
 
           float hash21(vec2 p) {
+            // Wrap first: the sin hash turns large arguments into
+            // structured garbage on low-precision (mobile) GPUs.
+            p = mod(p, 256.0);
             return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
           }
 
@@ -5814,117 +5854,98 @@ export default function WeepingCherryTreeCanvas({
             float inRegion =
               1.0 - smoothstep(-soft, soft + 0.02 * uFx, cornerDist);
 
-            // Pixel footprint in raster units, from screen-space
-            // derivatives. The scanline profile is box-filtered over it
-            // (sinc factor below), so where lines shrink toward one device
-            // px the modulation fades out instead of beating against the
-            // pixel grid as moiré rings. The raster-pitch mask needs 3+
-            // device px per column to resolve; below that the device-pixel
-            // slot mask and the glow carry the look.
+            // Scanline footprint in raster units, from screen-space
+            // derivatives. The line profile is box-filtered over the
+            // device pixel (sinc factor below), so where lines shrink
+            // toward one device px the modulation fades out instead of
+            // beating against the pixel grid as moiré rings.
             vec2 px = 1.0 / uRaster;
             float lineFw = min(fwidth(ruv.y) * uRaster.y, 1.0);
             float lineSinc = lineFw < 1e-3
               ? 1.0
               : sin(3.14159 * lineFw) / (3.14159 * lineFw);
-            float pxPerCol = px.x / max(fwidth(ruv.x), 1e-5);
-            float gridMaskVis = smoothstep(2.4, 4.0, pxPerCol);
 
-            // Interlace: alternate lines sit a hair high or low on
-            // alternate fields, so the raster shimmers instead of sitting
-            // dead still.
-            vec2 cell = floor(ruv * uRaster);
-            float field = step(0.5, fract(uTime * 25.0)) * 2.0 - 1.0;
-            float jit = (mod(cell.y, 2.0) * 2.0 - 1.0) * field *
-              (0.04 * uFx) * px.y;
-            ruv.y += jit;
+            // Continuous sample: the flat page. EXPLICIT level 0 at the
+            // hand-off (pixel-identical to the flat render, no dependence
+            // on the hardware LOD estimate), easing toward the cell level
+            // with uFx so it pre-filters as the raster blends in.
+            float pageLod = max(uCellLod - 0.5, 0.0) * uFx;
+            vec3 page = texture2DLodEXT(uMap, ruv, pageLod).rgb;
 
-            // Virtual raster: sample at the CENTRE of each virtual pixel,
-            // so the content is genuinely re-rasterised at the tube's
-            // resolution (edges step, fine detail drops). The snap is
-            // mixed in with uFx — a hard switch to the grid would pop at
-            // the flat/CRT hand-off.
-            vec2 quv = (cell + 0.5) * px;
-            quv.y += jit;
-            vec2 suv = mix(ruv, quv, uFx);
-
+            // Virtual raster: each cell is the display texture box-averaged
+            // over the cell (one tap at the cell-sized mip level, half a
+            // level down so the cell keeps a little edge), sampled at the
+            // cell CENTRE — the page is genuinely re-rasterised at the
+            // tube's resolution (edges step, fine detail drops) and the
+            // 4.1 px halftone dots are averaged out instead of point-
+            // sampled into crawling moiré.
             // Misconvergence: the R and B guns miss the G spot by a growing
-            // amount toward the edges (0.3 -> ~1.8 virtual px). The same
-            // offset taps double as horizontal phosphor smear, so the
-            // virtual pixel is softened across its width for free — the
-            // display texture is several texels per virtual pixel, and a
-            // single centre sample would sparkle on thin detail (twigs).
+            // amount toward the edges (0.3 -> ~1.8 virtual px).
+            vec2 cell = floor(ruv * uRaster);
+            vec2 quv = (cell + 0.5) * px;
+            float lod = uCellLod - 0.5;
             float conv = (0.3 + 3.0 * r2) * px.x * uFx;
-            vec3 tR = texture2D(uMap, suv + vec2(conv, 0.0)).rgb;
-            vec3 tG = texture2D(uMap, suv).rgb;
-            vec3 tB = texture2D(uMap, suv - vec2(conv, 0.0)).rgb;
-            vec3 col = vec3(tR.r, tG.g, tB.b);
-            col = mix(col, (tR + tG + tB) / 3.0, 0.35 * uFx);
+            vec3 tR = texture2DLodEXT(uMap, quv + vec2(conv, 0.0), lod).rgb;
+            vec3 tG = texture2DLodEXT(uMap, quv, lod).rgb;
+            vec3 tB = texture2DLodEXT(uMap, quv - vec2(conv, 0.0), lod).rgb;
+            vec3 tube = vec3(tR.r, tG.g, tB.b);
+            tube = mix(tube, (tR + tG + tB) / 3.0, 0.35);
 
-            // Vertical spot overlap: taps 0.6 line up and down soften the
-            // pixel vertically and bleed a little into the neighbouring
-            // lines.
-            vec3 above = texture2D(uMap, suv + vec2(0.0, 0.6 * px.y)).rgb;
-            vec3 below = texture2D(uMap, suv - vec2(0.0, 0.6 * px.y)).rgb;
-            col = mix(col, 0.5 * (above + below), 0.3 * uFx);
+            // Blend the COLOURS of the flat and re-rasterised samples with
+            // uFx. (Blending the sample coordinate instead sheared every
+            // cell into a sawtooth for the whole ramp: each cell showed
+            // only its central 1-uFx fraction of the content.)
+            vec3 col = mix(page, tube, uFx);
 
             // Halation: bright content glows into its surroundings through
-            // the glass. Two rings in the raster's own pitch (3 px
-            // diagonal, 7 px axial) on the CONTINUOUS uv, squared as a
-            // soft bright-pass so only hot content (the text) halates.
-            vec2 h1 = px * 3.0;
-            vec2 h2 = px * 7.0;
-            vec3 haze = 0.125 * (
-              texture2D(uMap, ruv + vec2(h1.x, h1.y)).rgb +
-              texture2D(uMap, ruv + vec2(-h1.x, h1.y)).rgb +
-              texture2D(uMap, ruv + vec2(h1.x, -h1.y)).rgb +
-              texture2D(uMap, ruv + vec2(-h1.x, -h1.y)).rgb +
-              texture2D(uMap, ruv + vec2(h2.x, 0.0)).rgb +
-              texture2D(uMap, ruv - vec2(h2.x, 0.0)).rgb +
-              texture2D(uMap, ruv + vec2(0.0, h2.y)).rgb +
-              texture2D(uMap, ruv - vec2(0.0, h2.y)).rgb
-            );
-            col += haze * haze * (0.95 * uFx);
+            // the glass. Two taps further up the mip chain on the
+            // CONTINUOUS uv (~3 and ~8 cells wide) — the chain's stacked
+            // boxes are a smooth wide blur, no discrete ring copies.
+            // Squared as a soft bright-pass, then SCREENED in (scaled by
+            // the headroom left) so it cannot push bright content past
+            // white on this untonemapped material — the old additive
+            // version clipped the whole pink wash to flat white.
+            vec3 hz1 = texture2DLodEXT(uMap, ruv, uCellLod + 1.5).rgb;
+            vec3 hz2 = texture2DLodEXT(uMap, ruv, uCellLod + 3.0).rgb;
+            vec3 haze = 0.5 * (hz1 * hz1 + hz2 * hz2);
+            col += haze * max(1.0 - col, 0.0) * (0.6 * uFx);
 
-            // The mask stack below (scanlines, grille, vignette, rim)
-            // removes a good share of the average light as it ramps in;
-            // compensate so the tube's apparent brightness stays constant
-            // through the pull-back instead of suddenly dimming. The
-            // scanline share only applies where scanlines resolve.
-            col *= 1.0 + uFx * (0.16 + 0.2 * lineSinc);
+            // The mask stack below is built to be mean-preserving
+            // (scanlines, flicker and noise are all zero-mean), but the
+            // phosphor mask adds ~9% and the rim/vignette take some back;
+            // this gain holds the tube's apparent brightness through the
+            // pull-back. Set by measurement: 12-frame glass means at the
+            // end pose within a few % of the pre-raster shader's.
+            col *= 1.0 + 0.22 * uFx;
 
             // Dark glass outside the raster: unpowered phosphor, grey-green.
             vec3 glass = vec3(0.016, 0.02, 0.018);
             col = mix(glass, col, inRegion);
 
-            // Phosphor mask. When the raster pitch resolves (3+ device px
-            // per column) each virtual pixel is one RGB triad with a
-            // half-period row stagger — the true low-res structure.
-            // Otherwise fall back to a triad in device pixels, which is the
-            // finest pattern the canvas can show.
-            float triGrid = fract(ruv.x * uRaster.x +
-              0.5 * mod(cell.y, 2.0)) * 3.0;
-            float triDev = mod(gl_FragCoord.x +
+            // Phosphor mask: RGB triads in device pixels with a half-period
+            // row stagger — the finest pattern the canvas can show, fixed
+            // in screen space like a real tube's mask, at a constant
+            // strength so its mean contribution does not drift with the
+            // camera.
+            float triad = mod(gl_FragCoord.x +
               3.0 * step(1.0, mod(gl_FragCoord.y / 3.0, 2.0)) * 0.5, 3.0);
-            vec3 mask = mix(triadMask(triDev), triadMask(triGrid),
-              gridMaskVis);
-            col *= mix(vec3(1.0), mask * 1.6 + 0.55,
-              uFx * (0.14 + 0.1 * gridMaskVis));
+            col *= mix(vec3(1.0), triadMask(triad) * 1.6 + 0.55, 0.14 * uFx);
 
-            // Scanlines at the raster pitch: a raised-cosine gap between
-            // lines, box-filtered over the device pixel (the sinc term is
-            // the exact average of the cosine across the footprint), with
-            // depth that ADAPTS to brightness — bright phosphor floods the
-            // gap, dark areas keep a crisp dark gap.
+            // Scanlines at the raster pitch: a raised cosine, bright on the
+            // line centre and dark in the gap, ZERO-MEAN so brightness
+            // holds whatever the depth, box-filtered over the device pixel
+            // (the sinc term is the exact average of the cosine across the
+            // footprint). Depth ADAPTS to brightness — bright phosphor
+            // floods the gap, dark UI keeps a visible but shallow texture.
             float luma = dot(col, vec3(0.299, 0.587, 0.114));
-            float gap = 0.5 + 0.5 * lineSinc *
-              cos(6.28318 * fract(ruv.y * uRaster.y));
-            col *= 1.0 - (0.58 * uFx) * gap * (1.0 - 0.65 * luma);
+            float beam = -lineSinc * cos(6.28318 * fract(ruv.y * uRaster.y));
+            col *= 1.0 + (0.3 * uFx) * (1.0 - 0.65 * luma) * beam;
 
             // Life: gentle mains-ish flicker (two slow sines, ~4% total)
-            // and a touch of per-pixel signal noise, refreshed per frame.
-            col *= 1.0 + uFx * (0.025 * sin(uTime * 12.6) +
-              0.015 * sin(uTime * 29.0));
-            float noise = hash21(cell + mod(floor(uTime * 60.0), 64.0) * 7.0)
+            // and a touch of per-cell signal noise, refreshed per frame.
+            float t = mod(uTime, 3600.0);
+            col *= 1.0 + uFx * (0.025 * sin(t * 12.6) + 0.015 * sin(t * 29.0));
+            float noise = hash21(cell + mod(floor(t * 60.0), 64.0) * 7.0)
               - 0.5;
             col *= 1.0 + (0.07 * uFx) * noise;
             col += (0.012 * uFx) * noise * inRegion;
@@ -6244,19 +6265,15 @@ export default function WeepingCherryTreeCanvas({
         const fx = smoothstep(0.08, 0.55, p);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
-        // Virtual raster: ~2.5 device px per line at the END pose (the
-        // canvas renders at DPR 1) — the coarsest pitch whose scanlines
-        // still resolve there without beating against the pixel grid.
-        const glassPx = drawingBufferSize.y / (2 * d1 * CRT_FOV_TAN);
-        const lines = THREE.MathUtils.clamp(
-          Math.round(glassPx / 2.5),
-          110,
-          400,
-        );
+        // Virtual raster (see crtRasterLines) and the mip level whose
+        // texel is one raster cell: the display texture spans the glass
+        // height with crtExt.extH texels.
+        const lines = crtRasterLines();
         crtScreenUniforms.uRaster.value.set(
           lines * crtScreenState.aspect,
           lines,
         );
+        crtScreenUniforms.uCellLod.value = Math.log2(crtExt.extH / lines);
         crtGlow.intensity = 9 * fx;
       };
 
