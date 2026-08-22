@@ -5563,6 +5563,232 @@ export default function WeepingCherryTreeCanvas({
       const halftoneScene = new THREE.Scene();
       halftoneScene.add(halftoneMesh);
       const halftoneCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      // ---- Tagline on the glass ------------------------------------------
+      // The closing line is composited INTO displayTarget rather than laid
+      // over the page as DOM: the glass shader (scanlines, phosphor mask,
+      // bloom) and the room lighting act on whatever is in that texture, so
+      // the text reads as light coming off the tube instead of a caption
+      // floating in front of the monitor. A 2D canvas paints the sentence
+      // once in Apparel italic with a pink phosphor halo baked in; a small
+      // quad blends it into the extended display above the site's band,
+      // with sceneFx.tagline as its opacity.
+      const TAGLINE_TEXT =
+        "I build robots, software, and systems that bring ideas to life.";
+      const TAGLINE_CANVAS_W = 1536;
+      const TAGLINE_FONT_PX = 112;
+      const TAGLINE_LINE_HEIGHT = 1.16;
+      const TAGLINE_MAX_CH = 26;
+      // Halo radius in canvas px; the canvas is padded by this much so the
+      // bloom is not clipped at its edges.
+      const TAGLINE_PAD = 120;
+      // Line height as a fraction of the glass height, and the block's
+      // centre as a fraction up the glass. Above the site band's hero so it
+      // never shares a pixel with the "Kevin He." lockup.
+      const TAGLINE_LINE_FRAC = 0.066;
+      const TAGLINE_CENTER_V = 0.62;
+      const taglineCanvas = document.createElement("canvas");
+      taglineCanvas.width = TAGLINE_CANVAS_W;
+      taglineCanvas.height = TAGLINE_PAD * 2 + TAGLINE_FONT_PX * 2;
+      // The canvas already holds premultiplied pixels; uploading them as
+      // such (and blending as such) skips an un-premultiply/re-multiply
+      // round-trip that darkens the faint outer halo into a grey fringe.
+      const taglineTexture = new THREE.CanvasTexture(taglineCanvas);
+      taglineTexture.premultiplyAlpha = true;
+      taglineTexture.generateMipmaps = false;
+      taglineTexture.minFilter = THREE.LinearFilter;
+      taglineTexture.magFilter = THREE.LinearFilter;
+      // NoColorSpace on purpose: displayTarget holds the halftone pass's
+      // already sRGB-ENCODED output, and the canvas pixels are sRGB too, so
+      // they copy straight through. Tagging the texture sRGB would have the
+      // GPU decode it to linear on sample and the text would land washed
+      // out next to the encoded site view.
+      taglineTexture.colorSpace = THREE.NoColorSpace;
+      const taglineUniforms = {
+        uMap: { value: taglineTexture },
+        // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
+        uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+        uOpacity: { value: 0 },
+      };
+      const taglineMaterial = new THREE.RawShaderMaterial({
+        uniforms: taglineUniforms,
+        vertexShader: /* glsl */ `
+precision highp float;
+attribute vec3 position;
+uniform vec4 uRect;
+varying vec2 vUv;
+void main() {
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(uRect.xy + position.xy * uRect.zw, 0.0, 1.0);
+}
+`,
+        fragmentShader: /* glsl */ `
+precision highp float;
+uniform sampler2D uMap;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  // Premultiplied in, premultiplied out (One / OneMinusSrcAlpha below).
+  gl_FragColor = texture2D(uMap, vUv) * uOpacity;
+}
+`,
+        transparent: true,
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+        blendSrcAlpha: THREE.OneFactor,
+        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const taglineGeometry = new THREE.BufferGeometry();
+      taglineGeometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array([
+            -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0,
+          ]),
+          3,
+        ),
+      );
+      const taglineMesh = new THREE.Mesh(taglineGeometry, taglineMaterial);
+      taglineMesh.frustumCulled = false;
+      const taglineScene = new THREE.Scene();
+      taglineScene.add(taglineMesh);
+      // Paints the sentence: word-wrapped to ~26ch, centred, tight tracking
+      // like the DOM lockup had, then a wide dim magenta bloom, a tighter
+      // pink halo, a faint horizontal smear (phosphor persistence), and the
+      // crisp warm-white glyphs on top.
+      const paintTagline = (family: string) => {
+        const ctx = taglineCanvas.getContext("2d") as
+          | (CanvasRenderingContext2D & { letterSpacing?: string })
+          | null;
+        if (!ctx) return;
+        const font = `italic 400 ${TAGLINE_FONT_PX}px ${family}`;
+        ctx.font = font;
+        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
+        // ch is the advance of "0", same as the CSS unit the DOM used —
+        // but never wider than the canvas minus the halo padding, or the
+        // first and last glyphs of a line get cut off.
+        const maxWidth = Math.min(
+          ctx.measureText("0").width * TAGLINE_MAX_CH,
+          taglineCanvas.width - TAGLINE_PAD * 2,
+        );
+        const wrap = (width: number) => {
+          const out: string[] = [];
+          let line = "";
+          for (const word of TAGLINE_TEXT.split(" ")) {
+            const probe = line ? `${line} ${word}` : word;
+            if (line && ctx.measureText(probe).width > width) {
+              out.push(line);
+              line = word;
+            } else {
+              line = probe;
+            }
+          }
+          if (line) out.push(line);
+          return out;
+        };
+        // text-balance, like the DOM version had: greedy wrapping strands
+        // "life." alone on the last line. Tighten the width until one more
+        // line would be needed, and keep the narrowest width before that.
+        let lines = wrap(maxWidth);
+        for (let w = maxWidth * 0.97; w > maxWidth * 0.5; w *= 0.97) {
+          const tighter = wrap(w);
+          if (tighter.length > lines.length) break;
+          lines = tighter;
+        }
+        const lineH = TAGLINE_FONT_PX * TAGLINE_LINE_HEIGHT;
+        const height = Math.round(TAGLINE_PAD * 2 + lineH * lines.length);
+        // Resizing resets the context state, so the font is set again
+        // below either way.
+        if (taglineCanvas.height !== height) taglineCanvas.height = height;
+        ctx.clearRect(0, 0, taglineCanvas.width, taglineCanvas.height);
+        ctx.font = font;
+        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const cx = taglineCanvas.width / 2;
+        const drawLines = (dx: number) => {
+          lines.forEach((text, i) => {
+            ctx.fillText(text, cx + dx, TAGLINE_PAD + lineH * (i + 0.5));
+          });
+        };
+        // Wide, dim magenta bloom: the glow the phosphor throws into the
+        // glass around bright strokes.
+        ctx.shadowColor = "rgba(214, 60, 120, 0.85)";
+        ctx.shadowBlur = TAGLINE_PAD * 0.7;
+        ctx.fillStyle = "rgba(255, 143, 174, 0.7)";
+        drawLines(0);
+        // Tighter pink halo hugging the glyphs.
+        ctx.shadowColor = "rgba(255, 143, 174, 0.9)";
+        ctx.shadowBlur = TAGLINE_FONT_PX * 0.22;
+        ctx.fillStyle = "rgba(255, 180, 200, 0.7)";
+        drawLines(0);
+        // Horizontal smear: the beam's persistence trails a little to each
+        // side along the scanline direction.
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+        ctx.fillStyle = "rgba(255, 160, 190, 0.16)";
+        for (const dx of [-0.09, -0.05, 0.05, 0.09]) {
+          drawLines(dx * TAGLINE_FONT_PX);
+        }
+        // The crisp glyphs.
+        ctx.fillStyle = "#ffe9f2";
+        drawLines(0);
+        taglineTexture.needsUpdate = true;
+      };
+      // Apparel is the site's display serif, loaded by next/font/local under
+      // a hashed family name; read it off the CSS variable rather than
+      // guessing. Paint immediately with whatever the browser resolves (a
+      // serif fallback if the face is not in yet), then repaint once the
+      // italic cut has actually loaded so the glyphs match the "He." lockup.
+      let taglineDisposed = false;
+      {
+        const cssFamily = getComputedStyle(document.documentElement)
+          .getPropertyValue("--font-instrument-serif")
+          .trim();
+        const family = cssFamily
+          ? `${cssFamily}, Georgia, serif`
+          : "Georgia, serif";
+        paintTagline(family);
+        if (cssFamily && typeof document.fonts?.load === "function") {
+          const probe = `italic 400 ${TAGLINE_FONT_PX}px ${cssFamily}`;
+          document.fonts
+            .load(probe, "I build")
+            .then(() => document.fonts.ready)
+            .then(() => {
+              if (taglineDisposed) return;
+              paintTagline(family);
+            })
+            .catch(() => {
+              // Keep the fallback paint; the line still reads.
+            });
+        }
+      }
+      // Sizes the quad so one text line is TAGLINE_LINE_FRAC of the glass
+      // height and the block is centred at TAGLINE_CENTER_V, in the
+      // extended display's own aspect. Cheap enough to run per drawn frame,
+      // which also covers resizes and the late font repaint for free.
+      const updateTaglineRect = () => {
+        const lineH = TAGLINE_FONT_PX * TAGLINE_LINE_HEIGHT;
+        let halfH = (taglineCanvas.height / lineH) * TAGLINE_LINE_FRAC;
+        let halfW =
+          halfH *
+          (taglineCanvas.width / taglineCanvas.height) *
+          (crtExt.extH / crtExt.extW);
+        // Never wider than the glass (portrait viewports).
+        if (halfW > 0.96) {
+          halfH *= 0.96 / halfW;
+          halfW = 0.96;
+        }
+        taglineUniforms.uRect.value.set(
+          0,
+          TAGLINE_CENTER_V * 2 - 1,
+          halfW,
+          halfH,
+        );
+      };
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
       // gradient, three-quarter view, seen slightly from above. The monitor
@@ -6360,6 +6586,22 @@ export default function WeepingCherryTreeCanvas({
         );
         renderer.setRenderTarget(displayTarget);
         renderer.render(halftoneScene, halftoneCamera);
+        // Tagline onto the glass, over the halftoned display. autoClear
+        // would wipe the site view first; off just for this blend. A
+        // slight mains-hum flicker on the alpha, a few percent, sells the
+        // tube without reading as a glitch.
+        if (sceneFx.tagline > 0.001) {
+          updateTaglineRect();
+          taglineUniforms.uOpacity.value =
+            sceneFx.tagline *
+            (0.965 +
+              0.025 * Math.sin(elapsed * 37.0) +
+              0.01 * Math.sin(elapsed * 7.3));
+          const hadAutoClear = renderer.autoClear;
+          renderer.autoClear = false;
+          renderer.render(taglineScene, halftoneCamera);
+          renderer.autoClear = hadAutoClear;
+        }
         renderer.setRenderTarget(null);
         updateCrtRig(elapsed);
         renderer.render(crtScene, crtCamera);
@@ -6942,6 +7184,10 @@ export default function WeepingCherryTreeCanvas({
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
+        taglineDisposed = true;
+        taglineTexture.dispose();
+        taglineMaterial.dispose();
+        taglineGeometry.dispose();
         crtScreenMaterial.dispose();
         crtScreenMesh.geometry.dispose();
         // The CRT scene holds GPU allocations of its own (GLB textures, the
