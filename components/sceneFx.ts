@@ -36,4 +36,11 @@ export const sceneFx = {
    * text included — appears to live on the monitor.
    */
   screenQuad: new Float32Array(8),
+  /**
+   * 0..1 opacity of the closing tagline. Drawn INTO the display texture
+   * (under the glass shader, lit by the room) rather than as DOM, so it
+   * picks up the scanlines and bloom like everything else on the tube.
+   * Stays 0 until the camera has settled on the monitor.
+   */
+  tagline: 0,
 };
