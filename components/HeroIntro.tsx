@@ -29,7 +29,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const progressRef = useRef<HTMLDivElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
-  const taglineRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   const [sceneProgress, setSceneProgress] = useState({
     loaded: 0,
@@ -318,9 +317,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // compose without either knowing about the other.
   useEffect(() => {
     const heroLayer = heroLayerRef.current;
-    const tagline = taglineRef.current;
     const scrollSpace = scrollSpaceRef.current;
-    if (!heroLayer || !tagline || !scrollSpace) {
+    if (!heroLayer || !scrollSpace) {
       return undefined;
     }
     // The name's letters exit the way they arrived: sliding down behind the
@@ -360,8 +358,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
 
 
     const ctx = gsap.context(() => {
-      gsap.set(tagline, { autoAlpha: 0, y: 40 });
-
       const tl = gsap.timeline({
         defaults: { ease: "none" },
         scrollTrigger: {
@@ -378,7 +374,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         // actually animates.
         tl.to(heroLayer, { autoAlpha: 0, duration: 0.16 }, 0.02)
           .set(sceneFx, { crtProgress: 1, halftone: 0, treeGrow: 1 }, 0.3)
-          .to(tagline, { autoAlpha: 1, duration: 0.14, y: 0 }, 0.78);
+          .set(sceneFx, { tagline: 1 }, 0.78);
         return;
       }
 
@@ -429,7 +425,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         // but on the tube the CRT shader's scanlines and phosphor mask take
         // over.
         .to(sceneFx, { halftone: 0, duration: 0.24 }, 0.24)
-        .to(tagline, { autoAlpha: 1, duration: 0.14, y: 0 }, 0.78);
+        // The closing line is drawn on the glass by the canvas (sceneFx
+        // .tagline is its opacity), not as DOM: it has to sit under the
+        // CRT shader's scanlines and bloom like the rest of the display.
+        .to(sceneFx, { tagline: 1, duration: 0.14 }, 0.78);
     });
 
     return () => {
@@ -449,6 +448,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       sceneFx.crtProgress = 0;
       sceneFx.treeGrow = 0;
       sceneFx.halftone = 1;
+      sceneFx.tagline = 0;
       delete (window as unknown as Record<string, unknown>).__lenis;
       delete (window as unknown as Record<string, unknown>).__sceneFx;
     };
@@ -480,17 +480,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         {children}
       </div>
 
-      {/* Post-transition line, centred over the scene, outside the display.
-          Same Apparel italic as the "He." lockup. */}
-      <div
-        className="pointer-events-none fixed inset-0 z-30 grid place-items-center px-6"
-        data-hero-tagline
-        ref={taglineRef}
-      >
-        <p className="max-w-[26ch] text-balance text-center font-serif-display text-[clamp(1.9rem,4.4vw,4.2rem)] italic leading-[1.16] tracking-[-0.03em] text-white">
-          I build robots, software, and systems that bring ideas to life.
-        </p>
-      </div>
+      {/* The closing line is painted onto the monitor's glass by the canvas
+          (see the tagline overlay in BareThreeCanvas), so the visible copy
+          is pixels. This one is for screen readers only. */}
+      <p className="sr-only" data-hero-tagline>
+        I build robots, software, and systems that bring ideas to life.
+      </p>
 
       {/* Scroll room for the CRT scene; every visible layer is fixed, so this
           spacer is the only thing giving the document height. */}
