@@ -25,6 +25,14 @@ const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 8.35, 15.6);
 const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 12.9, 17.2);
 const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
+// How far (world units) the tree group sinks at sceneFx.treeDrop = 1, at
+// treeTuning.scale 1 (the render loop scales it up with the tuner's scale).
+// Sized by measurement so no branch, blossom or loose petal is left in the
+// viewport: the highest branch point sits at world y ~10.5 and needs ~9.2
+// units to pass the frame's bottom edge at its depth; 16 leaves ~6 units
+// of margin for wind sway and the pointer rustle (under 0.2 together) and
+// for the tuner's y range. Re-measure if the tree placement is re-frozen.
+const TREE_DROP_DISTANCE = 16;
 
 // Stage lights. Declared here rather than only at the scene-graph call site
 // because the canopy shader needs the same numbers to compute how much light
@@ -506,8 +514,6 @@ type BlossomPlacement = {
   wind1: [number, number, number, number];
   wind2: [number, number, number, number];
   revealT: number;
-  // Scroll ungrow key (see UNGROW ORDER); flowers go ahead of their twig.
-  growKey: number;
   color: THREE.Color;
   // Per-instance multiplier on the material's emissive lift, so clusters
   // glow unevenly instead of as one flat pink mass.
@@ -584,10 +590,6 @@ class Branch {
   windTwigLagLocal = 0;
   windFlutterBase = 0;
   windFlutterLocal = 0;
-  // Ungrow order (see computeGrowthOrder): the retract key at t=0 and t=1.
-  // Linear in t because the curve is arc-length parametrised.
-  growKey0 = 0;
-  growKey1 = 0;
 
   constructor({
     id,
@@ -805,51 +807,6 @@ class SpatialHash {
   }
 }
 
-// ---------------------------------------------------------------------------
-// UNGROW ORDER.
-//
-// The CRT transition takes the tree apart the way it grew, in reverse: every
-// point on every branch carries a scalar key, and a front sweeps from key 1
-// down to key 0, pinching the wood to a point and clipping it past the front.
-// The key is a depth tier plus the path distance from the trunk base, so
-// sub-twigs and blossoms go first (top of the tree, outermost wood), then
-// tertiary/secondary limbs, then the primaries, and the trunk last — each
-// retracting tip-to-base. A child's keys all exceed its parent's key at the
-// attach point (the tier term), so nothing is ever left hanging in the air.
-const UNGROW_DEPTH_WEIGHT = 0.55;
-// Width of the pinch zone ahead of the front, in key units.
-const UNGROW_FEATHER = 0.035;
-// Blossoms start retracting this far ahead of their twig (key units) so the
-// flowers are gone before the wood under them goes.
-const UNGROW_BLOSSOM_LEAD = 0.06;
-// Extra key for flowers high in the canopy (0 at its lowest flower, this at
-// the highest), so the canopy visibly peels from the top down. Flowers are
-// free instances, so unlike wood this needs no continuity at joints: the
-// bias is only ever positive, so a flower still goes before its twig.
-const UNGROW_BLOSSOM_HEIGHT_SPREAD = 0.3;
-const UNGROW_BLOSSOM_JITTER = 0.04;
-// Where the front starts: above the highest possible blossom key plus the
-// width of the blossom shrink ramp, so nothing is retracted at rest.
-const UNGROW_FRONT_START =
-  1 +
-  UNGROW_BLOSSOM_LEAD +
-  UNGROW_BLOSSOM_HEIGHT_SPREAD +
-  UNGROW_BLOSSOM_JITTER +
-  0.08;
-
-function branchGrowKey(branch: Branch, t: number) {
-  return THREE.MathUtils.lerp(branch.growKey0, branch.growKey1, clamp01(t));
-}
-
-// GLSL: the front position for a 0..1 ungrow level. Runs past both ends so
-// the feather fully resolves at 0 and at 1.
-const UNGROW_SHADER_CHUNK = `
-  uniform float uUngrow;
-  float arborGrowFront() {
-    return mix(${UNGROW_FRONT_START.toFixed(3)}, -0.02, uUngrow);
-  }
-`;
-
 class BranchGeometryBuilder {
   positions: number[] = [];
   normals: number[] = [];
@@ -857,10 +814,6 @@ class BranchGeometryBuilder {
   uvs: number[] = [];
   windParams1: number[] = [];
   windParams2: number[] = [];
-  // (ungrow key, ring radius) per vertex. The radius lets the vertex shader
-  // recover the ring centre from position - normal * radius and collapse
-  // the tube onto its spine as the front arrives.
-  growParams: number[] = [];
   indices: number[] = [];
   private barkColor = new THREE.Color();
   private center = new THREE.Vector3();
@@ -990,7 +943,6 @@ class BranchGeometryBuilder {
         this.uvs.push(j / radialSegments, t);
         this.windParams1.push(...wind.wind1);
         this.windParams2.push(...wind.wind2);
-        this.growParams.push(branchGrowKey(branch, t), ringRadius);
 
         // Vertex color is a multiplier on the bark map: white everywhere
         // except the last stretch of trunk below the frame's bottom edge
@@ -1028,10 +980,6 @@ class BranchGeometryBuilder {
       const capWind = getBranchWindVectors(branch, t);
       this.windParams1.push(...capWind.wind1);
       this.windParams2.push(...capWind.wind2);
-      // Cap normals are the tangent, not radial: radius 0 so the ungrow
-      // collapse leaves cap vertices where they are (they are clipped with
-      // the ring they belong to).
-      this.growParams.push(branchGrowKey(branch, t), 0);
       // Same void fade as the ring vertices: the trunk's bottom cap sits at
       // y=0, below the frame edge, and reads near-black.
       const capFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.center.y);
@@ -1069,7 +1017,6 @@ class BranchGeometryBuilder {
           this.colors[colorOffset + 1],
           this.colors[colorOffset + 2],
         );
-        this.growParams.push(this.growParams[source * 2], 0);
       }
 
       for (let j = 0; j < radialSegments; j += 1) {
@@ -1107,10 +1054,6 @@ class BranchGeometryBuilder {
       "windParams2",
       new THREE.Float32BufferAttribute(this.windParams2, 4),
     );
-    geometry.setAttribute(
-      "growParams",
-      new THREE.Float32BufferAttribute(this.growParams, 2),
-    );
     geometry.setIndex(this.indices);
     geometry.computeBoundingSphere();
     return geometry;
@@ -1130,9 +1073,6 @@ type BranchWindUniforms = {
   uPointerVel: { value: THREE.Vector3 };
   uPointerStrength: { value: number };
   uPointerRadius: { value: number };
-  // 0..1 scroll ungrow level (see UNGROW ORDER). Shared with the blossom
-  // materials so flowers and wood read one front.
-  uUngrow: { value: number };
 };
 
 // ---------------------------------------------------------------------------
@@ -1298,7 +1238,6 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     uPointerVel: { value: new THREE.Vector3() },
     uPointerStrength: { value: 0 },
     uPointerRadius: { value: 2 },
-    uUngrow: { value: 0 },
   };
 
   material.onBeforeCompile = (shader) => {
@@ -1309,53 +1248,26 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
-    shader.uniforms.uUngrow = uniforms.uUngrow;
     shader.vertexShader =
       `
         attribute vec4 windParams1;
         attribute vec4 windParams2;
-        attribute vec2 growParams;
-        varying float vGrowKey;
       ` +
-      UNGROW_SHADER_CHUNK +
       WIND_SHADER_CHUNK +
       shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
       `#include <begin_vertex>
-      // Ungrow: ahead of the sweeping front the tube pinches onto its
-      // spine (position - normal * ringRadius is the ring centre), so each
-      // branch tapers to a point and retracts instead of fading. Past the
-      // front the fragment stage clips it entirely.
-      vGrowKey = growParams.x;
-      {
-        float front = arborGrowFront();
-        float pinch = smoothstep(
-          front - ${UNGROW_FEATHER.toFixed(3)}, front, growParams.x);
-        transformed -= objectNormal * (growParams.y * pinch);
-      }
       transformed += arborWindOffset(windParams1, windParams2);
       transformed += arborPointerRustle(
         (modelMatrix * vec4(transformed, 1.0)).xyz,
         windParams1, windParams2);
       `,
     );
-
-    shader.fragmentShader =
-      `varying float vGrowKey;
-      ` +
-      UNGROW_SHADER_CHUNK +
-      shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <clipping_planes_fragment>",
-      `#include <clipping_planes_fragment>
-      if (vGrowKey > arborGrowFront()) discard;
-      `,
-    );
   };
 
-  material.customProgramCacheKey = () => "branch-wind-v9";
+  material.customProgramCacheKey = () => "branch-wind-v10";
   return uniforms;
 }
 
@@ -1497,7 +1409,6 @@ function applyBlossomWind(
     shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
-    shader.uniforms.uUngrow = uniforms.uUngrow;
     shader.uniforms.uBlossomGrowth = growthUniform;
     Object.assign(shader.uniforms, shade);
     shader.vertexShader =
@@ -1506,9 +1417,7 @@ function applyBlossomWind(
         attribute vec4 blossomWindParams2;
         attribute float blossomPhase;
         attribute float blossomFlutter;
-        // x = intro reveal stagger, y = scroll ungrow key. Packed: the
-        // instanced blossom already uses 15 of the 16 attribute slots.
-        attribute vec2 blossomGrow;
+        attribute float blossomRevealT;
         attribute float blossomEmissive;
         attribute vec4 blossomShade;
         varying float vBlossomEmissive;
@@ -1518,7 +1427,6 @@ function applyBlossomWind(
         varying float vShadeVar;
         uniform float uBlossomGrowth;
       ` +
-      UNGROW_SHADER_CHUNK +
       WIND_SHADER_CHUNK +
       shader.vertexShader;
 
@@ -1540,14 +1448,9 @@ function applyBlossomWind(
       // Two flowers side by side otherwise carry the identical highlight.
       vShadeVar = fract(sin(blossomPhase * 91.7) * 43758.5453);
       // Intro grow reveal: each flower scales in from its spur point (the
-      // geometry origin sits on the twig), staggered by blossomGrow.x.
+      // geometry origin sits on the twig), staggered by blossomRevealT.
       float blossomReveal =
-        smoothstep(blossomGrow.x, blossomGrow.x + 0.24, uBlossomGrowth);
-      // Scroll ungrow: the flower shrinks back into its spur as the front
-      // sweeps down to its twig, finishing just before the wood under it
-      // is clipped (the key leads the twig's own key).
-      blossomReveal *= smoothstep(
-        blossomGrow.y, blossomGrow.y + 0.07, arborGrowFront());
+        smoothstep(blossomRevealT, blossomRevealT + 0.24, uBlossomGrowth);
       transformed *= blossomReveal;
 
       // Petal-local shimmer, tip-weighted so the pedicel and calyx stay
@@ -1703,7 +1606,7 @@ function applyBlossomWind(
     );
   };
 
-  material.customProgramCacheKey = () => "blossom-wind-v12";
+  material.customProgramCacheKey = () => "blossom-wind-v13";
 }
 
 // Sakura palette shared by attached blossoms and falling petals: cool
@@ -3645,7 +3548,6 @@ class WeepingCherryGenerator {
     this.computeWeights(trunk);
     this.applySagging(trunk);
     this.computeWindChains(trunk);
-    this.computeGrowthOrder(trunk);
     this.buildBranchMesh();
     this.buildBlossomMeshes();
     this.buildPetals();
@@ -4727,50 +4629,6 @@ class WeepingCherryGenerator {
     for (const child of branch.children) this.computeWindChains(child);
   }
 
-  // See UNGROW ORDER: higher flowers get a larger key, so the front (which
-  // sweeps from high keys to low) takes the canopy apart top to bottom.
-  private biasBlossomUngrowByHeight(groups: BlossomPlacement[][]) {
-    let yMin = Infinity;
-    let yMax = -Infinity;
-    for (const group of groups) {
-      for (const placement of group) {
-        yMin = Math.min(yMin, placement.position.y);
-        yMax = Math.max(yMax, placement.position.y);
-      }
-    }
-    const span = Math.max(1e-6, yMax - yMin);
-    for (const group of groups) {
-      for (const placement of group) {
-        const h = (placement.position.y - yMin) / span;
-        placement.growKey += UNGROW_BLOSSOM_HEIGHT_SPREAD * h;
-      }
-    }
-  }
-
-  // See UNGROW ORDER. Path distance uses the curves' cached arc-length
-  // tables (the same ones getPointAt samples with), so the key is exactly
-  // linear in the t the geometry builder walks.
-  private computeGrowthOrder(trunk: Branch) {
-    const reachOf = new Map<Branch, [number, number]>();
-    const walk = (branch: Branch, base: number) => {
-      const length = branch.curve.getLength();
-      reachOf.set(branch, [base, base + length]);
-      for (const child of branch.children) {
-        walk(child, base + length * clamp01(child.attachT));
-      }
-    };
-    walk(trunk, 0);
-    let maxReach = 1e-6;
-    for (const [, span] of reachOf) maxReach = Math.max(maxReach, span[1]);
-    for (const branch of this.branches) {
-      const span = reachOf.get(branch);
-      if (!span) continue;
-      const tier = (UNGROW_DEPTH_WEIGHT * Math.min(branch.depth, 6)) / 6;
-      branch.growKey0 = tier + (1 - UNGROW_DEPTH_WEIGHT) * (span[0] / maxReach);
-      branch.growKey1 = tier + (1 - UNGROW_DEPTH_WEIGHT) * (span[1] / maxReach);
-    }
-  }
-
   private applySagging(branch: Branch) {
     for (const child of branch.children) {
       const length = child.curve.getLength();
@@ -5004,12 +4862,6 @@ class WeepingCherryGenerator {
           wind1: wind.wind1,
           wind2: wind.wind2,
           revealT: clamp01(t * 0.5 + this.rand(0, 0.4)) * 0.7,
-          // Height bias added in buildBlossomMeshes once the canopy's
-          // extent is known.
-          growKey:
-            branchGrowKey(branch, t) +
-            UNGROW_BLOSSOM_LEAD +
-            this.rand(0, UNGROW_BLOSSOM_JITTER),
           color,
           emissive: 1,
           phase: this.rand(0, TAU),
@@ -5097,7 +4949,6 @@ class WeepingCherryGenerator {
     const { flowers, flowersLow, halves, buds } =
       this.createBlossomPlacements();
     this.bakeCanopyOcclusion([flowers, flowersLow, halves, buds]);
-    this.biasBlossomUngrowByHeight([flowers, flowersLow, halves, buds]);
     this.petalDetailTexture = createPetalDetailTexture();
     // Raised emissive lift for the dark void scene: clusters luminesce
     // slightly against the black background instead of relying on skylight.
@@ -5139,7 +4990,7 @@ class WeepingCherryGenerator {
       const windParams2 = new Float32Array(count * 4);
       const phase = new Float32Array(count);
       const flutter = new Float32Array(count);
-      const grow = new Float32Array(count * 2);
+      const revealT = new Float32Array(count);
       const emissive = new Float32Array(count);
       const shade = new Float32Array(count * 4);
 
@@ -5153,8 +5004,7 @@ class WeepingCherryGenerator {
         windParams2.set(placement.wind2, i * 4);
         phase[i] = placement.phase;
         flutter[i] = placement.flutter;
-        grow[i * 2] = placement.revealT;
-        grow[i * 2 + 1] = placement.growKey;
+        revealT[i] = placement.revealT;
         emissive[i] = placement.emissive;
         shade.set(placement.shade, i * 4);
       }
@@ -5176,8 +5026,8 @@ class WeepingCherryGenerator {
         new THREE.InstancedBufferAttribute(flutter, 1),
       );
       geometry.setAttribute(
-        "blossomGrow",
-        new THREE.InstancedBufferAttribute(grow, 2),
+        "blossomRevealT",
+        new THREE.InstancedBufferAttribute(revealT, 1),
       );
       geometry.setAttribute(
         "blossomEmissive",
@@ -6727,31 +6577,20 @@ export default function WeepingCherryTreeCanvas({
           TREE_BASE_SCALE.y * treeTuning.scale,
           TREE_BASE_SCALE.z * treeTuning.scale,
         );
-        // Physical ungrow on scroll (see UNGROW ORDER): one front sweeps
-        // the tree from the outermost twigs down to the trunk base; the
-        // shaders pinch and clip wood and flowers behind it. Nothing
-        // fades — the loose falling petals (already translucent) are the
-        // one exception, thinning out with the canopy they fell from.
-        const hide = clamp01(sceneFx.treeGrow);
-        if (tree.branchWindUniforms) {
-          tree.branchWindUniforms.uUngrow.value = hide;
-        }
-        if (tree.petals) {
-          const petalMat = tree.petals.meshes[0]
-            ?.material as THREE.MeshStandardMaterial | undefined;
-          if (petalMat) petalMat.opacity = 0.78 * (1 - smoothstep(0, 0.5, hide));
-        }
-        // Skip the draw calls once everything is behind the front.
-        const treeGone = hide >= 0.999;
-        if (tree.branchMesh) tree.branchMesh.visible = !treeGone;
-        for (const mesh of [
-          tree.blossomMesh,
-          tree.lowBlossomMesh,
-          tree.halfBlossomMesh,
-          tree.budMesh,
-        ]) {
-          if (mesh) mesh.visible = !treeGone;
-        }
+        // Tree drop on scroll: the whole tree (wood, flowers, loose petals
+        // — all children of the group) slides straight down out of the
+        // frame, faster than the page text leaves. Pure translation: no
+        // scaling, fading or shader work, so it reads as the tree sinking
+        // out of shot rather than dissolving.
+        const drop = clamp01(sceneFx.treeDrop);
+        tree.group.position.y =
+          treeTuning.y -
+          drop * TREE_DROP_DISTANCE * Math.max(1, treeTuning.scale);
+        // Skip the draw calls once it is fully below the frame. The branch
+        // mesh, the four blossom meshes and the loose-petal meshes are all
+        // direct children of the group, so one flag covers them.
+        const treeGone = drop >= 1;
+        tree.group.visible = !treeGone;
         // Project the pointer ray onto the backdrop plane (z = -26) and map
         // the hit into the shader's aspect-corrected p-space, so the flame
         // field bends around where the cursor visually sits on the backdrop.
@@ -6780,11 +6619,16 @@ export default function WeepingCherryTreeCanvas({
             );
           }
         }
-        tree.petals?.update(
-          dt,
-          elapsed,
-          tree.branchWindUniforms?.uWindStrength.value ?? 1,
-        );
+        // No petal physics while the tree is dropped out of frame (the
+        // loop still runs at display rate on pointer moves over the CRT
+        // page). Petals resume from where they paused when it comes back.
+        if (!treeGone) {
+          tree.petals?.update(
+            dt,
+            elapsed,
+            tree.branchWindUniforms?.uWindStrength.value ?? 1,
+          );
+        }
 
         if (prefersReducedMotion) resetPointerParallax();
 
@@ -6897,7 +6741,7 @@ export default function WeepingCherryTreeCanvas({
           setCameraFov(HERO_CAMERA_FOV);
         }
         // Blossoms bloom out of their spur points during the intro dolly.
-        // (The scroll ungrow is a separate front — uUngrow above — so the
+        // (The scroll-driven tree drop above is a group translation, so the
         // two never fight.)
         tree.blossomGrowth.value =
           prefersReducedMotion || introComplete
