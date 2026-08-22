@@ -10,7 +10,6 @@ import {
 import { TREE_BASE_SCALE, treeTuning } from "@/components/treeTuning";
 import { sceneFx } from "@/components/sceneFx";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -5587,10 +5586,20 @@ export default function WeepingCherryTreeCanvas({
 
       renderer.setClearColor(0x000000, 0);
       const crtScene = new THREE.Scene();
-      // Studio backdrop per the reference: dark blue above, pale blue
-      // below. A clip-space triangle with toneMapped:false writes the EXACT
-      // sRGB values — scene.background would push them through ACES and
-      // shift both stops.
+      // Backdrop: a dark room in the site's own palette. Near-black base
+      // with a soft pink pool behind and below the monitor (the screen is
+      // the room's main light source, and this is its spill on the wall),
+      // a cooler violet wash off to the upper left standing in for a
+      // practical out of frame, and a faint pink floor pool so the set sits
+      // in lit space instead of floating in void. A clip-space triangle
+      // with toneMapped:false writes the EXACT sRGB values — scene.background
+      // would push them through ACES and lift the blacks.
+      // Its resolution uniform is its own: halftoneUniforms.uResolution
+      // holds the EXTENDED texture size while the CRT path renders, not the
+      // canvas the backdrop actually covers.
+      const crtBgResolution = {
+        value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+      };
       {
         const bgGeometry = new THREE.BufferGeometry();
         bgGeometry.setAttribute(
@@ -5601,7 +5610,7 @@ export default function WeepingCherryTreeCanvas({
           ),
         );
         const bgMaterial = new THREE.RawShaderMaterial({
-          uniforms: { uResolution: halftoneUniforms.uResolution },
+          uniforms: { uResolution: crtBgResolution },
           vertexShader: /* glsl */ `
             precision highp float;
             attribute vec3 position;
@@ -5610,11 +5619,41 @@ export default function WeepingCherryTreeCanvas({
           fragmentShader: /* glsl */ `
             precision highp float;
             uniform vec2 uResolution;
+            // Palette, as sRGB.
+            const vec3 BASE = vec3(0.0392); // #0a0a0a
+            const vec3 DEEP = vec3(0.4275, 0.1020, 0.2353); // #6d1a3c
+            const vec3 CORE = vec3(0.8392, 0.2353, 0.4706); // #d63c78
+            const vec3 HOT = vec3(1.0, 0.5608, 0.6824); // #ff8fae
+            const vec3 VIOLET = vec3(0.3608, 0.1843, 0.4784); // #5c2f7a
+            float hash(vec2 p) {
+              return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+            }
             void main() {
-              float t = gl_FragCoord.y / uResolution.y; // 0 bottom, 1 top
-              vec3 top = vec3(0.06666, 0.08627, 0.2); // #111633
-              vec3 bottom = vec3(0.82745, 0.81569, 0.89020); // #d3d0e3
-              gl_FragColor = vec4(mix(bottom, top, t), 1.0);
+              vec2 uv = gl_FragCoord.xy / uResolution; // 0 bottom, 1 top
+              float aspect = uResolution.x / uResolution.y;
+              // Aspect-corrected coords so the pools keep their shape on
+              // portrait and landscape alike.
+              vec2 q = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
+              // Main pool: a wide ellipse centred a little below the
+              // monitor, hot in the middle, fading to plum then black with
+              // a steep falloff. Gaussian rather than smoothstep so the
+              // outer edge never shows a visible rim.
+              vec2 pp = (q - vec2(0.0, -0.12)) * vec2(1.05, 1.9);
+              float pool = exp(-dot(pp, pp) * 3.4);
+              // Violet practical, off to the upper left and weak.
+              vec2 vp = (q - vec2(-0.55 * aspect, 0.48)) * vec2(1.2, 1.6);
+              float violet = exp(-dot(vp, vp) * 2.2) * 0.55;
+              // Floor pool: a low band hugging the bottom edge.
+              float floorGlow = exp(-uv.y * uv.y * 26.0) * 0.32;
+              vec3 c = BASE;
+              c = mix(c, VIOLET, violet);
+              c = mix(c, DEEP, clamp(pool * 1.2 + floorGlow, 0.0, 1.0));
+              c = mix(c, CORE, pool * pool * 0.55);
+              c = mix(c, HOT, pool * pool * pool * 0.12);
+              // An 8-bit sRGB canvas bands on a gradient this slow; half a
+              // code of noise hides the steps.
+              c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+              gl_FragColor = vec4(c, 1.0);
             }
           `,
           depthWrite: false,
@@ -5625,12 +5664,52 @@ export default function WeepingCherryTreeCanvas({
         bgMesh.renderOrder = -10;
         crtScene.add(bgMesh);
       }
-      // Image-based lighting so the machine's plastic picks up believable
-      // speculars instead of flat lambert fills.
+      // Image-based lighting from a tiny equirect painted in the room's own
+      // palette (same recipe as the tree scene's env below): a bright pink
+      // patch out front where the screen and key live, a violet patch behind
+      // for the rim, plum dome, black floor. RoomEnvironment was a white
+      // studio and read as grey on every specular.
       {
+        const envCanvas = document.createElement("canvas");
+        envCanvas.width = 64;
+        envCanvas.height = 32;
+        const ctx = envCanvas.getContext("2d");
+        if (ctx) {
+          const sky = ctx.createLinearGradient(0, 0, 0, 32);
+          sky.addColorStop(0, "#1c0f24");
+          sky.addColorStop(0.5, "#2a1026");
+          sky.addColorStop(0.7, "#0c050a");
+          sky.addColorStop(1, "#030203");
+          ctx.fillStyle = sky;
+          ctx.fillRect(0, 0, 64, 32);
+          // Equirect u: +z (camera side) is 0.75 → x=48, -z is 0.25 → x=16.
+          // Pink front patch, slightly high-right like the key light.
+          const pink = ctx.createRadialGradient(44, 11, 1, 44, 11, 16);
+          pink.addColorStop(0, "rgba(255,143,174,1)");
+          pink.addColorStop(0.45, "rgba(214,60,120,0.5)");
+          pink.addColorStop(1, "rgba(214,60,120,0)");
+          ctx.fillStyle = pink;
+          ctx.fillRect(0, 0, 64, 32);
+          // Violet rim patch from behind.
+          const vio = ctx.createRadialGradient(16, 8, 1, 16, 8, 12);
+          vio.addColorStop(0, "rgba(150,110,255,0.9)");
+          vio.addColorStop(1, "rgba(92,47,122,0)");
+          ctx.fillStyle = vio;
+          ctx.fillRect(0, 0, 64, 32);
+          // Faint pink floor pool, the wall spill bouncing back up.
+          const floor = ctx.createRadialGradient(48, 30, 1, 48, 30, 14);
+          floor.addColorStop(0, "rgba(109,26,60,0.6)");
+          floor.addColorStop(1, "rgba(109,26,60,0)");
+          ctx.fillStyle = floor;
+          ctx.fillRect(0, 0, 64, 32);
+        }
+        const envTex = new THREE.CanvasTexture(envCanvas);
+        envTex.mapping = THREE.EquirectangularReflectionMapping;
+        envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
-        crtScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-        crtScene.environmentIntensity = 0.55;
+        crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
+        crtScene.environmentIntensity = 0.9;
+        envTex.dispose();
         pmrem.dispose();
       }
       // Soft real shadow, shaped by the actual model, falling left like the
@@ -5897,16 +5976,17 @@ export default function WeepingCherryTreeCanvas({
       }
       crtRoot.add(crtPlaceholder);
 
-      // Studio lighting per the reference: bright soft key from the upper
-      // right, cool fill, warm dome; plus a pink glow in front of the
-      // screen so the display visibly lights its own bezel.
-      // Product-photo setup for a DARK body: low neutral ambient so form
-      // shading survives, a strong warm key, a crisp cool rim from behind
-      // to cut the silhouette out of the light backdrop, minimal fill.
-      const crtHemi = new THREE.HemisphereLight(0xffffff, 0x22242c, 0.55);
+      // Cinematic lighting for a dark room: the screen is the main source,
+      // so the key is pink and comes from the front (high right, so the
+      // baked shadow still falls down-left and grounds the set), a
+      // cool-violet rim from behind cuts the dark body out of the black
+      // backdrop, and a plum practical low on the left keeps the bezel,
+      // buttons and badge readable instead of crushing to black. Dim
+      // violet hemisphere only — form shading must survive.
+      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.5);
       crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xfff1de, 2.8);
-      crtKey.position.set(2.6, 3.2, 2.4);
+      const crtKey = new THREE.DirectionalLight(0xff8fae, 2.4);
+      crtKey.position.set(2.2, 2.8, 2.8);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
       crtKey.shadow.camera.near = 0.1;
@@ -5917,14 +5997,20 @@ export default function WeepingCherryTreeCanvas({
       crtKey.shadow.camera.bottom = -4;
       crtKey.shadow.bias = -0.0005;
       crtScene.add(crtKey);
-      const crtFill = new THREE.DirectionalLight(0xbfc4ff, 0.25);
-      crtFill.position.set(-2.4, 0.8, 1.6);
+      const crtFill = new THREE.DirectionalLight(0x6d1a3c, 0.45);
+      crtFill.position.set(-2.6, 0.4, 1.8);
       crtScene.add(crtFill);
-      const crtRim = new THREE.DirectionalLight(0xeef4ff, 1.5);
-      crtRim.position.set(-1.6, 3.4, -2.6);
+      const crtRim = new THREE.DirectionalLight(0x9a6cff, 2.2);
+      crtRim.position.set(-1.6, 3.2, -2.6);
       crtScene.add(crtRim);
-      // Screen spill only — at higher intensities this pink point light
-      // repainted the whole beige machine rose.
+      // Practical: a plum point light low on the left, the coloured lamp
+      // out of frame that the backdrop's violet wash belongs to. Distance-
+      // limited so it pools on the near side of the body and falls off.
+      const crtPractical = new THREE.PointLight(0xd63c78, 5, 6, 2);
+      crtPractical.position.set(-2.4, -0.6, 0.6);
+      crtScene.add(crtPractical);
+      // Screen spill: the display lighting its own bezel. Ramps with the
+      // scene (see updateCrtRig) so it is off while the flat hero shows.
       const crtGlow = new THREE.PointLight(0xff7fae, 0, 4, 2);
       crtGlow.position.set(0, 0, 1.1);
       crtScene.add(crtGlow);
@@ -6164,7 +6250,7 @@ export default function WeepingCherryTreeCanvas({
         const fx = smoothstep(0.08, 0.55, p);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
-        crtGlow.intensity = 9 * fx;
+        crtGlow.intensity = 13 * fx;
       };
 
       // Model load: async, never blocks scene-ready.
@@ -6210,7 +6296,7 @@ export default function WeepingCherryTreeCanvas({
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
               roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
-              envMapIntensity: 1.35,
+              envMapIntensity: 1.8,
             });
             model.traverse((obj) => {
               if (!(obj as THREE.Mesh).isMesh) return;
@@ -6663,6 +6749,7 @@ export default function WeepingCherryTreeCanvas({
         // Keep the halftone target and its uniforms in step with the
         // drawing buffer (setSize x pixel ratio).
         renderer.getDrawingBufferSize(drawingBufferSize);
+        crtBgResolution.value.set(drawingBufferSize.x, drawingBufferSize.y);
         updateCrtRegion();
         halftoneUniforms.uResolution.value.set(
           drawingBufferSize.x,
