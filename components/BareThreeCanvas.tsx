@@ -193,6 +193,10 @@ const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
 uniform float uTime;
 uniform vec2 uPointer;
 uniform float uPointerForce;
+// Overall level (1 = the page's look). Pulled down while the scene is
+// the picture on the television, where the full-brightness curtains blow
+// out on the tube.
+uniform float uLevel;
 uniform vec3 uBase;
 uniform vec3 uDeep;
 uniform vec3 uCore;
@@ -330,7 +334,7 @@ void main() {
 
   // Mild rolloff keeps overlapping peaks luminous but not clipped.
   col = col / (1.0 + 0.35 * col);
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * uLevel, 1.0);
 }
 `;
 
@@ -393,6 +397,8 @@ type BareThreeCanvasProps = {
    * so the veil must not lift before this.
    */
   onCrtReady?: () => void;
+  /** Progress of the monitor's own assets (GLB + textures), for the veil's bar. */
+  onCrtProgress?: (progress: { loaded: number; total: number }) => void;
 };
 
 export const SCENE_BUILD_MILESTONE_TOTAL = 9;
@@ -5378,6 +5384,7 @@ function disposeMaterialTextures(
 
 export default function WeepingCherryTreeCanvas({
   introActive = false,
+  onCrtProgress,
   onCrtReady,
   onIntroComplete,
   onReady,
@@ -5393,6 +5400,10 @@ export default function WeepingCherryTreeCanvas({
   useEffect(() => {
     onCrtReadyRef.current = onCrtReady;
   }, [onCrtReady]);
+  const onCrtProgressRef = useRef(onCrtProgress);
+  useEffect(() => {
+    onCrtProgressRef.current = onCrtProgress;
+  }, [onCrtProgress]);
   const onReadyRef = useRef(onReady);
   const onProgressRef = useRef(onProgress);
 
@@ -5561,19 +5572,41 @@ export default function WeepingCherryTreeCanvas({
         ),
       );
 
-      // Loading bar on the glass: the page loads AS the television shot,
-      // and the same bar the black veil showed continues here (sceneFx
-      // .loader is the shared displayed fill). Procedural — a hairline
-      // track with a pink-white fill — composited into displayTarget so it
-      // rides through the same raster/scanline/bloom treatment.
-      const LOADER_CENTER_V = 0.5;
-      const loaderUniforms = {
+      // ---- Name on the glass ---------------------------------------------
+      // While the page loads as the television shot the tube shows the
+      // name, set like the site's own lockup: Apparel italic, warm
+      // pink-white with a pink phosphor halo, composited into displayTarget
+      // so it rides through the raster, scanlines and bloom like any other
+      // picture on the tube. sceneFx.glassName is its opacity.
+      const GLASS_NAME_TEXT = "Kevin He.";
+      const GLASS_NAME_CANVAS_W = 1536;
+      const GLASS_NAME_FONT_PX = 220;
+      const GLASS_NAME_PAD = 150;
+      // The type's em height as a fraction of the glass height, and the
+      // line's centre as a fraction up the glass.
+      const GLASS_NAME_EM_FRAC = 0.17;
+      const GLASS_NAME_CENTER_V = 0.5;
+      const glassNameCanvas = document.createElement("canvas");
+      glassNameCanvas.width = GLASS_NAME_CANVAS_W;
+      glassNameCanvas.height = GLASS_NAME_FONT_PX + GLASS_NAME_PAD * 2;
+      const glassNameTexture = new THREE.CanvasTexture(glassNameCanvas);
+      glassNameTexture.premultiplyAlpha = true;
+      glassNameTexture.generateMipmaps = false;
+      glassNameTexture.minFilter = THREE.LinearFilter;
+      glassNameTexture.magFilter = THREE.LinearFilter;
+      // NoColorSpace on purpose: displayTarget already holds the halftone
+      // pass's sRGB-encoded output, so the canvas's sRGB bytes must land
+      // next to it untouched — tagging sRGB would decode them to linear on
+      // sample and wash the text out.
+      glassNameTexture.colorSpace = THREE.NoColorSpace;
+      const glassNameUniforms = {
+        uMap: { value: glassNameTexture },
+        // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
         uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
-        uFill: { value: 0 },
         uOpacity: { value: 0 },
       };
-      const loaderMaterial = new THREE.RawShaderMaterial({
-        uniforms: loaderUniforms,
+      const glassNameMaterial = new THREE.RawShaderMaterial({
+        uniforms: glassNameUniforms,
         vertexShader: /* glsl */ `
 precision highp float;
 attribute vec3 position;
@@ -5586,18 +5619,12 @@ void main() {
 `,
         fragmentShader: /* glsl */ `
 precision highp float;
-uniform float uFill;
+uniform sampler2D uMap;
 uniform float uOpacity;
 varying vec2 vUv;
 void main() {
-  // Track at 22% white, fill in warm pink-white, with a soft
-  // leading edge so the fill reads as light, not a hard bar. Premultiplied.
-  float filled = 1.0 - smoothstep(uFill - 0.01, uFill + 0.004, vUv.x);
-  vec3 track = vec3(0.22);
-  vec3 fill = vec3(1.0, 0.91, 0.95);
-  vec3 c = mix(track, fill, filled);
-  float a = mix(0.3, 1.0, filled);
-  gl_FragColor = vec4(c * a, a) * uOpacity;
+  // Premultiplied in, premultiplied out (One / OneMinusSrcAlpha below).
+  gl_FragColor = texture2D(uMap, vUv) * uOpacity;
 }
 `,
         transparent: true,
@@ -5610,19 +5637,78 @@ void main() {
         depthWrite: false,
         toneMapped: false,
       });
-      const loaderMesh = new THREE.Mesh(overlayQuadGeometry, loaderMaterial);
-      loaderMesh.frustumCulled = false;
-      const loaderScene = new THREE.Scene();
-      loaderScene.add(loaderMesh);
-      // Bar geometry: 26% of the glass width, a raster line and a half
-      // tall (NDC spans 2 over the raster's line count, so half a height of
-      // 1.5 lines is 1.5 / lines), centred on the glass. Thinner than
-      // a line and the glass shader's cell filter plus the scanline gap
-      // average it away to nothing — a 1.6 px bar was invisible.
-      const updateLoaderRect = () => {
-        const halfW = 0.22;
-        const halfH = 1.5 / crtRasterLines();
-        loaderUniforms.uRect.value.set(0, LOADER_CENTER_V * 2 - 1, halfW, halfH);
+      const glassNameMesh = new THREE.Mesh(overlayQuadGeometry, glassNameMaterial);
+      glassNameMesh.frustumCulled = false;
+      const glassNameScene = new THREE.Scene();
+      glassNameScene.add(glassNameMesh);
+      // Paints the name: a wide dim magenta bloom, a tighter pink halo, then
+      // the crisp warm-white glyphs on top, so the phosphor glow is baked
+      // into the texture before the glass shader adds its own halation.
+      const paintGlassName = (family: string) => {
+        const ctx = glassNameCanvas.getContext("2d");
+        if (!ctx) return;
+        const w = glassNameCanvas.width;
+        const h = glassNameCanvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.font = `italic 400 ${GLASS_NAME_FONT_PX}px ${family}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.shadowColor = "rgba(214, 60, 120, 0.7)";
+        ctx.shadowBlur = GLASS_NAME_PAD * 0.5;
+        ctx.fillStyle = "rgba(255, 143, 174, 0.16)";
+        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
+        ctx.shadowColor = "rgba(255, 143, 174, 0.6)";
+        ctx.shadowBlur = GLASS_NAME_FONT_PX * 0.07;
+        ctx.fillStyle = "#ffd2e3";
+        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+        ctx.fillStyle = "#ffe9f2";
+        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
+        glassNameTexture.needsUpdate = true;
+      };
+      // The site's serif is a next/font/local face; its generated family
+      // name lives in the CSS variable. Paint once immediately (the
+      // fallback serif if the face is still loading) and again when the
+      // real face is in.
+      {
+        const family =
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--font-instrument-serif")
+            .trim() || "serif";
+        paintGlassName(family);
+        if (typeof document.fonts?.load === "function") {
+          document.fonts
+            .load(`italic 400 ${GLASS_NAME_FONT_PX}px ${family}`, GLASS_NAME_TEXT)
+            .then(() => {
+              if (!disposed) paintGlassName(family);
+            })
+            .catch(() => {});
+        }
+      }
+      // Quad placement in displayTarget NDC, from the extended frame's size
+      // (so resizes are covered): the em height is GLASS_NAME_EM_FRAC of the
+      // glass, the canvas's padding scales with it.
+      const updateGlassNameRect = () => {
+        let halfH =
+          (GLASS_NAME_EM_FRAC * glassNameCanvas.height) / GLASS_NAME_FONT_PX;
+        let halfW =
+          halfH *
+          (glassNameCanvas.width / glassNameCanvas.height) *
+          (crtExt.extH / crtExt.extW);
+        if (halfW > 0.98) {
+          halfH *= 0.98 / halfW;
+          halfW = 0.98;
+        }
+        glassNameUniforms.uRect.value.set(
+          0,
+          GLASS_NAME_CENTER_V * 2 - 1,
+          halfW,
+          halfH,
+        );
       };
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
@@ -5664,6 +5750,16 @@ void main() {
       // Its resolution uniform is its own: halftoneUniforms.uResolution
       // holds the EXTENDED texture size while the CRT path renders, not the
       // canvas the backdrop actually covers.
+      // uScreenLight: the tube's light thrown onto the wall behind the set
+      // and the floor in front of it — the one thing in the room that is
+      // allowed to be bright. Driven from updateCrtRig with the tube's
+      // warm-up pulse.
+      const crtBgUniforms = {
+        uScreenLight: { value: 0 },
+        get uResolution() {
+          return crtBgResolution;
+        },
+      };
       const crtBgResolution = {
         value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
       };
@@ -5677,7 +5773,7 @@ void main() {
           ),
         );
         const bgMaterial = new THREE.RawShaderMaterial({
-          uniforms: { uResolution: crtBgResolution },
+          uniforms: crtBgUniforms,
           vertexShader: /* glsl */ `
             precision highp float;
             attribute vec3 position;
@@ -5695,6 +5791,7 @@ void main() {
             float hash(vec2 p) {
               return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
             }
+            uniform float uScreenLight;
             void main() {
               vec2 uv = gl_FragCoord.xy / uResolution; // 0 bottom, 1 top
               float aspect = uResolution.x / uResolution.y;
@@ -5709,17 +5806,18 @@ void main() {
               // reads lit from one direction like the machine.
               vec2 pp = (q - vec2(0.34, -0.12)) * vec2(1.15, 1.9);
               float pool = exp(-dot(pp, pp) * 3.4);
-              // Violet practical, off to the upper left and weak.
-              vec2 vp = (q - vec2(-0.55 * aspect, 0.48)) * vec2(1.2, 1.6);
-              float violet = exp(-dot(vp, vp) * 2.2) * 0.08;
-              // Floor pool: a low band hugging the bottom edge.
-              float floorGlow = exp(-uv.y * uv.y * 26.0) * 0.18 *
-                smoothstep(-0.2, 0.6, q.x);
+              // The room is pitch black. All that remains of the lamp is a
+              // faint plum trace of its pool on the wall on the key side,
+              // and a barely-there halo of the tube's own light behind the
+              // set — enough that the machine is not floating in a void,
+              // not enough to read as a lit wall.
+              vec2 sp = (q - vec2(0.0, 0.06)) * vec2(1.0, 1.5);
+              float wallLight = exp(-dot(sp, sp) * 9.0);
+              float screenLight = uScreenLight * wallLight;
               vec3 c = BASE;
-              c = mix(c, VIOLET, violet);
-              c = mix(c, DEEP, clamp(pool * 1.2 + floorGlow, 0.0, 1.0));
-              c = mix(c, CORE, pool * pool * 0.55);
-              c = mix(c, HOT, pool * pool * pool * 0.12);
+              c = mix(c, DEEP, clamp(pool * 0.1, 0.0, 1.0));
+              c = mix(c, DEEP, clamp(screenLight * 0.5, 0.0, 1.0));
+              c = mix(c, CORE, clamp(screenLight * screenLight * 0.12, 0.0, 1.0));
               // An 8-bit sRGB canvas bands on a gradient this slow; half a
               // code of noise hides the steps.
               c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -5959,7 +6057,13 @@ void main() {
         }
         crtPostPass.uniforms.uAmount.value = amount;
         crtPostPass.uniforms.uTime.value = elapsed;
-        crtBloomPass.strength = CRT_POST_BLOOM_STRENGTH * amount;
+        // The warming-up tube (sceneFx.screenGlow) blooms harder into the
+        // room, with the same pulse the glass shader breathes with.
+        const glowPulse =
+          1 +
+          clamp01(sceneFx.screenGlow) *
+            (0.6 + 0.25 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
+        crtBloomPass.strength = CRT_POST_BLOOM_STRENGTH * amount * glowPulse;
         crtComposer.render();
       };
 
@@ -6057,6 +6161,10 @@ void main() {
       const crtScreenUniforms = {
         uMap: { value: displayTarget.texture },
         uFx: { value: 0 },
+        // 0..1 "warming up" glow: the tube runs hot and unsteady while it
+        // shows the name during the load (brighter, with a slow pulse and
+        // irregular flicker), settling as the reveal starts.
+        uGlow: { value: 0 },
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
@@ -6102,6 +6210,7 @@ void main() {
         fragmentShader: /* glsl */ `
           uniform sampler2D uMap;
           uniform float uFx;
+          uniform float uGlow;
           uniform float uTime;
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
@@ -6251,6 +6360,15 @@ void main() {
             // and a touch of per-cell signal noise, refreshed per frame.
             float t = mod(uTime, 3600.0);
             col *= 1.0 + uFx * (0.025 * sin(t * 12.6) + 0.015 * sin(t * 29.0));
+            // Warm-up glow (uGlow): the phosphor runs ~25% hot with a slow
+            // breathing pulse, a faster unsteady flicker, and the odd brief
+            // sag, like a tube that has just been switched on.
+            {
+              float pulse = 0.5 + 0.5 * sin(t * 2.1) * sin(t * 0.7 + 1.3);
+              float unsteady = sin(t * 17.0) * sin(t * 41.0 + 2.0) * sin(t * 5.3);
+              float sag = smoothstep(0.92, 1.0, sin(t * 3.7) * sin(t * 1.9 + 0.4));
+              col *= 1.0 + uGlow * (0.06 + 0.06 * pulse + 0.07 * unsteady - 0.25 * sag);
+            }
             float noise = hash21(cell + mod(floor(t * 60.0), 64.0) * 7.0)
               - 0.5;
             col *= 1.0 + (0.07 * uFx) * noise;
@@ -6319,9 +6437,10 @@ void main() {
       // key so the dark side stays dark: no ambient to speak of, a fill
       // you only notice when it is gone, and a thin rim to cut the dark
       // edge out of the black.
-      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.02);
+      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.01);
       crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xffa9c4, 4.6);
+      // Subtle: one pink key, just enough to draw the lit side of the body.
+      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.0);
       crtKey.position.set(3.6, 2.6, 1.8);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
@@ -6587,6 +6706,7 @@ void main() {
         const fx = smoothstep(0.08, 0.55, p);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
+        crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
         // Virtual raster (see crtRasterLines) and the mip level whose
         // texel is one raster cell: the display texture spans the glass
         // height with crtExt.extH texels.
@@ -6596,7 +6716,14 @@ void main() {
           lines,
         );
         crtScreenUniforms.uCellLod.value = Math.log2(crtExt.extH / lines);
-        crtGlow.intensity = 3 * fx;
+        // Spill from the tube: the point light on the bezel and the
+        // painted light on the wall and floor, both breathing with the
+        // warm-up pulse while the television shot holds.
+        const glow = clamp01(sceneFx.screenGlow);
+        const glowPulse =
+          1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
+        crtGlow.intensity = 3 * fx * glowPulse;
+        crtBgUniforms.uScreenLight.value = fx * (0.18 + 0.1 * glow) * glowPulse;
       };
 
       // Model load: async, never blocks scene-ready. The page loads AS the
@@ -6616,6 +6743,19 @@ void main() {
       };
       {
         const manager = new THREE.LoadingManager();
+        // Progress for the veil's bar: the GLB's own bytes (the bulk of
+        // the download) carry 60%, the four textures 10% each as they
+        // decode. Only the television's assets — the tree is built behind
+        // the television and never shown loading.
+        let glbFraction = 0;
+        let texturesDone = 0;
+        const reportCrtProgress = () => {
+          if (disposed) return;
+          onCrtProgressRef.current?.({
+            loaded: Math.round((0.6 * glbFraction + 0.1 * texturesDone) * 100),
+            total: 100,
+          });
+        };
         manager.onLoad = () => {
           crtAssetsReady = true;
           maybeReportCrtReady();
@@ -6648,7 +6788,10 @@ void main() {
             const texLoader = new THREE.TextureLoader(manager);
             const maxAniso = renderer.capabilities.getMaxAnisotropy();
             const loadTex = (url: string, srgb: boolean) => {
-              const t = texLoader.load(url);
+              const t = texLoader.load(url, () => {
+                texturesDone += 1;
+                reportCrtProgress();
+              });
               t.flipY = false;
               // Oblique sampling is most of what separates "photo of a TV"
               // from "texture on a box" at these grazing camera angles.
@@ -6764,9 +6907,16 @@ void main() {
             const worldBox = new THREE.Box3().setFromObject(crtRoot);
             crtGround.position.y = worldBox.min.y + 0.001;
             renderer.shadowMap.needsUpdate = true;
+            glbFraction = 1;
+            reportCrtProgress();
             updateCrtRegion();
           },
-          undefined,
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              glbFraction = Math.min(1, event.loaded / event.total);
+              reportCrtProgress();
+            }
+          },
           () => {
             // Keep the placeholder on failure; the scene still works, and
             // the page must not wait forever for a model that never comes.
@@ -6814,15 +6964,20 @@ void main() {
         );
         renderer.setRenderTarget(displayTarget);
         renderer.render(halftoneScene, halftoneCamera);
-        // Loading bar onto the glass, over the display. autoClear would
-        // wipe the site view first; off just for this blend.
-        if (sceneFx.loaderAlpha > 0.001) {
-          updateLoaderRect();
-          loaderUniforms.uFill.value = clamp01(sceneFx.loader);
-          loaderUniforms.uOpacity.value = clamp01(sceneFx.loaderAlpha);
+        // The name onto the glass, over the display. autoClear would wipe
+        // the site view first; off just for this blend. A slight mains-hum
+        // flicker on the alpha, a few percent, sells the tube without
+        // reading as a glitch.
+        if (sceneFx.glassName > 0.001) {
+          updateGlassNameRect();
+          glassNameUniforms.uOpacity.value =
+            clamp01(sceneFx.glassName) *
+            (0.965 +
+              0.025 * Math.sin(elapsed * 37.0) +
+              0.01 * Math.sin(elapsed * 7.3));
           const hadAutoClear = renderer.autoClear;
           renderer.autoClear = false;
-          renderer.render(loaderScene, halftoneCamera);
+          renderer.render(glassNameScene, halftoneCamera);
           renderer.autoClear = hadAutoClear;
         }
         renderer.setRenderTarget(null);
@@ -6912,6 +7067,7 @@ void main() {
         uTime: { value: 0 },
         uPointer: { value: new THREE.Vector2(0, 0.1) },
         uPointerForce: { value: 0 },
+        uLevel: { value: 1 },
         uBase: { value: new THREE.Color(0x0a0a0a) },
         // Curtain ramp: deep rose-maroon -> saturated pink -> warm light
         // pink, the reference's maroon/red/orange ramp shifted to pink.
@@ -6950,7 +7106,24 @@ void main() {
       };
       // Added to the scene (not worldGroup) so the backdrop never inherits
       // any world transform.
-      scene.add(createVoidBackdrop());
+      const voidBackdrop = createVoidBackdrop();
+      scene.add(voidBackdrop);
+      // The backdrop rides with the camera: a fixed distance straight down
+      // the view axis, facing it. As a world-fixed plane the intro orbit's
+      // side-on start looked past the pink curtains to the plane's dark
+      // left half (a "gap" on the tube that filled as the camera swung
+      // round); as a billboard the gradient frames the same way from every
+      // camera pose, and the extended (taller) render is covered too.
+      const VOID_BACKDROP_DISTANCE = 41.6; // FINAL camera z 15.6 -> plane z -26
+      const backdropForward = new THREE.Vector3();
+      const backdropHit = new THREE.Vector3();
+      const placeVoidBackdrop = () => {
+        camera.getWorldDirection(backdropForward);
+        voidBackdrop.position
+          .copy(camera.position)
+          .addScaledVector(backdropForward, VOID_BACKDROP_DISTANCE);
+        voidBackdrop.quaternion.copy(camera.quaternion);
+      };
 
       // Loading loop. From here on the television can be drawn — the CRT
       // stage, the glass, the post pass and the void backdrop all exist —
@@ -6966,8 +7139,10 @@ void main() {
         loadingRaf = requestAnimationFrame(loadingLoop);
         const elapsed = loadingClock.getElapsedTime();
         voidBackdropUniforms.uTime.value = elapsed;
+        voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
         camera.position.copy(INTRO_CAMERA_POSITION);
         camera.lookAt(HERO_CAMERA_TARGET);
+        placeVoidBackdrop();
         renderComposite(elapsed);
         loadingFramesDrawn += 1;
         maybeReportCrtReady();
@@ -7202,6 +7377,7 @@ void main() {
         const dt = Math.min(0.033, clock.getDelta());
         const elapsed = clock.elapsedTime;
         voidBackdropUniforms.uTime.value = elapsed;
+        voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
         // Scroll-driven halftone level: the dot-matrix pass fades out as the
         // site view shrinks into the CRT, leaving the smooth render behind
         // the monitor glass. Written every frame; sceneFx is scrubbed by the
@@ -7236,18 +7412,24 @@ void main() {
         // direct children of the group, so one flag covers them.
         const treeGone = drop >= 1;
         tree.group.visible = !treeGone;
-        // Project the pointer ray onto the backdrop plane (z = -26) and map
-        // the hit into the shader's aspect-corrected p-space, so the flame
-        // field bends around where the cursor visually sits on the backdrop.
+        // Project the pointer ray onto the backdrop plane (which faces the
+        // camera, see placeVoidBackdrop) and map the hit into the shader's
+        // aspect-corrected p-space, so the flame field bends around where
+        // the cursor visually sits on the backdrop.
         if (tree.branchWindUniforms) {
           const rayDir = tree.branchWindUniforms.uPointerRayDir.value;
-          if (rayDir.z < -1e-4) {
-            const rayT = (-26 - camera.position.z) / rayDir.z;
-            const hitX = camera.position.x + rayDir.x * rayT;
-            const hitY = camera.position.y + rayDir.y * rayT;
+          const along = rayDir.dot(backdropForward);
+          if (along > 1e-4) {
+            const rayT =
+              backdropHit
+                .copy(voidBackdrop.position)
+                .sub(camera.position)
+                .dot(backdropForward) / along;
+            backdropHit.copy(camera.position).addScaledVector(rayDir, rayT);
+            voidBackdrop.worldToLocal(backdropHit);
             voidBackdropUniforms.uPointer.value.set(
-              ((hitX - 2.6) / 110) * 1.774,
-              (hitY - 5.4) / 62,
+              (backdropHit.x / 110) * 1.774,
+              backdropHit.y / 62,
             );
           }
           // Presence, not velocity. pointerRustleStrength decays to zero
@@ -7405,6 +7587,7 @@ void main() {
           lookTarget.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
         }
         camera.lookAt(lookTarget);
+        placeVoidBackdrop();
         renderComposite(elapsed);
         if (!reportedReady) {
           reportedReady = true;
@@ -7433,7 +7616,8 @@ void main() {
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
-        loaderMaterial.dispose();
+        glassNameTexture.dispose();
+        glassNameMaterial.dispose();
         overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();

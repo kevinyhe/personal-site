@@ -10,85 +10,66 @@ import {
 } from "react";
 import gsap from "gsap";
 import { sceneFx } from "@/components/sceneFx";
-import BareThreeCanvas, {
-  SCENE_BUILD_MILESTONE_TOTAL,
-} from "@/components/BareThreeCanvas";
+import BareThreeCanvas from "@/components/BareThreeCanvas";
 
 type HeroIntroProps = {
   children: ReactNode;
 };
 
 // The two poses of the scene. The page LOADS as the television shot: camera
-// pulled all the way back, the glass showing the loading bar, the tree
-// parked below the frame. The reveal then runs the old scroll choreography
-// in reverse, automatically, into the flat hero.
+// pulled all the way back, the tube showing the name, the tree parked below
+// the frame. The reveal then runs the old scroll choreography in reverse,
+// automatically, into the flat hero.
 const LOADING_POSE = {
   crtProgress: 1,
   halftone: 0,
   treeDrop: 1,
-  loaderAlpha: 1,
+  glassName: 0,
+  screenGlow: 1,
+  backdropLevel: 0.4,
 };
 const HERO_POSE = {
   crtProgress: 0,
   halftone: 1,
   treeDrop: 0,
-  loaderAlpha: 0,
+  glassName: 0,
+  screenGlow: 0,
+  backdropLevel: 1,
 };
 
-// Minimum time the television is on screen before the reveal may start,
-// whatever the build and the bar are doing.
-const TV_DWELL_MS = 1500;
-// Until the television is up, the bar stops short of full, so the tree's
-// loading visibly completes ON the glass even when the build is quicker
-// than the model fetch.
-const LOADER_CAP_BEFORE_TV = 0.85;
+// Minimum time the television is on screen (name up) before the reveal may
+// start. The tree builds behind it; on a slow machine it simply holds the
+// name a little longer — the tree is never shown loading.
+const TV_DWELL_MS = 2700;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
-  const [sceneProgress, setSceneProgress] = useState({
-    loaded: 0,
-    total: SCENE_BUILD_MILESTONE_TOTAL,
-  });
+  // The veil's bar is for the television's own assets only (GLB + four
+  // textures): the thing the page is actually waiting on before it can
+  // show anything.
+  const [crtLoad, setCrtLoad] = useState({ loaded: 0, total: 100 });
   const [sceneReady, setSceneReady] = useState(false);
   const [crtReady, setCrtReady] = useState(false);
   const [tvShown, setTvShown] = useState(false);
   const [revealStarted, setRevealStarted] = useState(false);
   const [revealComplete, setRevealComplete] = useState(false);
 
-  const progress = sceneProgress.total
-    ? sceneProgress.loaded / sceneProgress.total
-    : 0;
-  const sceneProgressRef = useRef(0);
-  sceneProgressRef.current = progress;
+  const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
+  const crtProgressRef = useRef(0);
+  crtProgressRef.current = crtReady ? 1 : crtProgress;
   const tvShownAtRef = useRef(0);
-  const sceneReadyRef = useRef(false);
-  sceneReadyRef.current = sceneReady;
-  const progressPercent = `${progress * 100}%`;
 
-  const handleSceneProgress = useCallback(
-    (nextProgress: { loaded: number; total: number }) => {
-      setSceneProgress({
-        loaded: Math.min(nextProgress.loaded, nextProgress.total),
-        total: nextProgress.total,
-      });
+  const handleCrtProgress = useCallback(
+    (next: { loaded: number; total: number }) => {
+      setCrtLoad({ loaded: Math.min(next.loaded, next.total), total: next.total });
     },
     [],
   );
-
-  const handleSceneReady = useCallback(() => {
-    setSceneProgress((current) => ({
-      loaded: current.total,
-      total: current.total,
-    }));
-    setSceneReady(true);
-  }, []);
-
-  const handleCrtReady = useCallback(() => {
-    setCrtReady(true);
-  }, []);
+  const handleSceneReady = useCallback(() => setSceneReady(true), []);
+  const handleCrtReady = useCallback(() => setCrtReady(true), []);
 
   // The scene must be in the loading pose before its first frame. Children
   // mount first, but the canvas builds its scene asynchronously, so this
@@ -96,68 +77,41 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // the tuner) never starts half-way into the television.
   useLayoutEffect(() => {
     Object.assign(sceneFx, LOADING_POSE);
-    sceneFx.loader = 0;
     // Exposed for headless verification (captures read and write these).
     (window as unknown as Record<string, unknown>).__sceneFx = sceneFx;
     return () => {
       Object.assign(sceneFx, HERO_POSE);
-      sceneFx.loader = 0;
       delete (window as unknown as Record<string, unknown>).__sceneFx;
     };
   }, []);
 
-  // Loader feel: milestones arrive seconds apart, and a bar frozen between
-  // them reads as a hang. This eases the displayed fill toward the real
-  // progress and lets it CREEP most of the way to the next milestone while
-  // waiting, so the bar never stops moving; real progress snaps it forward.
-  // The same displayed value drives the DOM bar (over the black veil) and
-  // the bar painted on the monitor's glass (sceneFx.loader), so the two
-  // read as one bar that moved onto the screen. The television is usually
-  // up within the first phase (the model is ~750 KB all in), so nearly the
-  // whole bar plays out on the glass. Once the bar has filled on the
-  // television and the tree scene is in, this is what starts the reveal.
+  // Loader feel: the five asset loads land at irregular intervals, and a
+  // bar frozen between them reads as a hang. Ease the displayed fill toward
+  // the real progress and let it CREEP most of the way to the next item
+  // while waiting; real progress snaps it forward.
   useEffect(() => {
-    if (revealStarted) return undefined;
+    if (tvShown) return undefined;
     let displayed = 0;
     let creep = 0;
     let raf = 0;
-    let started = false;
     const step = () => {
-      const target = sceneProgressRef.current;
-      creep = Math.min(creep + 0.0035, 0.85 / SCENE_BUILD_MILESTONE_TOTAL);
+      const target = crtProgressRef.current;
+      creep = Math.min(creep + 0.002, 0.08);
       if (target >= 1) creep = 0;
-      const cap = tvShownAtRef.current > 0 ? 1 : LOADER_CAP_BEFORE_TV;
-      const goal = Math.min(cap, target + (target < 1 ? creep : 0));
-      displayed += (goal - displayed) * 0.12;
+      const goal = Math.min(1, target + (target < 1 ? creep : 0));
+      displayed += (goal - displayed) * 0.14;
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
-      sceneFx.loader = displayed;
-      // Headless captures set this to hold the television shot open.
-      const holdForCapture = (window as unknown as Record<string, unknown>)
-        .__heroHold;
-      if (
-        !started &&
-        tvShownAtRef.current > 0 &&
-        sceneReadyRef.current &&
-        displayed >= 0.995 &&
-        performance.now() - tvShownAtRef.current >= TV_DWELL_MS &&
-        !holdForCapture
-      ) {
-        started = true;
-        setRevealStarted(true);
-        return;
-      }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [revealStarted]);
+  }, [tvShown]);
 
   // The television appears as soon as the canvas reports it drawn with the
   // model and its textures in (before that the rig renders a crude
-  // placeholder body, which must never be seen) — normally while the tree
-  // is still building, so the bar runs on the glass. The black veil (with
-  // the DOM bar) fades off and the same bar is now on the screen.
+  // placeholder body, which must never be seen). The veil fades off and the
+  // name comes up on the tube.
   useEffect(() => {
     if (crtReady && !tvShown) {
       setTvShown(true);
@@ -165,20 +119,35 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     }
   }, [crtReady, tvShown]);
 
-  // Separate effect so the fade is only ever killed on unmount: a cleanup
+  // Separate effect so these are only ever killed on unmount: a cleanup
   // tied to the readiness flags above ran the moment tvShown flipped and
   // froze the veil mid-fade.
   useEffect(() => {
+    if (!tvShown) return undefined;
     const overlay = overlayRef.current;
-    if (!tvShown || !overlay) return undefined;
-    const tween = gsap.to(overlay, {
-      autoAlpha: 0,
-      duration: 0.6,
-      ease: "power2.out",
-      pointerEvents: "none",
-    });
+    const tweens: gsap.core.Tween[] = [];
+    if (overlay) {
+      tweens.push(
+        gsap.to(overlay, {
+          autoAlpha: 0,
+          duration: 0.5,
+          ease: "power2.out",
+          pointerEvents: "none",
+        }),
+      );
+    }
+    // The tube comes up empty, glowing and unsteady; the name warms onto
+    // the phosphor half a second in.
+    tweens.push(
+      gsap.to(sceneFx, {
+        delay: 0.5,
+        duration: 0.8,
+        ease: "power2.out",
+        glassName: 1,
+      }),
+    );
     return () => {
-      tween.kill();
+      for (const tween of tweens) tween.kill();
     };
   }, [tvShown]);
 
@@ -186,10 +155,31 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // decode), carry on with whatever the rig has after a grace period. The
   // canvas also reports "ready" on load failure, so this is belt and braces.
   useEffect(() => {
-    if (!sceneReady || crtReady) return undefined;
-    const timeout = window.setTimeout(() => setCrtReady(true), 8000);
+    if (crtReady) return undefined;
+    const timeout = window.setTimeout(() => setCrtReady(true), 10000);
     return () => window.clearTimeout(timeout);
-  }, [crtReady, sceneReady]);
+  }, [crtReady]);
+
+  // The reveal starts once the tree scene is built AND the television has
+  // had its minimum time on screen. Nothing about the tree's loading is
+  // shown; the name simply holds until it is ready.
+  useEffect(() => {
+    if (!tvShown || !sceneReady || revealStarted) return undefined;
+    let timeout = 0;
+    const tryStart = () => {
+      const remaining =
+        TV_DWELL_MS - (performance.now() - tvShownAtRef.current);
+      // Headless captures set __heroHold to keep the television shot open.
+      const hold = (window as unknown as Record<string, unknown>).__heroHold;
+      if (remaining > 0 || hold) {
+        timeout = window.setTimeout(tryStart, Math.max(50, remaining));
+        return;
+      }
+      setRevealStarted(true);
+    };
+    tryStart();
+    return () => window.clearTimeout(timeout);
+  }, [revealStarted, sceneReady, tvShown]);
 
   useEffect(() => {
     if (!revealStarted || revealComplete) return undefined;
@@ -270,21 +260,27 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         }),
       );
 
-      // Two seconds, automatic. Every strand ends at its own time: the bar
-      // leaves the glass first (0.35), the camera pushes in
-      // from the room to nose-against-the-glass (0.15 -> 1.75) while the
-      // halftone dots come up under it (0.95 -> 1.65) so the flat page's
-      // texture is fully in before the switch to the flat path; the tree
-      // rises from below the frame (0.1 -> 1.7) while the canvas runs its
-      // own orbit-and-bloom intro over the same two seconds; the name
-      // rises through the hairline (0.85 -> ~2.0) and the rest of the page
-      // fades in over the top of it (1.0 -> 2.1).
+      // Two seconds, automatic. Every strand ends at its own time: the name
+      // leaves the glass first (0.45), the camera pushes in from the room to
+      // nose-against-the-glass (0.15 -> 1.75) while the halftone dots come
+      // up under it (0.95 -> 1.65) so the flat page's texture is fully in
+      // before the switch to the flat path; the tree rises from below the
+      // frame (0.1 -> 1.7) while the canvas runs its own orbit-and-bloom
+      // intro over the same two seconds; the name rises through the
+      // hairline (0.85 -> ~2.0) and the rest of the page fades in over the
+      // top of it (1.0 -> 2.1).
       const timeline = gsap.timeline({
         defaults: { ease: "power3.out" },
         onComplete: () => setRevealComplete(true),
       });
       timeline
-        .to(sceneFx, { loaderAlpha: 0, duration: 0.35, ease: "power2.out" }, 0)
+        .to(sceneFx, { glassName: 0, duration: 0.45, ease: "power2.out" }, 0)
+        .to(sceneFx, { screenGlow: 0, duration: 0.9, ease: "power2.out" }, 0)
+        .to(
+          sceneFx,
+          { backdropLevel: 1, duration: 1.3, ease: "power2.inOut" },
+          0.15,
+        )
         .to(
           sceneFx,
           { crtProgress: 0, duration: 1.6, ease: "power2.inOut" },
@@ -336,8 +332,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     <section className="relative" id="top" ref={rootRef}>
       <BareThreeCanvas
         introActive={revealStarted}
+        onCrtProgress={handleCrtProgress}
         onCrtReady={handleCrtReady}
-        onProgress={handleSceneProgress}
         onReady={handleSceneReady}
         screenLayerRef={heroLayerRef}
       />
@@ -358,9 +354,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         {children}
       </div>
 
-      {/* Black veil with the bar while the scene builds; it lifts to the
-          television once the model is in, and the bar continues on the
-          glass. Removed from the DOM when the reveal is done. */}
+      {/* Black veil with the bar while the television's own assets load; it
+          lifts to the television, which then shows the name while the tree
+          builds behind it. Removed from the DOM when the reveal is done. */}
       {!revealComplete ? (
         <div
           aria-label="Loading"
@@ -371,16 +367,16 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         >
           <div className="absolute left-1/2 top-1/2 w-40 -translate-x-1/2 -translate-y-1/2">
             <div
-              aria-valuemax={sceneProgress.total}
+              aria-valuemax={crtLoad.total}
               aria-valuemin={0}
-              aria-valuenow={sceneProgress.loaded}
+              aria-valuenow={crtReady ? crtLoad.total : crtLoad.loaded}
               className="h-px w-full overflow-hidden bg-white/15"
               role="progressbar"
             >
               <div
                 className="h-full bg-[#f0f0f0]"
                 ref={progressFillRef}
-                style={{ width: progressPercent }}
+                style={{ width: 0 }}
               />
             </div>
           </div>
