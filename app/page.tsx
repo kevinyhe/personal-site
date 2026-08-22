@@ -1,3 +1,4 @@
+import { preload } from "react-dom";
 import HeroIntro from "@/components/HeroIntro";
 import TransitionLink from "@/components/TransitionLink";
 import TreeTuner from "@/components/TreeTuner";
@@ -50,7 +51,24 @@ function Letters({ text }: { text: string }) {
   );
 }
 
+// The television model and its textures go out with the HTML, not after
+// the bundle has parsed and the canvas has mounted: the page loads AS the
+// television shot, so these are the first things the page needs.
+const CRT_ASSETS: { href: string; as: "fetch" | "image" }[] = [
+  { href: "/models/crt.glb", as: "fetch" },
+  { href: "/models/tv-old-tv-retro-tv/textures/crt-basecolor.webp", as: "image" },
+  { href: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp", as: "image" },
+  { href: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp", as: "image" },
+  { href: "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp", as: "image" },
+];
+
 export default function Home() {
+  for (const asset of CRT_ASSETS) {
+    preload(asset.href, {
+      as: asset.as,
+      ...(asset.as === "fetch" ? { crossOrigin: "anonymous" } : {}),
+    });
+  }
   return (
     // No data-home-lock any more: the home page scrolls now (the CRT scene
     // lives on scroll). HeroIntro still blocks wheel/touch during the intro.
