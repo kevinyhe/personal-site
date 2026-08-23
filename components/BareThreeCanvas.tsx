@@ -6491,11 +6491,12 @@ void main() {
       crtFill.target.position.set(0, -0.6, 0);
       crtScene.add(crtFill.target);
       crtScene.add(crtFill);
-      // Kicker: from behind-left, a magenta-violet a step off the key's
-      // pink, low, so the dark side's silhouette gets a thin edge against
-      // the black rather than a lit cheek.
-      const crtKicker = new THREE.SpotLight(0xd06cff, 55, 16, 0.5, 0.7, 2);
-      crtKicker.position.set(-3.6, 3.4, -3.4);
+      // Kicker: from the left, a little ahead of the set's face rather
+      // than behind it, in a pink a step off the key's, low — so the dark
+      // side gets a soft pink edge and a hint of its form, not a second
+      // key.
+      const crtKicker = new THREE.SpotLight(0xf26bd6, 55, 16, 0.5, 0.7, 2);
+      crtKicker.position.set(-4.4, 3.2, 0.9);
       crtKicker.target.position.set(0.2, 0.3, 0);
       crtScene.add(crtKicker.target);
       crtScene.add(crtKicker);
