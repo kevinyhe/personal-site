@@ -384,6 +384,12 @@ type BareThreeCanvasProps = {
   onIntroComplete?: () => void;
   onReady?: () => void;
   onProgress?: (progress: { loaded: number; total: number }) => void;
+  /**
+   * Fired once the monitor model (GLB + textures) is in the scene — or has
+   * failed, leaving the placeholder. The page loads AS the television shot,
+   * so the veil must not lift before this.
+   */
+  onCrtReady?: () => void;
 };
 
 export const SCENE_BUILD_MILESTONE_TOTAL = 5;
@@ -5252,6 +5258,7 @@ function disposeMaterialTextures(
 
 export default function WeepingCherryTreeCanvas({
   introActive = false,
+  onCrtReady,
   onIntroComplete,
   onReady,
   onProgress,
@@ -5262,6 +5269,10 @@ export default function WeepingCherryTreeCanvas({
   screenLayerRefStable.current = screenLayerRef;
   const introActiveRef = useRef(introActive);
   const onIntroCompleteRef = useRef(onIntroComplete);
+  const onCrtReadyRef = useRef(onCrtReady);
+  useEffect(() => {
+    onCrtReadyRef.current = onCrtReady;
+  }, [onCrtReady]);
   const onReadyRef = useRef(onReady);
   const onProgressRef = useRef(onProgress);
 
@@ -5508,6 +5519,70 @@ void main() {
       taglineMesh.frustumCulled = false;
       const taglineScene = new THREE.Scene();
       taglineScene.add(taglineMesh);
+
+      // Loading bar on the glass: the page loads AS the television shot,
+      // and the same bar the black veil showed continues here (sceneFx
+      // .loader is the shared displayed fill). Procedural — a hairline
+      // track with a pink-white fill — drawn with the tagline's quad so it
+      // rides through the same raster/scanline/bloom treatment.
+      const LOADER_CENTER_V = 0.44;
+      const loaderUniforms = {
+        uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+        uFill: { value: 0 },
+        uOpacity: { value: 0 },
+      };
+      const loaderMaterial = new THREE.RawShaderMaterial({
+        uniforms: loaderUniforms,
+        vertexShader: /* glsl */ `
+precision highp float;
+attribute vec3 position;
+uniform vec4 uRect;
+varying vec2 vUv;
+void main() {
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(uRect.xy + position.xy * uRect.zw, 0.0, 1.0);
+}
+`,
+        fragmentShader: /* glsl */ `
+precision highp float;
+uniform float uFill;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  // Track at 15% white, fill in the tagline's warm pink-white, with a soft
+  // leading edge so the fill reads as light, not a hard bar. Premultiplied.
+  float filled = 1.0 - smoothstep(uFill - 0.01, uFill + 0.004, vUv.x);
+  vec3 track = vec3(0.22);
+  vec3 fill = vec3(1.0, 0.91, 0.95);
+  vec3 c = mix(track, fill, filled);
+  float a = mix(0.3, 1.0, filled);
+  gl_FragColor = vec4(c * a, a) * uOpacity;
+}
+`,
+        transparent: true,
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+        blendSrcAlpha: THREE.OneFactor,
+        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const loaderMesh = new THREE.Mesh(taglineGeometry, loaderMaterial);
+      loaderMesh.frustumCulled = false;
+      const loaderScene = new THREE.Scene();
+      loaderScene.add(loaderMesh);
+      // Bar geometry: 26% of the glass width, a raster line and a half
+      // tall (NDC spans 2 over the raster's line count, so half a height of
+      // 1.5 lines is 1.5 / lines), centred under the tagline. Thinner than
+      // a line and the glass shader's cell filter plus the scanline gap
+      // average it away to nothing — a 1.6 px bar was invisible.
+      const updateLoaderRect = () => {
+        const halfW = 0.13;
+        const halfH = 1.5 / crtRasterLines();
+        loaderUniforms.uRect.value.set(0, LOADER_CENTER_V * 2 - 1, halfW, halfH);
+      };
       // Paints the sentence: word-wrapped to ~26ch, centred, tight tracking
       // like the DOM lockup had, then a wide dim magenta bloom, a tighter
       // pink halo, a faint horizontal smear (phosphor persistence), and the
@@ -5723,7 +5798,9 @@ void main() {
               // monitor, hot in the middle, fading to plum then black with
               // a steep falloff. Gaussian rather than smoothstep so the
               // outer edge never shows a visible rim.
-              vec2 pp = (q - vec2(0.0, -0.12)) * vec2(1.05, 1.9);
+              // Biased to the left, the key light's side, so the wall
+              // reads lit from one direction like the machine.
+              vec2 pp = (q - vec2(-0.16, -0.12)) * vec2(1.05, 1.9);
               float pool = exp(-dot(pp, pp) * 3.4);
               // Violet practical, off to the upper left and weak.
               vec2 vp = (q - vec2(-0.55 * aspect, 0.48)) * vec2(1.2, 1.6);
@@ -6320,10 +6397,17 @@ void main() {
       // backdrop, and a plum practical low on the left keeps the bezel,
       // buttons and badge readable instead of crushing to black. Dim
       // violet hemisphere only — form shading must survive.
-      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.5);
+      // One-sided, like a single motivated source: a strong warm-pink key
+      // from the upper LEFT and in front (the side the camera sees the
+      // cheek of — CRT_YAW turns the front toward the viewer's right), so
+      // the left face and the left of the bezel take the light and the
+      // right side falls into the shadow that the screen's own spill then
+      // fills. Everything else is kept low enough to stay a shadow side,
+      // not a second source.
+      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.12);
       crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xff8fae, 2.4);
-      crtKey.position.set(2.2, 2.8, 2.8);
+      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.4);
+      crtKey.position.set(-3.4, 3.2, 2.4);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
       crtKey.shadow.camera.near = 0.1;
@@ -6334,17 +6418,20 @@ void main() {
       crtKey.shadow.camera.bottom = -4;
       crtKey.shadow.bias = -0.0005;
       crtScene.add(crtKey);
-      const crtFill = new THREE.DirectionalLight(0x6d1a3c, 0.45);
-      crtFill.position.set(-2.6, 0.4, 1.8);
+      // Fill from the shadow side: barely there, cool, just enough that
+      // the right cheek is a dark plum plane rather than a hole.
+      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.18);
+      crtFill.position.set(2.8, 0.6, 1.6);
       crtScene.add(crtFill);
-      const crtRim = new THREE.DirectionalLight(0x9a6cff, 2.2);
-      crtRim.position.set(-1.6, 3.2, -2.6);
+      // Rim from behind on the shadow side: a thin violet edge that cuts
+      // the dark right side out of the black backdrop.
+      const crtRim = new THREE.DirectionalLight(0x9a6cff, 1.4);
+      crtRim.position.set(2.2, 3.0, -2.6);
       crtScene.add(crtRim);
-      // Practical: a plum point light low on the left, the coloured lamp
-      // out of frame that the backdrop's violet wash belongs to. Distance-
-      // limited so it pools on the near side of the body and falls off.
-      const crtPractical = new THREE.PointLight(0xd63c78, 5, 6, 2);
-      crtPractical.position.set(-2.4, -0.6, 0.6);
+      // Practical on the KEY side, low: the same lamp the key stands in
+      // for, pooling on the near-left of the body. Distance-limited.
+      const crtPractical = new THREE.PointLight(0xd63c78, 3.5, 6, 2);
+      crtPractical.position.set(-2.6, -0.5, 0.8);
       crtScene.add(crtPractical);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
@@ -6746,10 +6833,13 @@ void main() {
             crtGround.position.y = worldBox.min.y + 0.001;
             renderer.shadowMap.needsUpdate = true;
             updateCrtRegion();
+            if (!disposed) onCrtReadyRef.current?.();
           },
           undefined,
           () => {
-            // Keep the placeholder on failure; the scene still works.
+            // Keep the placeholder on failure; the scene still works, and
+            // the page must not wait forever for a model that never comes.
+            if (!disposed) onCrtReadyRef.current?.();
           },
         );
       }
@@ -6806,6 +6896,15 @@ void main() {
           const hadAutoClear = renderer.autoClear;
           renderer.autoClear = false;
           renderer.render(taglineScene, halftoneCamera);
+          renderer.autoClear = hadAutoClear;
+        }
+        if (sceneFx.loaderAlpha > 0.001) {
+          updateLoaderRect();
+          loaderUniforms.uFill.value = clamp01(sceneFx.loader);
+          loaderUniforms.uOpacity.value = clamp01(sceneFx.loaderAlpha);
+          const hadAutoClear = renderer.autoClear;
+          renderer.autoClear = false;
+          renderer.render(loaderScene, halftoneCamera);
           renderer.autoClear = hadAutoClear;
         }
         renderer.setRenderTarget(null);
@@ -7080,7 +7179,9 @@ void main() {
       let frame = 0;
       let reportedReady = false;
       let reportedIntroComplete = false;
-      const introDuration = 2.7;
+      // The reveal is two seconds, automatic: the orbit from the side and
+      // the blossom bloom run over the same window as the page's push-in.
+      const introDuration = 2.0;
       let introElapsed = prefersReducedMotion ? introDuration : 0;
       let introComplete = prefersReducedMotion;
       let lastRenderedAt = 0;
@@ -7389,6 +7490,7 @@ void main() {
         taglineDisposed = true;
         taglineTexture.dispose();
         taglineMaterial.dispose();
+        loaderMaterial.dispose();
         taglineGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();
