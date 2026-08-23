@@ -12,7 +12,8 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
-import ThinkerStage from "@/components/ThinkerStage";
+import ThinkerStage, { type ThinkerTiming } from "@/components/ThinkerStage";
+import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -24,6 +25,14 @@ type HeroIntroProps = {
 // other way round (counter-clockwise from above).
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
+// The panel grows over this stretch of the hero's scroll timeline (the
+// name is out by 0.4), and The Thinker inside it starts breaking a fifth
+// of the way into that growth — as on lukebaffait.fr, whose fragments are
+// already streaming off while its box is still small.
+const PANEL_GROW_AT = 0.4;
+const PANEL_GROW_DURATION = 0.6;
+const THINKER_BREAK_INTO_GROWTH = 0.2;
+
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
 // the frame. The reveal then runs the old scroll choreography in reverse,
@@ -33,7 +42,6 @@ const LOADING_POSE = {
   halftone: 0,
   treeDrop: 1,
   glassName: 0,
-  glassTagline: 0,
   screenGlow: 1,
   screenPower: 0,
   roomLight: 0,
@@ -45,7 +53,6 @@ const HERO_POSE = {
   halftone: 1,
   treeDrop: 0,
   glassName: 0,
-  glassTagline: 0,
   screenGlow: 0,
   screenPower: 1,
   roomLight: 1,
@@ -55,10 +62,9 @@ const HERO_POSE = {
 
 // Minimum time the television is on screen before the reveal may start:
 // the lamp coming on (0.3 s), the tube powering up (0.95 s), the name
-// warming in by ~1.4 s and the Chinese name at 2.5 s, plus 2.7 s with the
-// name up. The
-// tree builds behind it; on a slow machine it simply holds the name a
-// little longer — the tree is never shown loading.
+// warming in by ~1.4 s, plus 3.4 s with the name up. The tree builds
+// behind it; on a slow machine it simply holds the name a little longer —
+// the tree is never shown loading.
 const TV_DWELL_MS = 4800;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
@@ -169,21 +175,26 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       );
     }
     // Switch-on. The room is dark. At 0.3 s the lamp comes on like a
-    // filament bulb: it flares well past its steady level in a few frames,
+    // filament bulb: it flares to several times its steady level in a few frames,
     // sags back below it, then settles with a small wobble — the overshoot
     // is what reads as incandescent rather than a fade. The tube powers up
     // once the lamp has settled, the name warms onto the phosphor once the
-    // picture is steady, and the Chinese name follows.
-    const powerOn = gsap.timeline();
+    // picture is steady.
+    // Headless captures set ?tvDark to hold the room before the lamp, or
+    // ?tvFlare to hold it at the lamp's flare.
+    const search = window.location.search;
+    const powerOn = gsap.timeline({ paused: search.includes("tvDark") });
     powerOn
-      .to(sceneFx, { roomLight: 1.8, duration: 0.07, ease: "power3.in" }, 0.3)
+      .to(sceneFx, { roomLight: 3.6, duration: 0.07, ease: "power3.in" }, 0.3)
       .to(sceneFx, { roomLight: 0.78, duration: 0.2, ease: "power2.out" }, 0.37)
       .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
       .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
       .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
       .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.95)
-      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4)
-      .to(sceneFx, { glassTagline: 1, duration: 0.7, ease: "power2.out" }, 2.5);
+      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4);
+    if (search.includes("tvFlare")) {
+      powerOn.pause(0.37);
+    }
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
       for (const tween of tweens) tween.kill();
@@ -316,7 +327,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       });
       timeline
         .to(sceneFx, { glassName: 0, duration: 0.45, ease: "power2.out" }, 0)
-        .to(sceneFx, { glassTagline: 0, duration: 0.4, ease: "power2.out" }, 0)
         .to(sceneFx, { screenGlow: 0, duration: 0.9, ease: "power2.out" }, 0)
         .to(
           sceneFx,
@@ -396,7 +406,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [revealComplete]);
 
-  // The next page, on scroll: one scrubbed timeline over 300vh. The top
+  // The next page, on scroll: one scrubbed timeline over 450vh. The top
   // strip fades, the name sinks out of the bottom of the frame, and the
   // tree sinks out too while the camera orbits it counter-clockwise
   // through 60% of the intro's sweep; once the name has gone, a
@@ -436,15 +446,18 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           trigger: scrollSpace,
         },
       });
-      // Times are fractions of the whole 300vh scroll: the old 200vh
-      // choreography in the first two thirds, the panel after the name
-      // is out (0.4).
+      // Times are fractions of the whole 450vh scroll: the hero's exit in
+      // the first 0.4, the panel after the name is out.
       gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
       tl.to(strip, { autoAlpha: 0, duration: 0.2 }, 0)
         .to(lockup, { y: exitOffset, duration: 0.4, ease: "power1.in" }, 0)
         .to(sceneFx, { treeDrop: 1, duration: 0.57, ease: "power1.in" }, 0)
         .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.67 }, 0)
-        .to(panel, { scale: 1, duration: 0.6, ease: "power2.inOut" }, 0.4);
+        .to(
+          panel,
+          { scale: 1, duration: PANEL_GROW_DURATION, ease: "power2.inOut" },
+          PANEL_GROW_AT,
+        );
     }, root);
     return () => {
       ctx.revert();
@@ -453,6 +466,37 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
   }, [revealComplete]);
+
+  // The Thinker's chunks are cut in a worker from the moment the page
+  // mounts, so the statue is ready by the time the scroll reaches it.
+  useEffect(() => {
+    void loadThinkerChunks().catch(() => undefined);
+  }, []);
+
+  // The stretch of scroll the statue's stage owns: from the panel starting
+  // to grow to the bottom of the page, with the break a fifth of the way
+  // into the growth. Read from the layout each time ScrollTrigger refreshes.
+  const thinkerTiming = useCallback<ThinkerTiming>(() => {
+    const scrollSpace = scrollSpaceRef.current;
+    const statueSpace = statueSpaceRef.current;
+    const viewportHeight = window.innerHeight;
+    const documentTop = (element: HTMLElement | null) =>
+      element ? element.getBoundingClientRect().top + window.scrollY : 0;
+    // The hero timeline runs from the scroll space's top at the top of the
+    // viewport to its bottom at the bottom.
+    const heroStart = documentTop(scrollSpace);
+    const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
+    const growStart = heroStart + heroLength * PANEL_GROW_AT;
+    const growEnd = heroStart + heroLength * (PANEL_GROW_AT + PANEL_GROW_DURATION);
+    const end = statueSpace
+      ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
+      : growEnd;
+    return {
+      breakAt: growStart + (growEnd - growStart) * THINKER_BREAK_INTO_GROWTH,
+      end,
+      start: growStart,
+    };
+  }, []);
 
   // The canvas owns the DOM homography (same-frame application); on unmount
   // just clear whatever transform it left behind.
@@ -499,15 +543,16 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
       >
         {revealComplete ? (
-          <ThinkerStage active={panelOpen} triggerRef={statueSpaceRef} />
+          <ThinkerStage active={panelOpen} timing={thinkerTiming} />
         ) : null}
       </div>
 
       {/* Scroll room. Every visible layer is fixed, so these spacers are the
           only thing giving the document height: the first drives the hero's
-          exit and the panel's growth, the second the statue. */}
-      <div aria-hidden="true" className="h-[300vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[400vh]" ref={statueSpaceRef} />
+          exit and the panel's growth, the second gives the statue's breakup
+          (which begins during the growth) the rest of its run. */}
+      <div aria-hidden="true" className="h-[450vh]" ref={scrollSpaceRef} />
+      <div aria-hidden="true" className="h-[650vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
