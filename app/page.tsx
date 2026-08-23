@@ -82,6 +82,7 @@ export default function Home() {
           <div
             className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 text-[0.85rem] uppercase tracking-[0.04em] text-white"
             data-hero-animate
+            data-hero-strip
             style={{ textShadow: "0 0 8px rgba(255,255,255,0.25)" }}
           >
             <p aria-label="Copyright" className="hidden sm:block">
@@ -131,7 +132,10 @@ export default function Home() {
               (2.165em measured) == content width, and the negative
               side margins trim measured glyph sidebearings so ink, not the
               em box, is flush with the padding edges. */}
-          <div className="flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]">
+          <div
+            className="flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]"
+            data-hero-lockup
+          >
             {/* One shared baseline, both words the same size (0.58 of the
                 full-width base formula — the largest that keeps a gap
                 between the words on one line). */}

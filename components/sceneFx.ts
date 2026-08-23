@@ -58,6 +58,17 @@ export const sceneFx = {
    */
   screenPower: 1,
   /**
+   * The room's lamp, as a multiplier on every light in the television
+   * scene: 0 = dark room, then the incandescent switch-on (a flare past
+   * 1, a sag, a settle) when the television shot begins. 1 on the page.
+   */
+  roomLight: 1,
+  /**
+   * Scroll-driven orbit of the tree camera about the hero target, in
+   * radians (positive = counter-clockwise from above). 0 on the page.
+   */
+  orbit: 0,
+  /**
    * Level of the tree scene's void backdrop, 1 = the page's look. Held
    * down while the scene is the picture on the television and brought up
    * as the camera pushes in.
