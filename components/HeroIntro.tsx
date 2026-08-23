@@ -26,6 +26,7 @@ const LOADING_POSE = {
   treeDrop: 1,
   glassName: 0,
   screenGlow: 1,
+  screenPower: 0,
   backdropLevel: 0.4,
 };
 const HERO_POSE = {
@@ -34,13 +35,16 @@ const HERO_POSE = {
   treeDrop: 0,
   glassName: 0,
   screenGlow: 0,
+  screenPower: 1,
   backdropLevel: 1,
 };
 
-// Minimum time the television is on screen (name up) before the reveal may
-// start. The tree builds behind it; on a slow machine it simply holds the
-// name a little longer — the tree is never shown loading.
-const TV_DWELL_MS = 2700;
+// Minimum time the television is on screen before the reveal may start:
+// the switch-on sequence (dark glass 0.35 s, the tube powering up over
+// 1.0 s, the name warming in by ~1.9 s) plus 2.7 s with the name up. The
+// tree builds behind it; on a slow machine it simply holds the name a
+// little longer — the tree is never shown loading.
+const TV_DWELL_MS = 4600;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -141,16 +145,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         }),
       );
     }
-    // The tube comes up empty, glowing and unsteady; the name warms onto
-    // the phosphor half a second in.
-    tweens.push(
-      gsap.to(sceneFx, {
-        delay: 0.5,
-        duration: 0.8,
-        ease: "power2.out",
-        glassName: 1,
-      }),
-    );
+    // Switch-on: the set sits with a dark tube for a beat, then powers up
+    // — the centre line, the raster opening, the overbright settle — and
+    // the name warms onto the phosphor once the picture is steady.
+    const powerOn = gsap.timeline();
+    powerOn
+      .to(sceneFx, { screenPower: 1, duration: 1.0, ease: "power1.inOut" }, 0.35)
+      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.9);
+    tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
       for (const tween of tweens) tween.kill();
     };
