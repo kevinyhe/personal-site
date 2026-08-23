@@ -7346,6 +7346,8 @@ void main() {
       // round); as a billboard the gradient frames the same way from every
       // camera pose, and the extended (taller) render is covered too.
       const VOID_BACKDROP_DISTANCE = 41.6; // FINAL camera z 15.6 -> plane z -26
+      // Playback rate of the backdrop's curtain motion (3x the original).
+      const VOID_BACKDROP_SPEED = 3;
       const backdropForward = new THREE.Vector3();
       const backdropHit = new THREE.Vector3();
       const placeVoidBackdrop = () => {
@@ -7369,7 +7371,7 @@ void main() {
         if (disposed || !loadingLoopActive) return;
         loadingRaf = requestAnimationFrame(loadingLoop);
         const elapsed = loadingClock.getElapsedTime();
-        voidBackdropUniforms.uTime.value = elapsed;
+        voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
         voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
         camera.position.copy(INTRO_CAMERA_POSITION);
         camera.lookAt(HERO_CAMERA_TARGET);
@@ -7607,7 +7609,7 @@ void main() {
         lastRenderedAt = now;
         const dt = Math.min(0.033, clock.getDelta());
         const elapsed = clock.elapsedTime;
-        voidBackdropUniforms.uTime.value = elapsed;
+        voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
         voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
         // Scroll-driven halftone level: the dot-matrix pass fades out as the
         // site view shrinks into the CRT, leaving the smooth render behind
@@ -7812,10 +7814,11 @@ void main() {
           // unanchored — so it eases out over the first half of the
           // pull-back.
           const parallaxGain = 1 - smoothstep(0, 0.5, clamp01(sceneFx.crtProgress));
-          camera.position.x += pointerParallaxSmooth.x * 0.32 * parallaxGain;
-          camera.position.y += pointerParallaxSmooth.y * 0.18 * parallaxGain;
-          lookTarget.x += pointerParallaxSmooth.x * 0.16 * parallaxGain;
-          lookTarget.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
+          // Half the original travel (0.32 / 0.18 / 0.16 / 0.09).
+          camera.position.x += pointerParallaxSmooth.x * 0.16 * parallaxGain;
+          camera.position.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
+          lookTarget.x += pointerParallaxSmooth.x * 0.08 * parallaxGain;
+          lookTarget.y += pointerParallaxSmooth.y * 0.045 * parallaxGain;
         }
         camera.lookAt(lookTarget);
         placeVoidBackdrop();
