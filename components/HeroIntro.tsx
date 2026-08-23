@@ -25,11 +25,11 @@ type HeroIntroProps = {
 // other way round (counter-clockwise from above).
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
-// The panel grows over this stretch of the hero's scroll timeline (the
-// name is out by 0.4). The Thinker inside it starts breaking the moment
-// the panel starts growing.
-const PANEL_GROW_AT = 0.4;
-const PANEL_GROW_DURATION = 0.6;
+// The panel starts growing when the name's exit (0..0.4 of the hero
+// timeline) is 60% done, and still finishes at the timeline's end. The
+// Thinker inside it starts breaking the moment the panel starts growing.
+const PANEL_GROW_AT = 0.24;
+const PANEL_GROW_DURATION = 0.76;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
