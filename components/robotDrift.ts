@@ -55,7 +55,16 @@ export type RobotDriftFrame = {
   heading: number;
   /** Ground position in robot-lengths; the scene scales it. x right (camera view), z toward camera. */
   position: [number, number];
-  /** Signed difference between velocity direction and heading, radians. */
+  /**
+   * Signed difference between velocity direction and heading, radians.
+   * Continuous across frames (it can pass beyond +/-PI during the reverse
+   * entry rather than wrapping — after the nose gains a full turn on the
+   * velocity it keeps a 2 * PI offset, so wrap it if you need the principal
+   * value, and scale intensity effects by sin of it or by speed, not by its
+   * raw magnitude), and faded to zero below 0.3 rl/s of ground
+   * speed, where the direction of the velocity is numerical noise — effects
+   * driven by slip should die out with speed, and this makes them.
+   */
   slipAngle: number;
   /** Seconds from the start of the run. */
   time: number;
@@ -73,9 +82,12 @@ export type RobotDriftOptions = {
 };
 
 /**
- * Final pose: nose to the camera's 10 o'clock, i.e. pointing up-left-away on
- * screen. Direction (-0.5, 0, -0.87) in world axes, converted through the
- * heading convention above: atan2(-0.5, -0.87) ~= -2.62 rad (-150 degrees).
+ * Final pose: nose pointing up-left-away on screen, the direction the scene
+ * brief pinned as (-0.5, 0, -0.87) in world axes — "roughly 10 o'clock" from
+ * the camera (on a literal clock face this is nearer 11; the pinned vector
+ * is the contract the stage was built against, so it stays). Converted
+ * through the heading convention above: atan2(-0.5, -0.87) ~= -2.62 rad
+ * (-150 degrees).
  */
 export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
 
@@ -91,8 +103,12 @@ const MAX_WHEEL_ACCEL = 14;
 const MAX_WHEEL_SPEED = 4.5;
 /** Sliding friction coefficient — the robot drifts on this. */
 const MU_KINETIC = 0.85;
+/** Nose error below which the parking driver lets go of the sticks, rad. */
+const NOSE_SETTLED = 0.04;
 /** Gripping friction coefficient near zero slip. */
 const MU_STATIC = 1.1;
+/** Ground speed below which the reported slip angle fades to zero, rl/s. */
+const SLIP_FADE_SPEED = 0.3;
 /** Slip speed below which friction ramps linearly (pseudo-static), rl/s. */
 const STICK_SPEED = 0.08;
 /** Left/right wheel separation, robot lengths. */
@@ -142,9 +158,9 @@ const SCHEDULE: DriverPhase[] = [
   // pumping energy into the slide.
   { duration: 3.6, left: 2.1, right: 4.5, yawGain: 2.5, yawTarget: 1.9 },
   // Exit: straighten out and let the slide bleed off.
-  { duration: 1.0, headingGain: 2.0, headingTarget: TEN_OCLOCK_HEADING, left: 0.6, right: 0.6, yawGain: 2.0 },
+  { duration: 1.0, headingGain: 3.0, headingTarget: TEN_OCLOCK_HEADING, left: 0.6, right: 0.6, yawGain: 2.0 },
   // Park: sticks to zero, small trims settle the nose on 10 o'clock.
-  { duration: 1.4, headingGain: 2.0, headingTarget: TEN_OCLOCK_HEADING, left: 0, right: 0, yawGain: 2.0 },
+  { duration: 1.4, headingGain: 3.0, headingTarget: TEN_OCLOCK_HEADING, left: 0, right: 0, yawGain: 2.0 },
 ];
 
 const START_HEADING = -Math.PI / 2;
@@ -176,16 +192,19 @@ function frictionCoef(slipSpeed: number) {
 export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame[] {
   const sampleRate = options.sampleRate ?? 60;
   const wheelRadius = options.wheelRadius ?? 0.14;
+  if (!(sampleRate > 0) || !(wheelRadius > 0)) {
+    throw new Error(`buildDriftPath needs positive options, got sampleRate=${sampleRate} wheelRadius=${wheelRadius}`);
+  }
   const substeps = Math.max(1, Math.ceil(INTERNAL_RATE / sampleRate));
   const dt = 1 / (sampleRate * substeps);
 
-  const totalDuration = SCHEDULE.reduce((sum, phase) => sum + phase.duration, 0);
   const phaseEnds: number[] = [];
   let acc = 0;
   for (const phase of SCHEDULE) {
     acc += phase.duration;
     phaseEnds.push(acc);
   }
+  const totalDuration = phaseEnds[phaseEnds.length - 1];
 
   // State. Body frame: u along the heading, v to the robot's left; the left
   // axis in world coordinates is (cos h, -sin h), which is the direction the
@@ -201,18 +220,32 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
   let wheelLeft = START_SPEED;
   let wheelRight = START_SPEED;
 
-  const record = (): RobotDriftFrame => {
+  // The single encoding of the heading convention: body (u forward, v left)
+  // to world (x, z). Both the recorded velocity and the position integration
+  // go through this, so they cannot drift apart.
+  const worldVelocity = (): [number, number] => {
     const sinH = Math.sin(heading);
     const cosH = Math.cos(heading);
-    const velX = u * sinH + v * cosH;
-    const velZ = u * cosH - v * sinH;
+    return [u * sinH + v * cosH, u * cosH - v * sinH];
+  };
+
+  // Slip is kept continuous across output frames (unwrapped against the
+  // previous frame) and faded out below SLIP_FADE_SPEED, so a stage lerping
+  // it never sees a 2*PI jump mid reverse-entry or a snap-to-zero when the
+  // robot settles.
+  let slipPrev = 0;
+  const record = (): RobotDriftFrame => {
     const speed = Math.hypot(u, v);
+    if (speed > 1e-6) {
+      slipPrev = slipPrev + wrapAngle(Math.atan2(v, u) - slipPrev);
+    }
+    const slipFade = clamp(speed / SLIP_FADE_SPEED, 0, 1);
     return {
       heading,
       position: [x, z],
-      slipAngle: speed < 1e-4 ? 0 : Math.atan2(v, u),
+      slipAngle: slipPrev * slipFade,
       time,
-      velocity: [velX, velZ],
+      velocity: worldVelocity(),
       wheelAngularSpeed: [wheelLeft / wheelRadius, wheelRight / wheelRadius],
     };
   };
@@ -226,7 +259,10 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
     let yawTarget = phase.yawTarget;
     if (phase.headingTarget !== undefined) {
       const noseError = wrapAngle(phase.headingTarget - heading);
-      yawTarget = clamp((phase.headingGain ?? 2) * noseError, -2.5, 2.5);
+      // Close enough: stop chasing the target and just kill the rotation,
+      // so the robot actually comes to rest instead of creeping forever on
+      // an exponential approach.
+      yawTarget = Math.abs(noseError) < NOSE_SETTLED ? 0 : clamp((phase.headingGain ?? 2) * noseError, -2.5, 2.5);
     }
     let trim = 0;
     if (yawTarget !== undefined) {
@@ -278,10 +314,9 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
     v += (forceLat - omega * u) * dt;
     omega += (torque / YAW_INERTIA) * dt;
     heading += omega * dt;
-    const sinH = Math.sin(heading);
-    const cosH = Math.cos(heading);
-    x += (u * sinH + v * cosH) * dt;
-    z += (u * cosH - v * sinH) * dt;
+    const [velX, velZ] = worldVelocity();
+    x += velX * dt;
+    z += velZ * dt;
     time += dt;
   };
 
@@ -296,7 +331,13 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
   return frames;
 }
 
-/** Where the run ends — the outro scene picks the robot up from this pose. */
+/**
+ * Where the run ends — the outro scene picks the robot up from this pose.
+ * The heading is the final frame's CONTINUOUS heading, two full turns past
+ * the wrapped TEN_OCLOCK_HEADING (about TEN_OCLOCK_HEADING + 4 * PI): keep
+ * using it as-is for continuity with the played-back frames, and wrap it
+ * before comparing against TEN_OCLOCK_HEADING itself.
+ */
 export const DRIFT_REST_POSE = (() => {
   const frames = buildDriftPath();
   const last = frames[frames.length - 1];
