@@ -5728,9 +5728,9 @@ void main() {
         letterSpacing: "-0.03em",
         emFrac: 0.17,
         centerV: 0.53,
-        bloomAlpha: 0.1,
-        haloAlpha: 0.45,
-        haloBlurEm: 0.05,
+        bloomAlpha: 0.05,
+        haloAlpha: 0.25,
+        haloBlurEm: 0.04,
       });
       // The tagline, in the site's sans, sitting just under the name.
       const glassTagline = makeGlassText({
@@ -5742,10 +5742,10 @@ void main() {
         pad: 60,
         letterSpacing: "0.01em",
         emFrac: 0.046,
-        centerV: 0.38,
-        bloomAlpha: 0.06,
-        haloAlpha: 0.3,
-        haloBlurEm: 0.06,
+        centerV: 0.425,
+        bloomAlpha: 0.03,
+        haloAlpha: 0.15,
+        haloBlurEm: 0.05,
       });
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
@@ -6115,7 +6115,7 @@ void main() {
         const glowLevel =
           clamp01(sceneFx.screenGlow) *
           smoothstep(0.3, 0.9, clamp01(sceneFx.screenPower));
-        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.58, glowLevel);
+        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.62, glowLevel);
         crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.95, glowLevel);
         crtBloomPass.strength =
           CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.1 * glowLevel);
