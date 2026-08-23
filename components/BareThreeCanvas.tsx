@@ -6070,7 +6070,18 @@ void main() {
           1 +
           clamp01(sceneFx.screenGlow) *
             (0.6 + 0.25 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
-        crtBloomPass.strength = CRT_POST_BLOOM_STRENGTH * amount * glowPulse;
+        // While the tube is the picture (screenGlow up) the bloom opens up
+        // — lower threshold, wider radius — so the bright glass itself
+        // blooms into the bezel and the air: a glow, not a tint. It closes
+        // back to the tight setting as the reveal starts, where the
+        // blossoms would otherwise wash out.
+        const glowLevel =
+          clamp01(sceneFx.screenGlow) *
+          smoothstep(0.3, 0.9, clamp01(sceneFx.screenPower));
+        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.62, glowLevel);
+        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.7, glowLevel);
+        crtBloomPass.strength =
+          CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.2 * glowLevel);
         crtComposer.render();
       };
 
@@ -6172,6 +6183,10 @@ void main() {
         // shows the name during the load (brighter, with a slow pulse and
         // irregular flicker), settling as the reveal starts.
         uGlow: { value: 0 },
+        // 0..1 power-on. 0 = dark glass; the classic tube start: a bright
+        // horizontal line grows across the centre, then opens vertically
+        // into the full (overbright, unsteady) picture, settling at 1.
+        uPower: { value: 1 },
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
@@ -6218,6 +6233,7 @@ void main() {
           uniform sampler2D uMap;
           uniform float uFx;
           uniform float uGlow;
+          uniform float uPower;
           uniform float uTime;
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
@@ -6258,7 +6274,12 @@ void main() {
             // Contain-fit: map the screen uv into the site-view sub-rect.
             // The display texture is rendered AT the glass ratio (the site
             // view extended upward), so it maps 1:1 — no cropping anywhere.
+            // Power-on: the raster opens vertically from a line at the
+            // centre, so the picture is squashed into the open band while
+            // it grows. (uPower is 1 on the flat path, so this is exact.)
+            float powerOpen = max(smoothstep(0.28, 0.82, uPower), 0.004);
             vec2 ruv = buv;
+            ruv.y = (buv.y - 0.5) / powerOpen + 0.5;
 
             // Rounded raster corners at the GLASS edge — radius and edge
             // softness both ride uFx, so at the path switch the raster is
@@ -6403,6 +6424,31 @@ void main() {
               3.0
             );
             col += vec3(0.85, 0.88, 1.0) * fres * (0.22 * uFx);
+
+            // Power-on, applied last so it gates the whole picture. Phase
+            // one (0..0.28): a dot at the centre stretches into a thin
+            // bright line across the glass. Phase two (0.28..0.82): the line
+            // opens vertically into the picture, overbright and unsteady,
+            // the open band edged with a hot rim. Phase three: the overshoot
+            // decays into the warm-up flicker. Outside the lit area the
+            // glass is dark, as an unpowered tube is.
+            if (uPower < 0.999) {
+              float pw = clamp(uPower, 0.0, 1.0);
+              vec2 pc = buv - 0.5;
+              float lineW = smoothstep(0.0, 0.26, pw);
+              float halfH = 0.5 * powerOpen;
+              float inX = 1.0 - smoothstep(0.5 * lineW, 0.5 * lineW + 0.01, abs(pc.x));
+              float inY = 1.0 - smoothstep(halfH, halfH + 0.006, abs(pc.y));
+              float rim = exp(-abs(abs(pc.y) - halfH) * 160.0) * (1.0 - smoothstep(0.7, 0.95, pw));
+              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 1.5;
+              float overshoot = 1.0 + 0.7 * (1.0 - smoothstep(0.45, 0.95, pw));
+              float jitter = 1.0 + 0.18 * sin(t * 57.0) * sin(t * 13.0) * (1.0 - smoothstep(0.8, 1.0, pw));
+              vec3 hot = vec3(1.0, 0.86, 0.93);
+              vec3 picture = col * overshoot * jitter * inY * inX;
+              picture += hot * (rim * 0.9 + lineHeat) * inX * inY;
+              picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.012, abs(pc.y))));
+              col = mix(glass, picture, smoothstep(0.0, 0.04, pw));
+            }
 
             gl_FragColor = vec4(col, 1.0);
           }
@@ -6795,6 +6841,7 @@ void main() {
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
         crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
+        crtScreenUniforms.uPower.value = clamp01(sceneFx.screenPower);
         // Virtual raster (see crtRasterLines) and the mip level whose
         // texel is one raster cell: the display texture spans the glass
         // height with crtExt.extH texels.
@@ -6810,8 +6857,10 @@ void main() {
         const glow = clamp01(sceneFx.screenGlow);
         const glowPulse =
           1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
-        crtGlow.intensity = 2 * fx * glowPulse;
-        crtHaloUniforms.uGlow.value = fx * (0.15 + 0.1 * glow) * glowPulse;
+        // Everything the tube throws into the room follows its power.
+        const power = smoothstep(0.05, 0.85, clamp01(sceneFx.screenPower));
+        crtGlow.intensity = 2 * fx * glowPulse * power;
+        crtHaloUniforms.uGlow.value = fx * (0.06 + 0.05 * glow) * glowPulse * power;
         crtBgUniforms.uScreenLight.value = fx * (0.18 + 0.1 * glow) * glowPulse;
       };
 

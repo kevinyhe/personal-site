@@ -51,6 +51,11 @@ export const sceneFx = {
    */
   screenGlow: 0,
   /**
+   * 0..1 power of the tube: 0 = dark glass, ramped through the classic
+   * line-then-open start when the television shot begins. 1 on the page.
+   */
+  screenPower: 1,
+  /**
    * Level of the tree scene's void backdrop, 1 = the page's look. Held
    * down while the scene is the picture on the television and brought up
    * as the camera pushes in.
