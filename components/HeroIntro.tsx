@@ -422,7 +422,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         },
       });
       tl.to(strip, { autoAlpha: 0, duration: 0.3 }, 0)
-        .to(lockup, { y: exitOffset, duration: 0.9, ease: "power1.in" }, 0)
+        .to(lockup, { y: exitOffset, duration: 0.6, ease: "power1.in" }, 0)
         .to(sceneFx, { treeDrop: 1, duration: 0.85, ease: "power1.in" }, 0)
         .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 1 }, 0);
     }, root);
