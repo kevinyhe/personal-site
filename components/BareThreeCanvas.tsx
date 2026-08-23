@@ -6187,6 +6187,10 @@ void main() {
         // horizontal line grows across the centre, then opens vertically
         // into the full (overbright, unsteady) picture, settling at 1.
         uPower: { value: 1 },
+        // World directions from the glass to the key and fill lights, for
+        // the glossy-glass reflections (set per frame in updateCrtRig).
+        uKeyDir: { value: new THREE.Vector3(1, 0.5, 0.3).normalize() },
+        uFillDir: { value: new THREE.Vector3(-1, 0.6, 0.8).normalize() },
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
@@ -6234,6 +6238,8 @@ void main() {
           uniform float uFx;
           uniform float uGlow;
           uniform float uPower;
+          uniform vec3 uKeyDir;
+          uniform vec3 uFillDir;
           uniform float uTime;
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
@@ -6277,7 +6283,7 @@ void main() {
             // Power-on: the raster opens vertically from a line at the
             // centre, so the picture is squashed into the open band while
             // it grows. (uPower is 1 on the flat path, so this is exact.)
-            float powerOpen = max(smoothstep(0.28, 0.82, uPower), 0.004);
+            float powerOpen = max(smoothstep(0.28, 0.82, uPower), 0.002);
             vec2 ruv = buv;
             ruv.y = (buv.y - 0.5) / powerOpen + 0.5;
 
@@ -6361,8 +6367,9 @@ void main() {
             // end pose within a few % of the pre-raster shader's.
             col *= 1.0 + 0.22 * uFx;
 
-            // Dark glass outside the raster: unpowered phosphor, grey-green.
-            vec3 glass = vec3(0.016, 0.02, 0.018);
+            // Dark glass outside the raster: unpowered phosphor, grey-green,
+            // a touch lighter than black so the dark tube reads as glass.
+            vec3 glass = vec3(0.05, 0.056, 0.053);
             col = mix(glass, col, inRegion);
 
             // Phosphor mask: RGB triads in device pixels with a half-period
@@ -6423,7 +6430,7 @@ void main() {
               1.0 - clamp(dot(normalize(vNormalW), normalize(vViewW)), 0.0, 1.0),
               3.0
             );
-            col += vec3(0.85, 0.88, 1.0) * fres * (0.22 * uFx);
+            col += vec3(0.85, 0.88, 1.0) * fres * (0.3 * uFx);
 
             // Power-on, applied last so it gates the whole picture. Phase
             // one (0..0.28): a dot at the centre stretches into a thin
@@ -6438,16 +6445,52 @@ void main() {
               float lineW = smoothstep(0.0, 0.26, pw);
               float halfH = 0.5 * powerOpen;
               float inX = 1.0 - smoothstep(0.5 * lineW, 0.5 * lineW + 0.01, abs(pc.x));
-              float inY = 1.0 - smoothstep(halfH, halfH + 0.006, abs(pc.y));
-              float rim = exp(-abs(abs(pc.y) - halfH) * 160.0) * (1.0 - smoothstep(0.7, 0.95, pw));
-              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 1.5;
-              float overshoot = 1.0 + 0.7 * (1.0 - smoothstep(0.45, 0.95, pw));
+              float inY = 1.0 - smoothstep(halfH, halfH + 0.004, abs(pc.y));
+              float rim = exp(-abs(abs(pc.y) - halfH) * 260.0) * (1.0 - smoothstep(0.7, 0.95, pw));
+              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 1.0;
+              float overshoot = 1.0 + 0.45 * (1.0 - smoothstep(0.45, 0.95, pw));
               float jitter = 1.0 + 0.18 * sin(t * 57.0) * sin(t * 13.0) * (1.0 - smoothstep(0.8, 1.0, pw));
               vec3 hot = vec3(1.0, 0.86, 0.93);
               vec3 picture = col * overshoot * jitter * inY * inX;
-              picture += hot * (rim * 0.9 + lineHeat) * inX * inY;
-              picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.012, abs(pc.y))));
+              picture += hot * (rim * 0.6 + lineHeat) * inX * inY;
+              picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.006, abs(pc.y))));
               col = mix(glass, picture, smoothstep(0.0, 0.04, pw));
+            }
+
+            // Glossy glass. The room's lights reflected in the curved front:
+            // the key as a tight hotspot with a softer sheen round it, the
+            // fill as a faint cooler one, weighted by Fresnel so the
+            // reflections strengthen toward the glass's edges. Present
+            // whether the tube is lit or dark — and what makes the dark tube
+            // read as a real, glossy monitor rather than a black rectangle.
+            {
+              vec3 nW = normalize(vNormalW);
+              vec3 vW = normalize(vViewW);
+              vec3 rW = reflect(-vW, nW);
+              float kd = max(dot(rW, uKeyDir), 0.0);
+              float fd = max(dot(rW, uFillDir), 0.0);
+              float keySpec = pow(kd, 120.0) * 0.8 + pow(kd, 10.0) * 0.1;
+              float fillSpec = pow(fd, 32.0) * 0.06;
+              float f = pow(1.0 - max(dot(nW, vW), 0.0), 4.0);
+              float fresnel = 0.6 + 0.4 * f;
+              // What the glass sees of the room, in its own uv: the key
+              // lamp as a soft bright patch reflected upper-right, the
+              // faintly lit floor in the lower half, darkness above. The
+              // dome's mirror direction rarely meets the camera exactly, so
+              // this is what actually makes the dark tube read as glass.
+              vec2 kp = (buv - vec2(0.8, 0.2)) * vec2(1.9, 2.6);
+              float lampRefl = exp(-dot(kp, kp) * 2.2);
+              float floorRefl = smoothstep(0.55, 0.05, buv.y) * (0.4 + 0.6 * buv.x);
+              vec3 roomRefl =
+                vec3(1.0, 0.76, 0.85) * lampRefl * 0.6 +
+                vec3(0.52, 0.38, 0.5) * floorRefl * 0.16;
+              // The picture itself washes reflections out; the dark tube
+              // shows them in full.
+              float showRefl = mix(1.0, 0.1, smoothstep(0.3, 1.0, uPower));
+              col += uFx * showRefl * fresnel * (
+                vec3(1.0, 0.74, 0.83) * keySpec +
+                vec3(0.6, 0.56, 1.0) * fillSpec +
+                roomRefl);
             }
 
             gl_FragColor = vec4(col, 1.0);
@@ -6842,6 +6885,8 @@ void main() {
         crtScreenUniforms.uTime.value = elapsed;
         crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
         crtScreenUniforms.uPower.value = clamp01(sceneFx.screenPower);
+        crtScreenUniforms.uKeyDir.value.copy(crtKey.position).normalize();
+        crtScreenUniforms.uFillDir.value.copy(crtFill.position).normalize();
         // Virtual raster (see crtRasterLines) and the mip level whose
         // texel is one raster cell: the display texture spans the glass
         // height with crtExt.extH texels.
