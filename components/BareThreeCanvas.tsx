@@ -6078,10 +6078,10 @@ void main() {
         const glowLevel =
           clamp01(sceneFx.screenGlow) *
           smoothstep(0.3, 0.9, clamp01(sceneFx.screenPower));
-        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.62, glowLevel);
-        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.7, glowLevel);
+        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.58, glowLevel);
+        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.95, glowLevel);
         crtBloomPass.strength =
-          CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.2 * glowLevel);
+          CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.1 * glowLevel);
         crtComposer.render();
       };
 
@@ -6447,12 +6447,12 @@ void main() {
               float inX = 1.0 - smoothstep(0.5 * lineW, 0.5 * lineW + 0.01, abs(pc.x));
               float inY = 1.0 - smoothstep(halfH, halfH + 0.004, abs(pc.y));
               float rim = exp(-abs(abs(pc.y) - halfH) * 260.0) * (1.0 - smoothstep(0.7, 0.95, pw));
-              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 1.0;
+              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 0.6;
               float overshoot = 1.0 + 0.45 * (1.0 - smoothstep(0.45, 0.95, pw));
               float jitter = 1.0 + 0.18 * sin(t * 57.0) * sin(t * 13.0) * (1.0 - smoothstep(0.8, 1.0, pw));
-              vec3 hot = vec3(1.0, 0.86, 0.93);
+              vec3 hot = vec3(1.0, 0.78, 0.88);
               vec3 picture = col * overshoot * jitter * inY * inX;
-              picture += hot * (rim * 0.6 + lineHeat) * inX * inY;
+              picture += hot * (rim * 0.35 + lineHeat) * inX * inY;
               picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.006, abs(pc.y))));
               col = mix(glass, picture, smoothstep(0.0, 0.04, pw));
             }
@@ -6539,8 +6539,8 @@ void main() {
               if (d <= 0.0) discard;
               // Two falloffs: a tight bright rim right at the edge of the
               // glass, and a wide dim spill that dies before the quad's edge.
-              float glow = 0.6 * exp(-d * 34.0) + 0.4 * exp(-d * 13.0);
-              glow *= 1.0 - smoothstep(0.16, 0.3, d);
+              float glow = 0.35 * exp(-d * 22.0) + 0.65 * exp(-d * 6.5);
+              glow *= 1.0 - smoothstep(0.26, 0.48, d);
               gl_FragColor = vec4(uColor * glow * uGlow, 1.0);
             }
           `,
@@ -6644,7 +6644,7 @@ void main() {
       // scene (see updateCrtRig) so it is off while the flat hero shows.
       // Tight (distance 1.8): it should catch the bezel lip around the
       // glass, not wash the whole front.
-      const crtGlow = new THREE.PointLight(0xff7fae, 0, 1.8, 2);
+      const crtGlow = new THREE.PointLight(0xff7fae, 0, 3.2, 2);
       crtGlow.position.set(0, 0, 1.1);
       crtScene.add(crtGlow);
 
@@ -6904,9 +6904,9 @@ void main() {
           1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
         // Everything the tube throws into the room follows its power.
         const power = smoothstep(0.05, 0.85, clamp01(sceneFx.screenPower));
-        crtGlow.intensity = 2 * fx * glowPulse * power;
-        crtHaloUniforms.uGlow.value = fx * (0.06 + 0.05 * glow) * glowPulse * power;
-        crtBgUniforms.uScreenLight.value = fx * (0.18 + 0.1 * glow) * glowPulse;
+        crtGlow.intensity = 2.4 * fx * glowPulse * power;
+        crtHaloUniforms.uGlow.value = fx * (0.07 + 0.05 * glow) * glowPulse * power;
+        crtBgUniforms.uScreenLight.value = fx * (0.26 + 0.12 * glow) * glowPulse;
       };
 
       // Model load: async, never blocks scene-ready. The page loads AS the
