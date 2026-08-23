@@ -5783,7 +5783,7 @@ void main() {
             precision highp float;
             uniform vec2 uResolution;
             // Palette, as sRGB.
-            const vec3 BASE = vec3(0.0392); // #0a0a0a
+            const vec3 BASE = vec3(0.012); // ~#030303: unlit room
             const vec3 DEEP = vec3(0.4275, 0.1020, 0.2353); // #6d1a3c
             const vec3 CORE = vec3(0.8392, 0.2353, 0.4706); // #d63c78
             const vec3 HOT = vec3(1.0, 0.5608, 0.6824); // #ff8fae
@@ -5815,9 +5815,9 @@ void main() {
               float wallLight = exp(-dot(sp, sp) * 9.0);
               float screenLight = uScreenLight * wallLight;
               vec3 c = BASE;
-              c = mix(c, DEEP, clamp(pool * 0.1, 0.0, 1.0));
-              c = mix(c, DEEP, clamp(screenLight * 0.5, 0.0, 1.0));
-              c = mix(c, CORE, clamp(screenLight * screenLight * 0.12, 0.0, 1.0));
+              // Nothing lights the room but the set: the only trace of it
+              // on the wall is the tube's own halo, kept faint.
+              c = mix(c, DEEP, clamp(screenLight * 0.35, 0.0, 1.0));
               // An 8-bit sRGB canvas bands on a gradient this slow; half a
               // code of noise hides the steps.
               c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -6020,7 +6020,7 @@ void main() {
             // lift so the darkest room pixels sit at ~4/255, not 0.
             vec3 curve = col * col * (3.0 - 2.0 * col);
             col = mix(col, curve, 0.12 * uAmount);
-            col = mix(col, col * 0.985 + 0.015, uAmount);
+            // No black lift: the room is meant to go to black.
 
             // Grain: strongest in the shadows and mids, near-silent in the
             // highlights, like film.
@@ -6454,9 +6454,12 @@ void main() {
       // the front face grades from lit at its right edge to dark at its
       // left instead of taking the light flat-on, and the bezel relief,
       // the deck's buttons and the lip all throw shadows across it.
-      const crtKey = new THREE.SpotLight(0xffa9c4, 260, 18, 0.55, 0.6, 2);
-      crtKey.position.set(5.8, 3.0, 1.6);
-      crtKey.target.position.set(0, -0.2, 0);
+      // The split is the cone: a tight spot (12.6 degrees, wide penumbra)
+      // aimed at the right half of the set, so the light dies across the
+      // middle of the front and the left half simply is not lit.
+      const crtKey = new THREE.SpotLight(0xffb0c9, 1200, 18, 0.26, 0.55, 2);
+      crtKey.position.set(5.6, 2.9, 1.3);
+      crtKey.target.position.set(1.05, 0.1, 0.3);
       crtScene.add(crtKey.target);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
@@ -6471,11 +6474,6 @@ void main() {
       crtKey.shadow.normalBias = 0.015;
       crtKey.shadow.radius = 3;
       crtScene.add(crtKey);
-      // A thin cool rim from behind-left so the dark edge separates from
-      // the black; it must never draw the cheek.
-      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.2);
-      crtRim.position.set(-2.0, 3.0, -2.6);
-      crtScene.add(crtRim);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
       // Tight (distance 1.8): it should catch the bezel lip around the
