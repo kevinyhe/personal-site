@@ -25,6 +25,7 @@ const LOADING_POSE = {
   halftone: 0,
   treeDrop: 1,
   glassName: 0,
+  glassTagline: 0,
   screenGlow: 1,
   screenPower: 0,
   backdropLevel: 0.4,
@@ -34,6 +35,7 @@ const HERO_POSE = {
   halftone: 1,
   treeDrop: 0,
   glassName: 0,
+  glassTagline: 0,
   screenGlow: 0,
   screenPower: 1,
   backdropLevel: 1,
@@ -151,7 +153,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const powerOn = gsap.timeline();
     powerOn
       .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.35)
-      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 0.8);
+      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 0.8)
+      // The tagline follows halfway through the name's fade.
+      .to(sceneFx, { glassTagline: 1, duration: 0.7, ease: "power2.out" }, 1.2);
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
       for (const tween of tweens) tween.kill();
@@ -282,6 +286,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       });
       timeline
         .to(sceneFx, { glassName: 0, duration: 0.45, ease: "power2.out" }, 0)
+        .to(sceneFx, { glassTagline: 0, duration: 0.4, ease: "power2.out" }, 0)
         .to(sceneFx, { screenGlow: 0, duration: 0.9, ease: "power2.out" }, 0)
         .to(
           sceneFx,
