@@ -87,6 +87,14 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   pathInset: [0.04, -0.02, -0.1],
   seed: 211,
   spread: 1.5,
+  // Once the arm has gone the body breaks along one sweep (after
+  // lukebaffait.fr): the front leaves the head and the tip of the right
+  // knee together, then moves down and back to the base's rear-left
+  // corner — the figure's 7 o'clock on screen — which goes last
+  // (figure space, measured on the model).
+  sweepHead: fraction(-0.74, 1.42, 0.47),
+  sweepKnee: fraction(-0.55, 0.0, 0.92),
+  sweepTail: fraction(-0.75, -1.54, -0.92),
 };
 
 let pending: Promise<ThinkerChunkBuild> | null = null;
