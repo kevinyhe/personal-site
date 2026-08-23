@@ -3125,6 +3125,47 @@ class FallingPetalSystem {
       (fbm2(nx + 37.2, nz - 21.7, 2) - 0.5) * FLOW_LIFT_STRENGTH * strength;
   }
 
+  // Cursor brush, in petal (tree-group) space: falling petals within
+  // `radius` of the pointer are carried along with its motion and shoved
+  // gently outward and up, so a sweep across the canopy scatters them;
+  // held petals inside the brush are shaken loose.
+  applyPointer(
+    pos: THREE.Vector3,
+    vel: THREE.Vector3,
+    strength: number,
+    radius: number,
+    dt: number,
+  ) {
+    if (strength <= 0.001) return;
+    const r2 = radius * radius;
+    const count = this.positions.length;
+    for (let i = 0; i < count; i += 1) {
+      const p = this.positions[i];
+      const dx = p.x - pos.x;
+      const dy = p.y - pos.y;
+      const dz = p.z - pos.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      const fall = (1 - d2 / r2) * strength;
+      if (this.states[i] === PETAL_HELD) {
+        this.timers[i] -= dt * 10 * fall;
+        continue;
+      }
+      const v = this.velocities[i];
+      // Carry: ease toward the pointer's own velocity.
+      const k = Math.min(1, 6 * dt) * fall;
+      v.x += (vel.x * 0.7 - v.x) * k;
+      v.y += (vel.y * 0.7 - v.y) * k;
+      v.z += (vel.z * 0.7 - v.z) * k;
+      // Push: outward from the cursor, with a little lift.
+      const d = Math.sqrt(d2) + 1e-4;
+      const push = 2.5 * fall * dt;
+      v.x += (dx / d) * push;
+      v.y += (dy / d) * push * 0.5 + 1.2 * fall * dt;
+      v.z += (dz / d) * push;
+    }
+  }
+
   update(dt: number, windTime = 0, windStrength = 1) {
     const wind = this.wind;
     const count = this.positions.length;
@@ -5498,6 +5539,46 @@ export default function WeepingCherryTreeCanvas({
       renderer.shadowMap.enabled = false;
       mount.appendChild(renderer.domElement);
 
+      // ---- Petal overlay -------------------------------------------------
+      // The page's type is DOM, layered over this canvas, so everything
+      // drawn here sits behind the name. The loose petals should fall IN
+      // FRONT of it: a second, transparent canvas above the DOM layer
+      // re-renders just the petals each frame (same scene, same camera),
+      // after a depth-only pass of everything else, so a petal behind a
+      // branch stays behind it. It lives on document.body because the
+      // mount's own stacking context (z 0) can never rise above the DOM
+      // layer (z 20). Off while the camera is on the television.
+      const PETAL_LAYER = 2;
+      const overlayCanvas = document.createElement("canvas");
+      overlayCanvas.setAttribute("aria-hidden", "true");
+      Object.assign(overlayCanvas.style, {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        width: "var(--arbor-screen-w, 100dvw)",
+        height: "var(--arbor-screen-h, 100dvh)",
+        pointerEvents: "none",
+        zIndex: "25",
+      });
+      document.body.appendChild(overlayCanvas);
+      const overlayRenderer = new THREE.WebGLRenderer({
+        canvas: overlayCanvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: "low-power",
+      });
+      overlayRenderer.setClearColor(0x000000, 0);
+      overlayRenderer.setSize(width, height);
+      overlayRenderer.setPixelRatio(getRenderPixelRatio());
+      overlayRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      overlayRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      overlayRenderer.toneMappingExposure = 1.15;
+      overlayRenderer.shadowMap.enabled = false;
+      // Depth-only stand-in for the tree and backdrop in the overlay's
+      // first pass: no colour, just occlusion.
+      const overlayDepthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
+      let overlayCleared = true;
+
       // ---- Halftone post-pass -------------------------------------------
       // The scene renders into an offscreen target each frame, then a
       // fullscreen triangle redraws that frame as a Bayer-dithered dot grid
@@ -5731,7 +5812,7 @@ void main() {
         pad: 150,
         letterSpacing: "-0.03em",
         emFrac: 0.17,
-        centerV: 0.53,
+        centerV: 0.6,
         bloomAlpha: 0.05,
         haloAlpha: 0.25,
         haloBlurEm: 0.04,
@@ -5742,12 +5823,12 @@ void main() {
         text: "何雨寒",
         family: '"Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", serif',
         fontStyle: "500",
-        fontPx: 110,
+        fontPx: 220,
         canvasW: 1536,
-        pad: 80,
-        letterSpacing: "0.22em",
-        emFrac: 0.075,
-        centerV: 0.405,
+        pad: 150,
+        letterSpacing: "0.16em",
+        emFrac: 0.17,
+        centerV: 0.385,
         bloomAlpha: 0.03,
         haloAlpha: 0.15,
         haloBlurEm: 0.05,
@@ -7288,6 +7369,11 @@ void main() {
       const roseGlow = new THREE.PointLight(ROSE_GLOW_COLOR, 18, 30, 2);
       roseGlow.position.copy(ROSE_GLOW_POSITION);
       scene.add(roseGlow);
+      // The petal overlay renders with the camera on PETAL_LAYER only, and
+      // lights are layer-tested like anything else.
+      for (const light of [hemi, key, rim, roseGlow]) {
+        light.layers.enable(PETAL_LAYER);
+      }
 
       // Void backdrop: animated fluid pink gradient (shaders at the top of
       // the file). Kept smooth on purpose — the halftone post-pass
@@ -7401,6 +7487,44 @@ void main() {
       await reportSceneBuildProgress();
 
       worldGroup.add(tree.group);
+      if (tree.petals) {
+        for (const mesh of tree.petals.meshes) mesh.layers.enable(PETAL_LAYER);
+      }
+      // Petal brush: pointer position and velocity carried into the tree
+      // group's local space (the petal sim lives there).
+      const petalPointerPos = new THREE.Vector3();
+      const petalPointerVel = new THREE.Vector3();
+      const petalGroupInverse = new THREE.Matrix4();
+      const petalGroupInverse3 = new THREE.Matrix3();
+      // World-space reach of the brush; the group is scaled ~0.7, so this
+      // is divided by the scale on the way in.
+      const PETAL_BRUSH_RADIUS = 2.6;
+      const renderPetalOverlay = () => {
+        const show =
+          !!tree.petals && tree.group.visible && sceneFx.crtProgress <= 0.001;
+        if (!show) {
+          if (!overlayCleared) {
+            overlayRenderer.clear();
+            overlayCleared = true;
+          }
+          return;
+        }
+        overlayCleared = false;
+        // The environment is a render-target texture owned by the main
+        // context; the overlay context cannot sample it.
+        const env = scene.environment;
+        scene.environment = null;
+        overlayRenderer.autoClear = true;
+        scene.overrideMaterial = overlayDepthOnly;
+        camera.layers.set(0);
+        overlayRenderer.render(scene, camera);
+        scene.overrideMaterial = null;
+        overlayRenderer.autoClear = false;
+        camera.layers.set(PETAL_LAYER);
+        overlayRenderer.render(scene, camera);
+        camera.layers.set(0);
+        scene.environment = env;
+      };
       await reportSceneBuildProgress();
 
       const finePointerQuery = window.matchMedia("(pointer: fine)");
@@ -7566,6 +7690,8 @@ void main() {
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
         renderer.setPixelRatio(getRenderPixelRatio());
+        overlayRenderer.setSize(w, h);
+        overlayRenderer.setPixelRatio(getRenderPixelRatio());
         // Keep the halftone target and its uniforms in step with the
         // drawing buffer (setSize x pixel ratio).
         renderer.getDrawingBufferSize(drawingBufferSize);
@@ -7693,6 +7819,19 @@ void main() {
             elapsed,
             tree.branchWindUniforms?.uWindStrength.value ?? 1,
           );
+          if (tree.petals && pointerRustleStrength > 0.02) {
+            petalGroupInverse.copy(tree.group.matrixWorld).invert();
+            petalGroupInverse3.setFromMatrix4(petalGroupInverse);
+            petalPointerPos.copy(pointerWorldSmooth).applyMatrix4(petalGroupInverse);
+            petalPointerVel.copy(pointerWorldVel).applyMatrix3(petalGroupInverse3);
+            tree.petals.applyPointer(
+              petalPointerPos,
+              petalPointerVel,
+              pointerRustleStrength,
+              PETAL_BRUSH_RADIUS / Math.max(0.1, tree.group.scale.x),
+              dt,
+            );
+          }
         }
 
         if (prefersReducedMotion) resetPointerParallax();
@@ -7828,6 +7967,7 @@ void main() {
         camera.lookAt(lookTarget);
         placeVoidBackdrop();
         renderComposite(elapsed);
+        renderPetalOverlay();
         if (!reportedReady) {
           reportedReady = true;
           void reportSceneBuildProgress();
@@ -7891,6 +8031,9 @@ void main() {
         halftoneGeometry.dispose();
         halftoneMaterial.dispose();
         renderer.dispose();
+        overlayDepthOnly.dispose();
+        overlayRenderer.dispose();
+        overlayCanvas.remove();
         const disposedTextures = new Set<THREE.Texture>();
         scene.traverse((object) => {
           const mesh = object as THREE.Mesh;
