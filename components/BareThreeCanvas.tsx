@@ -5572,42 +5572,54 @@ export default function WeepingCherryTreeCanvas({
         ),
       );
 
-      // ---- Name on the glass ---------------------------------------------
+      // ---- Text on the glass ---------------------------------------------
       // While the page loads as the television shot the tube shows the
-      // name, set like the site's own lockup: Apparel italic, warm
-      // pink-white with a pink phosphor halo, composited into displayTarget
-      // so it rides through the raster, scanlines and bloom like any other
-      // picture on the tube. sceneFx.glassName is its opacity.
-      const GLASS_NAME_TEXT = "Kevin He.";
-      const GLASS_NAME_CANVAS_W = 1536;
-      const GLASS_NAME_FONT_PX = 220;
-      const GLASS_NAME_PAD = 150;
-      // The type's em height as a fraction of the glass height, and the
-      // line's centre as a fraction up the glass.
-      const GLASS_NAME_EM_FRAC = 0.17;
-      const GLASS_NAME_CENTER_V = 0.5;
-      const glassNameCanvas = document.createElement("canvas");
-      glassNameCanvas.width = GLASS_NAME_CANVAS_W;
-      glassNameCanvas.height = GLASS_NAME_FONT_PX + GLASS_NAME_PAD * 2;
-      const glassNameTexture = new THREE.CanvasTexture(glassNameCanvas);
-      glassNameTexture.premultiplyAlpha = true;
-      glassNameTexture.generateMipmaps = false;
-      glassNameTexture.minFilter = THREE.LinearFilter;
-      glassNameTexture.magFilter = THREE.LinearFilter;
-      // NoColorSpace on purpose: displayTarget already holds the halftone
-      // pass's sRGB-encoded output, so the canvas's sRGB bytes must land
-      // next to it untouched — tagging sRGB would decode them to linear on
-      // sample and wash the text out.
-      glassNameTexture.colorSpace = THREE.NoColorSpace;
-      const glassNameUniforms = {
-        uMap: { value: glassNameTexture },
-        // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
-        uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
-        uOpacity: { value: 0 },
+      // name, set like the site's own lockup (Apparel italic), and under it
+      // the tagline in the site's sans. Each is a 2D canvas painted with a
+      // pink phosphor halo, composited into displayTarget so it rides
+      // through the raster, scanlines and bloom like any other picture on
+      // the tube. Opacity from sceneFx (glassName / glassTagline).
+      type GlassTextOptions = {
+        text: string;
+        // CSS custom property holding the next/font family name.
+        fontVar: string;
+        fontStyle: string; // e.g. "italic 400"
+        fontPx: number;
+        canvasW: number;
+        pad: number;
+        letterSpacing: string;
+        // Em height as a fraction of the glass height, and the line's
+        // centre as a fraction up the glass.
+        emFrac: number;
+        centerV: number;
+        // Halo: wide bloom alpha, tight halo alpha and blur (in em).
+        bloomAlpha: number;
+        haloAlpha: number;
+        haloBlurEm: number;
       };
-      const glassNameMaterial = new THREE.RawShaderMaterial({
-        uniforms: glassNameUniforms,
-        vertexShader: /* glsl */ `
+      const makeGlassText = (o: GlassTextOptions) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = o.canvasW;
+        canvas.height = o.fontPx + o.pad * 2;
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.premultiplyAlpha = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        // NoColorSpace on purpose: displayTarget already holds the
+        // halftone pass's sRGB-encoded output, so the canvas's sRGB bytes
+        // must land next to it untouched — tagging sRGB would decode them
+        // to linear on sample and wash the text out.
+        texture.colorSpace = THREE.NoColorSpace;
+        const uniforms = {
+          uMap: { value: texture },
+          // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
+          uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+          uOpacity: { value: 0 },
+        };
+        const material = new THREE.RawShaderMaterial({
+          uniforms,
+          vertexShader: /* glsl */ `
 precision highp float;
 attribute vec3 position;
 uniform vec4 uRect;
@@ -5617,7 +5629,7 @@ void main() {
   gl_Position = vec4(uRect.xy + position.xy * uRect.zw, 0.0, 1.0);
 }
 `,
-        fragmentShader: /* glsl */ `
+          fragmentShader: /* glsl */ `
 precision highp float;
 uniform sampler2D uMap;
 uniform float uOpacity;
@@ -5627,89 +5639,114 @@ void main() {
   gl_FragColor = texture2D(uMap, vUv) * uOpacity;
 }
 `,
-        transparent: true,
-        blending: THREE.CustomBlending,
-        blendSrc: THREE.OneFactor,
-        blendDst: THREE.OneMinusSrcAlphaFactor,
-        blendSrcAlpha: THREE.OneFactor,
-        blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      });
-      const glassNameMesh = new THREE.Mesh(overlayQuadGeometry, glassNameMaterial);
-      glassNameMesh.frustumCulled = false;
-      const glassNameScene = new THREE.Scene();
-      glassNameScene.add(glassNameMesh);
-      // Paints the name: a wide dim magenta bloom, a tighter pink halo, then
-      // the crisp warm-white glyphs on top, so the phosphor glow is baked
-      // into the texture before the glass shader adds its own halation.
-      const paintGlassName = (family: string) => {
-        const ctx = glassNameCanvas.getContext("2d");
-        if (!ctx) return;
-        const w = glassNameCanvas.width;
-        const h = glassNameCanvas.height;
-        ctx.clearRect(0, 0, w, h);
-        ctx.font = `italic 400 ${GLASS_NAME_FONT_PX}px ${family}`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        if ("letterSpacing" in ctx) ctx.letterSpacing = "-0.03em";
-        const cx = w / 2;
-        const cy = h / 2;
-        ctx.shadowColor = "rgba(214, 60, 120, 0.7)";
-        ctx.shadowBlur = GLASS_NAME_PAD * 0.5;
-        ctx.fillStyle = "rgba(255, 143, 174, 0.1)";
-        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
-        ctx.shadowColor = "rgba(255, 143, 174, 0.45)";
-        ctx.shadowBlur = GLASS_NAME_FONT_PX * 0.05;
-        ctx.fillStyle = "#ffd2e3";
-        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
-        ctx.shadowBlur = 0;
-        ctx.shadowColor = "transparent";
-        ctx.fillStyle = "#ffe9f2";
-        ctx.fillText(GLASS_NAME_TEXT, cx, cy);
-        glassNameTexture.needsUpdate = true;
-      };
-      // The site's serif is a next/font/local face; its generated family
-      // name lives in the CSS variable. Paint once immediately (the
-      // fallback serif if the face is still loading) and again when the
-      // real face is in.
-      {
+          transparent: true,
+          blending: THREE.CustomBlending,
+          blendSrc: THREE.OneFactor,
+          blendDst: THREE.OneMinusSrcAlphaFactor,
+          blendSrcAlpha: THREE.OneFactor,
+          blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        });
+        const mesh = new THREE.Mesh(overlayQuadGeometry, material);
+        mesh.frustumCulled = false;
+        const scene = new THREE.Scene();
+        scene.add(mesh);
+        // Paints the line: a wide dim magenta bloom, a tighter pink halo,
+        // then the crisp warm-white glyphs on top, so the phosphor glow is
+        // baked into the texture before the glass shader adds its own
+        // halation.
+        const paint = (family: string) => {
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          const w = canvas.width;
+          const h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+          ctx.font = `${o.fontStyle} ${o.fontPx}px ${family}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          if ("letterSpacing" in ctx) ctx.letterSpacing = o.letterSpacing;
+          const cx = w / 2;
+          const cy = h / 2;
+          ctx.shadowColor = "rgba(214, 60, 120, 0.7)";
+          ctx.shadowBlur = o.pad * 0.5;
+          ctx.fillStyle = `rgba(255, 143, 174, ${o.bloomAlpha})`;
+          ctx.fillText(o.text, cx, cy);
+          ctx.shadowColor = `rgba(255, 143, 174, ${o.haloAlpha})`;
+          ctx.shadowBlur = o.fontPx * o.haloBlurEm;
+          ctx.fillStyle = "#ffd2e3";
+          ctx.fillText(o.text, cx, cy);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+          ctx.fillStyle = "#ffe9f2";
+          ctx.fillText(o.text, cx, cy);
+          texture.needsUpdate = true;
+        };
+        // The site's faces are next/font/local; their generated family
+        // names live in CSS variables. Paint once immediately (the fallback
+        // face if the real one is still loading) and again when it is in.
         const family =
           getComputedStyle(document.documentElement)
-            .getPropertyValue("--font-instrument-serif")
-            .trim() || "serif";
-        paintGlassName(family);
+            .getPropertyValue(o.fontVar)
+            .trim() || (o.fontVar.includes("serif") ? "serif" : "sans-serif");
+        paint(family);
         if (typeof document.fonts?.load === "function") {
           document.fonts
-            .load(`italic 400 ${GLASS_NAME_FONT_PX}px ${family}`, GLASS_NAME_TEXT)
+            .load(`${o.fontStyle} ${o.fontPx}px ${family}`, o.text)
             .then(() => {
-              if (!disposed) paintGlassName(family);
+              if (!disposed) paint(family);
             })
             .catch(() => {});
         }
-      }
-      // Quad placement in displayTarget NDC, from the extended frame's size
-      // (so resizes are covered): the em height is GLASS_NAME_EM_FRAC of the
-      // glass, the canvas's padding scales with it.
-      const updateGlassNameRect = () => {
-        let halfH =
-          (GLASS_NAME_EM_FRAC * glassNameCanvas.height) / GLASS_NAME_FONT_PX;
-        let halfW =
-          halfH *
-          (glassNameCanvas.width / glassNameCanvas.height) *
-          (crtExt.extH / crtExt.extW);
-        if (halfW > 0.98) {
-          halfH *= 0.98 / halfW;
-          halfW = 0.98;
-        }
-        glassNameUniforms.uRect.value.set(
-          0,
-          GLASS_NAME_CENTER_V * 2 - 1,
-          halfW,
-          halfH,
-        );
+        // Quad placement in displayTarget NDC, from the extended frame's
+        // size (so resizes are covered): the em height is emFrac of the
+        // glass, the canvas's padding scales with it.
+        const updateRect = () => {
+          let halfH = (o.emFrac * canvas.height) / o.fontPx;
+          let halfW =
+            halfH * (canvas.width / canvas.height) * (crtExt.extH / crtExt.extW);
+          if (halfW > 0.98) {
+            halfH *= 0.98 / halfW;
+            halfW = 0.98;
+          }
+          uniforms.uRect.value.set(0, o.centerV * 2 - 1, halfW, halfH);
+        };
+        const dispose = () => {
+          texture.dispose();
+          material.dispose();
+        };
+        return { uniforms, scene, updateRect, dispose };
       };
+      const glassName = makeGlassText({
+        text: "Kevin He.",
+        fontVar: "--font-instrument-serif",
+        fontStyle: "italic 400",
+        fontPx: 220,
+        canvasW: 1536,
+        pad: 150,
+        letterSpacing: "-0.03em",
+        emFrac: 0.17,
+        centerV: 0.53,
+        bloomAlpha: 0.1,
+        haloAlpha: 0.45,
+        haloBlurEm: 0.05,
+      });
+      // The tagline, in the site's sans, sitting just under the name.
+      const glassTagline = makeGlassText({
+        text: "Designer, developer, and curator of chaos.",
+        fontVar: "--font-inter",
+        fontStyle: "400",
+        fontPx: 64,
+        canvasW: 1536,
+        pad: 60,
+        letterSpacing: "0.01em",
+        emFrac: 0.046,
+        centerV: 0.38,
+        bloomAlpha: 0.06,
+        haloAlpha: 0.3,
+        haloBlurEm: 0.06,
+      });
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
       // gradient, three-quarter view, seen slightly from above. The monitor
@@ -7154,16 +7191,24 @@ void main() {
         // the site view first; off just for this blend. A slight mains-hum
         // flicker on the alpha, a few percent, sells the tube without
         // reading as a glitch.
-        if (sceneFx.glassName > 0.001) {
-          updateGlassNameRect();
-          glassNameUniforms.uOpacity.value =
-            clamp01(sceneFx.glassName) *
-            (0.965 +
-              0.025 * Math.sin(elapsed * 37.0) +
-              0.01 * Math.sin(elapsed * 7.3));
+        {
+          const hum =
+            0.965 +
+            0.025 * Math.sin(elapsed * 37.0) +
+            0.01 * Math.sin(elapsed * 7.3);
           const hadAutoClear = renderer.autoClear;
           renderer.autoClear = false;
-          renderer.render(glassNameScene, halftoneCamera);
+          if (sceneFx.glassName > 0.001) {
+            glassName.updateRect();
+            glassName.uniforms.uOpacity.value = clamp01(sceneFx.glassName) * hum;
+            renderer.render(glassName.scene, halftoneCamera);
+          }
+          if (sceneFx.glassTagline > 0.001) {
+            glassTagline.updateRect();
+            glassTagline.uniforms.uOpacity.value =
+              clamp01(sceneFx.glassTagline) * hum;
+            renderer.render(glassTagline.scene, halftoneCamera);
+          }
           renderer.autoClear = hadAutoClear;
         }
         renderer.setRenderTarget(null);
@@ -7802,8 +7847,8 @@ void main() {
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
-        glassNameTexture.dispose();
-        glassNameMaterial.dispose();
+        glassName.dispose();
+        glassTagline.dispose();
         overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();
