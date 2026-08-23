@@ -416,6 +416,15 @@ export type BuildSolidChunkOptions = {
   seed: number;
   /** Distance scale of the flight, in the figure's units (it is 3.1 tall). */
   spread: number;
+  /**
+   * Anchors of the break's sweep across the body, as fractions of the
+   * figure's bounding box like `breakPath`. Once the arm has gone, the
+   * break front leaves the head and the right knee together and sweeps
+   * to the tail, where the last piece goes.
+   */
+  sweepHead: [number, number, number];
+  sweepKnee: [number, number, number];
+  sweepTail: [number, number, number];
 };
 
 // How the arm's seeds bunch toward the hand: 1 is even, higher is denser at
@@ -1454,7 +1463,7 @@ type BreakPhase = "arm" | "head" | "upper" | "lower";
 type Seed = {
   phase: BreakPhase;
   point: THREE.Vector3;
-  /** 0..1 along the phase's own order: arm by path, body and head outward. */
+  /** 0..1 along the break: arm by path, everything else along the sweep. */
   position: number;
 };
 
@@ -1711,31 +1720,34 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
     [...armSeedPoints, ...bodySeeds],
     options.seed + 1,
   );
-  // Within the head and the upper body the order is front to back along
-  // the flight, which is also the order that keeps each piece's path
-  // clear; the legs and base go together at the end.
-  const direction = new THREE.Vector3(...options.direction).normalize();
-  const frontFirst = (points: THREE.Vector3[]) => {
-    const along = points.map((point) => point.dot(direction));
-    const min = Math.min(...along);
-    const max = Math.max(...along);
+  // Everything but the arm breaks along one sweep: the break front opens
+  // on the head-to-right-knee diagonal (head and knee release together)
+  // and moves from there to the tail, which goes last. The sweep axis
+  // points from the diagonal's midpoint toward the tail, with its
+  // component along the diagonal removed so head and knee project alike.
+  const head = toModel(options.sweepHead);
+  const knee = toModel(options.sweepKnee);
+  const tail = toModel(options.sweepTail);
+  const diagonal = knee.clone().sub(head).normalize();
+  const sweep = tail.clone().sub(head.clone().add(knee).multiplyScalar(0.5));
 
-    return along.map((value) => 1 - (value - min) / Math.max(max - min, 1e-6));
-  };
-  const bodyOrder = frontFirst(bodySeeds);
+  sweep.addScaledVector(diagonal, -sweep.dot(diagonal)).normalize();
 
-  bodySeeds.forEach((point, index) => {
+  const sweepStart = head.dot(sweep);
+  const sweepSpan = Math.max(tail.dot(sweep) - sweepStart, 1e-6);
+  const alongSweep = (point: THREE.Vector3) =>
+    THREE.MathUtils.clamp((point.dot(sweep) - sweepStart) / sweepSpan, 0, 1);
+
+  bodySeeds.forEach((point) => {
     seeds.push({
       phase: point.y < legsCeiling ? "lower" : "upper",
       point,
-      position: bodyOrder[index],
+      position: alongSweep(point),
     });
   });
 
-  const headOrder = frontFirst(headSeeds);
-
-  headSeeds.forEach((point, index) => {
-    seeds.push({ phase: "head", point, position: headOrder[index] });
+  headSeeds.forEach((point) => {
+    seeds.push({ phase: "head", point, position: alongSweep(point) });
   });
 
   return seeds;
@@ -2052,11 +2064,11 @@ function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
 }
 
 // When each piece starts moving, 0..1 of the breakup, one piece at a time:
-// up the arm from the hand, then the head, then the upper body, then the
-// legs and base together at the end. A piece may never start before a
-// touching neighbour that its own flight points at, or it would drive
-// into it while the neighbour still sits; where that cuts across the
-// order, the neighbour goes just before it instead. Touching means
+// up the arm from the hand, then the rest along the sweep — the head and
+// the right knee together first, the tail last. A piece may never start
+// before a touching neighbour that its own flight points at, or it would
+// drive into it while the neighbour still sits; where that cuts across
+// the order, the neighbour goes just before it instead. Touching means
 // sharing cut points, so this follows the real cuts, not a guess. The
 // islands of one seed count as one piece throughout.
 function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
@@ -2066,21 +2078,21 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
     return cells.map(() => 0);
   }
 
-  // Units: one per seed, and one for the whole lower body.
-  const lowerUnit = { phase: "lower" as BreakPhase, position: 0 };
-  const unitOf = new Map<Seed | typeof lowerUnit, number>();
+  // Units: one per seed. The arm goes first in path order; everything
+  // else follows in sweep order.
+  const unitOf = new Map<Seed, number>();
   const unitRank: number[] = [];
   const unitCells: number[][] = [];
-  const phaseRank: Record<BreakPhase, number> = { arm: 0, head: 1, upper: 2, lower: 3 };
 
   cells.forEach(({ seed }, index) => {
-    const key = seed.phase === "lower" ? lowerUnit : seed;
-    let unit = unitOf.get(key);
+    let unit = unitOf.get(seed);
 
     if (unit === undefined) {
       unit = unitRank.length;
-      unitOf.set(key, unit);
-      unitRank.push(phaseRank[key.phase] + THREE.MathUtils.clamp(key.position, 0, 0.999));
+      unitOf.set(seed, unit);
+      unitRank.push(
+        (seed.phase === "arm" ? 0 : 1) + THREE.MathUtils.clamp(seed.position, 0, 0.999),
+      );
       unitCells.push([]);
     }
 
@@ -2088,7 +2100,7 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   });
 
   const unitCount = unitRank.length;
-  const cellUnit = cells.map(({ seed }) => unitOf.get(seed.phase === "lower" ? lowerUnit : seed) as number);
+  const cellUnit = cells.map(({ seed }) => unitOf.get(seed) as number);
   const cutPointIds = cells.map(({ piece }) => {
     const ids = new Set<number>();
 
