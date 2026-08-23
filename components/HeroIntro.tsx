@@ -26,12 +26,11 @@ type HeroIntroProps = {
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
 // The panel grows over this stretch of the hero's scroll timeline (the
-// name is out by 0.4), and The Thinker inside it starts breaking a fifth
-// of the way into that growth — as on lukebaffait.fr, whose fragments are
-// already streaming off while its box is still small.
+// name is out by 0.4). The Thinker inside it holds whole until this share
+// of the page's full scroll is behind, then starts breaking.
 const PANEL_GROW_AT = 0.4;
 const PANEL_GROW_DURATION = 0.6;
-const THINKER_BREAK_INTO_GROWTH = 0.2;
+const THINKER_BREAK_AT_SCROLL = 0.4;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -474,8 +473,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   }, []);
 
   // The stretch of scroll the statue's stage owns: from the panel starting
-  // to grow to the bottom of the page, with the break a fifth of the way
-  // into the growth. Read from the layout each time ScrollTrigger refreshes.
+  // to grow to the bottom of the page, with the break at 40% of the page's
+  // full scroll. Read from the layout each time ScrollTrigger refreshes.
   const thinkerTiming = useCallback<ThinkerTiming>(() => {
     const scrollSpace = scrollSpaceRef.current;
     const statueSpace = statueSpaceRef.current;
@@ -492,7 +491,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growEnd;
     return {
-      breakAt: growStart + (growEnd - growStart) * THINKER_BREAK_INTO_GROWTH,
+      breakAt: Math.max(end * THINKER_BREAK_AT_SCROLL, growStart),
       end,
       start: growStart,
     };
