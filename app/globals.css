@@ -216,3 +216,13 @@ canvas {
 ::selection {
   background: rgba(240, 240, 240, 0.24);
 }
+
+/* No visible scrollbar: the page still scrolls (the scroll scene), but a
+   bar against the fixed layers read as a stray UI element. */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
