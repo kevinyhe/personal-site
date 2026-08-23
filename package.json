@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-three/fiber": "^9.7.0",
     "@types/three": "^0.178.1",
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",

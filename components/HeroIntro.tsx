@@ -12,6 +12,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
+import ThinkerStage from "@/components/ThinkerStage";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -66,6 +67,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
+  const statueSpaceRef = useRef<HTMLDivElement | null>(null);
+  // The panel is "open" (worth drawing the statue) once it has grown past
+  // a sliver; flipped by the scroll timeline, never on every frame.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelOpenRef = useRef(false);
   // The veil's bar is for the television's own assets only (GLB + four
   // textures): the thing the page is actually waiting on before it can
   // show anything.
@@ -415,6 +421,13 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       const exitOffset = () => window.innerHeight - lockup.offsetTop + 8;
       const tl = gsap.timeline({
         defaults: { ease: "none" },
+        onUpdate: () => {
+          const open = tl.progress() > 0.38;
+          if (open !== panelOpenRef.current) {
+            panelOpenRef.current = open;
+            setPanelOpen(open);
+          }
+        },
         scrollTrigger: {
           end: "bottom bottom",
           invalidateOnRefresh: true,
@@ -478,17 +491,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
 
       {/* The next page's panel: exactly the viewport, grown from the centre
           by the scroll timeline once the name has left. Above the canvas,
-          below the type layer. */}
+          below the type layer. Inside it, The Thinker: its own canvas,
+          scaled with the panel, driven by the second spacer's scroll. */}
       <div
-        aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[15] bg-[#0a0a0a]"
         data-hero-panel
         style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
-      />
+      >
+        {revealComplete ? (
+          <ThinkerStage active={panelOpen} triggerRef={statueSpaceRef} />
+        ) : null}
+      </div>
 
-      {/* Scroll room for the next page; every visible layer is fixed, so
-          this spacer is the only thing giving the document height. */}
+      {/* Scroll room. Every visible layer is fixed, so these spacers are the
+          only thing giving the document height: the first drives the hero's
+          exit and the panel's growth, the second the statue. */}
       <div aria-hidden="true" className="h-[300vh]" ref={scrollSpaceRef} />
+      <div aria-hidden="true" className="h-[400vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree

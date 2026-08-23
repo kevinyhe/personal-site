@@ -54,6 +54,10 @@ const CRT_ASSETS: { href: string; as: "fetch" | "image" }[] = [
   { href: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp", as: "image" },
+  // The Thinker's geometry (2 MB), for the panel after the hero: fetched
+  // early so the stage is ready by the time the scroll reaches it.
+  { href: "/model/thinker/scene.gltf", as: "fetch" },
+  { href: "/model/thinker/scene.bin", as: "fetch" },
 ];
 
 export default function Home() {
