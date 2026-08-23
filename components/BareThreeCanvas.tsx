@@ -5658,10 +5658,10 @@ void main() {
         const cy = h / 2;
         ctx.shadowColor = "rgba(214, 60, 120, 0.7)";
         ctx.shadowBlur = GLASS_NAME_PAD * 0.5;
-        ctx.fillStyle = "rgba(255, 143, 174, 0.16)";
+        ctx.fillStyle = "rgba(255, 143, 174, 0.1)";
         ctx.fillText(GLASS_NAME_TEXT, cx, cy);
-        ctx.shadowColor = "rgba(255, 143, 174, 0.6)";
-        ctx.shadowBlur = GLASS_NAME_FONT_PX * 0.07;
+        ctx.shadowColor = "rgba(255, 143, 174, 0.45)";
+        ctx.shadowBlur = GLASS_NAME_FONT_PX * 0.05;
         ctx.fillStyle = "#ffd2e3";
         ctx.fillText(GLASS_NAME_TEXT, cx, cy);
         ctx.shadowBlur = 0;
@@ -6415,6 +6415,57 @@ void main() {
       );
       crtScreenMesh.rotation.x = -CRT_MODEL.screen.pitch;
       crtRoot.add(crtScreenMesh);
+      // The tube's light in the air around it: an additive quad riding the
+      // screen, 1.5x its size, zero inside the glass rect and falling off
+      // softly outside it, drawn over everything (no depth test) so the
+      // bezel lip and the space just beyond the set pick up a soft pink
+      // halo. Intensity from updateCrtRig, breathing with the warm-up.
+      const crtHaloUniforms = {
+        uGlow: { value: 0 },
+        uColor: { value: new THREE.Color(0xff7fae) },
+        // Half-size of the glass rect in the quad's uv (quad is 1.5x).
+        uInner: { value: new THREE.Vector2(0.5 / 1.5, 0.5 / 1.5) },
+      };
+      const crtHalo = new THREE.Mesh(
+        new THREE.PlaneGeometry(crtScreenState.aspect * 1.5, 1.5),
+        new THREE.ShaderMaterial({
+          uniforms: crtHaloUniforms,
+          vertexShader: /* glsl */ `
+            varying vec2 vUv;
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: /* glsl */ `
+            uniform float uGlow;
+            uniform vec3 uColor;
+            uniform vec2 uInner;
+            varying vec2 vUv;
+            void main() {
+              // Signed distance (in quad uv) outside the glass rect, with
+              // rounded corners like the raster's.
+              vec2 q = abs(vUv - 0.5) - uInner + 0.02;
+              float d = length(max(q, 0.0)) - 0.02;
+              if (d <= 0.0) discard;
+              // Two falloffs: a tight bright rim right at the edge of the
+              // glass, and a wide dim spill that dies before the quad's edge.
+              float glow = 0.6 * exp(-d * 34.0) + 0.4 * exp(-d * 13.0);
+              glow *= 1.0 - smoothstep(0.16, 0.3, d);
+              gl_FragColor = vec4(uColor * glow * uGlow, 1.0);
+            }
+          `,
+          blending: THREE.AdditiveBlending,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      );
+      crtHalo.rotation.x = -CRT_MODEL.screen.pitch;
+      crtHalo.position.z = 0.05;
+      crtHalo.renderOrder = 20;
+      crtRoot.add(crtHalo);
 
       // Placeholder body so the rig is testable before the model loads; the
       // GLB replaces it. Deliberately crude — it should never ship.
@@ -6464,7 +6515,7 @@ void main() {
       // The split is the cone: a tight spot (12.6 degrees, wide penumbra)
       // aimed at the right half of the set, so the light dies across the
       // middle of the front and the left half simply is not lit.
-      const crtKey = new THREE.SpotLight(0xffb0c9, 1200, 18, 0.26, 0.55, 2);
+      const crtKey = new THREE.SpotLight(0xffb0c9, 900, 18, 0.26, 0.55, 2);
       crtKey.position.set(5.6, 2.9, 1.3);
       crtKey.target.position.set(1.05, 0.1, 0.3);
       crtScene.add(crtKey.target);
@@ -6760,6 +6811,7 @@ void main() {
         const glowPulse =
           1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
         crtGlow.intensity = 2 * fx * glowPulse;
+        crtHaloUniforms.uGlow.value = fx * (0.15 + 0.1 * glow) * glowPulse;
         crtBgUniforms.uScreenLight.value = fx * (0.18 + 0.1 * glow) * glowPulse;
       };
 
@@ -7664,6 +7716,8 @@ void main() {
         crtBloomPass.dispose();
         crtPostPass.dispose();
         crtScreenMaterial.dispose();
+        crtHalo.geometry.dispose();
+        (crtHalo.material as THREE.Material).dispose();
         crtScreenMesh.geometry.dispose();
         // The CRT scene holds GPU allocations of its own (GLB textures, the
         // PMREM environment, shadow map ground, gradient backdrop); walk and

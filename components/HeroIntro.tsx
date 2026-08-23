@@ -60,6 +60,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
   const crtProgressRef = useRef(0);
   crtProgressRef.current = crtReady ? 1 : crtProgress;
+  const crtReadyRef = useRef(false);
+  crtReadyRef.current = crtReady;
   const tvShownAtRef = useRef(0);
 
   const handleCrtProgress = useCallback(
@@ -85,39 +87,42 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, []);
 
-  // Loader feel: the five asset loads land at irregular intervals, and a
-  // bar frozen between them reads as a hang. Ease the displayed fill toward
-  // the real progress and let it CREEP most of the way to the next item
-  // while waiting; real progress snaps it forward.
+  // Loader feel. The television's assets are preloaded from the HTML head,
+  // so their progress lands in one or two jumps (the GLB is one item); a
+  // bar that mirrors that reads as a glitch. The displayed fill is
+  // rate-limited — it can travel at most BAR_RATE of its width per
+  // second, so a jump from 0 to 1 plays out over ~0.7 s — and the veil
+  // only lifts once the bar has VISIBLY filled, so it always reads as a
+  // load that completed. Between real progress it creeps a little so it
+  // never sits still.
   useEffect(() => {
     if (tvShown) return undefined;
+    const BAR_RATE = 1.4;
     let displayed = 0;
     let creep = 0;
     let raf = 0;
+    let last = performance.now();
     const step = () => {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
       const target = crtProgressRef.current;
-      creep = Math.min(creep + 0.002, 0.08);
+      creep = Math.min(creep + 0.12 * dt, 0.08);
       if (target >= 1) creep = 0;
       const goal = Math.min(1, target + (target < 1 ? creep : 0));
-      displayed += (goal - displayed) * 0.14;
+      displayed = Math.min(goal, displayed + BAR_RATE * dt);
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
+      if (crtReadyRef.current && displayed >= 0.995) {
+        tvShownAtRef.current = now;
+        setTvShown(true);
+        return;
+      }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [tvShown]);
-
-  // The television appears as soon as the canvas reports it drawn with the
-  // model and its textures in (before that the rig renders a crude
-  // placeholder body, which must never be seen). The veil fades off and the
-  // name comes up on the tube.
-  useEffect(() => {
-    if (crtReady && !tvShown) {
-      setTvShown(true);
-      tvShownAtRef.current = performance.now();
-    }
-  }, [crtReady, tvShown]);
 
   // Separate effect so these are only ever killed on unmount: a cleanup
   // tied to the readiness flags above ran the moment tvShown flipped and
