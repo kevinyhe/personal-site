@@ -1,7 +1,7 @@
 # Graph Report - arbor-web  (2026-08-23)
 
 ## Corpus Check
-- 75 files · ~106,025 words
+- 75 files · ~106,176 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0c97aa3d`
+- Built from commit: `6f32ab80`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

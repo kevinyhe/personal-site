@@ -1017,7 +1017,7 @@ function traceCapLoops(
 function groupCapRegions(loops: CapLoop[]) {
   const containers = loops.map((loop, index) =>
     loops
-      .map((other, otherIndex) => otherIndex)
+      .map((_, otherIndex) => otherIndex)
       .filter(
         (otherIndex) =>
           otherIndex !== index &&
@@ -1633,7 +1633,7 @@ function spreadSeeds(
     let bestIndex = -1;
     let bestDistance = -Infinity;
 
-    candidates.forEach((candidate, index) => {
+    candidates.forEach((_, index) => {
       const score = nearest[index] * (0.9 + hash01(index + placed * 7, seed + 311) * 0.2);
 
       if (score > bestDistance) {
