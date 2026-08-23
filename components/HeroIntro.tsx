@@ -32,6 +32,12 @@ const PANEL_GROW_AT = 0.4;
 const PANEL_GROW_DURATION = 0.6;
 const PANEL_SCALE_AT_BREAK = 0.4;
 
+// The tail of the statue spacer that belongs to the robot outro. The spacer
+// grew from 390vh to 510vh for it; keeping the statue's stretch ending
+// where it used to (statueEnd = end - this) leaves the statue's whole
+// sequence playing over exactly its previous scroll length.
+const ROBOT_SCROLL_VH = 120;
+
 // Where power2.inOut reaches the given value: the panel's scale tween uses
 // that ease, so this turns "panel at 40% width" into a scroll position.
 function invertPowerInOut(value: number) {
@@ -478,6 +484,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     void loadThinkerChunks().catch(() => undefined);
   }, []);
 
+  // Capture aid: ?robotView jumps the page to its bottom once the reveal is
+  // done, which opens the panel, completes the statue and drives the robot
+  // phase to 1 through the real scroll path — arming and starting the run
+  // without hand-scrolling. Twice, because ThinkerStage schedules its own
+  // ScrollTrigger refresh ~250 ms after it mounts.
+  useEffect(() => {
+    if (!revealComplete) return undefined;
+    if (!window.location.search.includes("robotView")) return undefined;
+    const jump = () => window.scrollTo(0, document.documentElement.scrollHeight);
+    const first = window.setTimeout(jump, 600);
+    const second = window.setTimeout(jump, 1600);
+    return () => {
+      window.clearTimeout(first);
+      window.clearTimeout(second);
+    };
+  }, [revealComplete]);
+
   // The stretch of scroll the statue's stage owns: from the panel starting
   // to grow to the bottom of the page, with the break where the panel's
   // growth passes PANEL_SCALE_AT_BREAK of the screen. Read from the layout
@@ -497,10 +520,16 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const end = statueSpace
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growEnd;
+    // The statue's phase completes ROBOT_SCROLL_VH before the bottom; the
+    // robot outro owns that last stretch.
+    const statueEnd = statueSpace
+      ? end - viewportHeight * (ROBOT_SCROLL_VH / 100)
+      : end;
     return {
       breakAt: growStart + (growEnd - growStart) * invertPowerInOut(PANEL_SCALE_AT_BREAK),
       end,
       start: growStart,
+      statueEnd,
     };
   }, []);
 
@@ -559,9 +588,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       {/* Scroll room. Every visible layer is fixed, so these spacers are the
           only thing giving the document height: the first drives the hero's
           exit and the panel's growth, the second gives the statue's breakup
-          (which begins during the growth) the rest of its run. */}
+          (which begins during the growth) the rest of its run plus, in its
+          last ROBOT_SCROLL_VH, the robot outro. */}
       <div aria-hidden="true" className="h-[270vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[390vh]" ref={statueSpaceRef} />
+      <div aria-hidden="true" className="h-[510vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
