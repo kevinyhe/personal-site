@@ -26,11 +26,17 @@ type HeroIntroProps = {
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
 // The panel grows over this stretch of the hero's scroll timeline (the
-// name is out by 0.4). The Thinker inside it holds whole until this share
-// of the page's full scroll is behind, then starts breaking.
+// name is out by 0.4). The Thinker inside it starts breaking the moment
+// the growing panel reaches this share of the screen's width.
 const PANEL_GROW_AT = 0.4;
 const PANEL_GROW_DURATION = 0.6;
-const THINKER_BREAK_AT_SCROLL = 0.4;
+const PANEL_SCALE_AT_BREAK = 0.4;
+
+// Where power2.inOut reaches the given value: the panel's scale tween uses
+// that ease, so this turns "panel at 40% width" into a scroll position.
+function invertPowerInOut(value: number) {
+  return value < 0.5 ? Math.sqrt(value / 2) : 1 - Math.sqrt((1 - value) / 2);
+}
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -405,7 +411,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [revealComplete]);
 
-  // The next page, on scroll: one scrubbed timeline over 450vh. The top
+  // The next page, on scroll: one scrubbed timeline over 270vh. The top
   // strip fades, the name sinks out of the bottom of the frame, and the
   // tree sinks out too while the camera orbits it counter-clockwise
   // through 60% of the intro's sweep; once the name has gone, a
@@ -445,7 +451,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           trigger: scrollSpace,
         },
       });
-      // Times are fractions of the whole 450vh scroll: the hero's exit in
+      // Times are fractions of the whole 270vh scroll: the hero's exit in
       // the first 0.4, the panel after the name is out.
       gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
       tl.to(strip, { autoAlpha: 0, duration: 0.2 }, 0)
@@ -473,8 +479,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   }, []);
 
   // The stretch of scroll the statue's stage owns: from the panel starting
-  // to grow to the bottom of the page, with the break at 40% of the page's
-  // full scroll. Read from the layout each time ScrollTrigger refreshes.
+  // to grow to the bottom of the page, with the break where the panel's
+  // growth passes PANEL_SCALE_AT_BREAK of the screen. Read from the layout
+  // each time ScrollTrigger refreshes.
   const thinkerTiming = useCallback<ThinkerTiming>(() => {
     const scrollSpace = scrollSpaceRef.current;
     const statueSpace = statueSpaceRef.current;
@@ -491,7 +498,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growEnd;
     return {
-      breakAt: Math.max(end * THINKER_BREAK_AT_SCROLL, growStart),
+      breakAt: growStart + (growEnd - growStart) * invertPowerInOut(PANEL_SCALE_AT_BREAK),
       end,
       start: growStart,
     };
@@ -553,8 +560,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           only thing giving the document height: the first drives the hero's
           exit and the panel's growth, the second gives the statue's breakup
           (which begins during the growth) the rest of its run. */}
-      <div aria-hidden="true" className="h-[450vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[650vh]" ref={statueSpaceRef} />
+      <div aria-hidden="true" className="h-[270vh]" ref={scrollSpaceRef} />
+      <div aria-hidden="true" className="h-[390vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
