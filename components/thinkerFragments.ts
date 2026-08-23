@@ -79,121 +79,6 @@ type AccessorValues = {
   values: number[];
 };
 
-type CapBuildStats = {
-  danglingVertices: number;
-  fallbackLoops: number;
-  loopCount: number;
-  planeKey: string;
-  repairedGaps: number;
-  rejectedLoops: number;
-  segmentCount: number;
-  tracedLoopCount: number;
-};
-
-export type SolidThinkerChunk = {
-  center: THREE.Vector3;
-  debug?: {
-    capStats: CapBuildStats[];
-    sourceIndex: number;
-  };
-  interiorGeometry: THREE.BufferGeometry;
-  offset: THREE.Vector3;
-  releaseAt: number;
-  scale: number;
-  spin: THREE.Vector3;
-  surfaceGeometry: THREE.BufferGeometry;
-};
-
-type BuildSolidChunkOptions = {
-  chunkCount: number;
-  seed: number;
-  spread: number;
-};
-
-type FragmentVertex = {
-  normal: THREE.Vector3;
-  point: THREE.Vector3;
-  uv: THREE.Vector2;
-};
-
-type FragmentPolygon = {
-  kind: "cap" | "surface";
-  vertices: FragmentVertex[];
-};
-
-type FragmentPiece = {
-  box: THREE.Box3;
-  capStats: CapBuildStats[];
-  center: THREE.Vector3;
-  depth: number;
-  id: number;
-  polygons: FragmentPolygon[];
-  totalArea: number;
-};
-
-type SplitPlane = {
-  constant: number;
-  key: string;
-  normal: THREE.Vector3;
-};
-
-type CapGraphPoint = {
-  key: string;
-  point: THREE.Vector3;
-  uv: THREE.Vector2;
-};
-
-type CapLoop = {
-  area: number;
-  edgeChains: THREE.Vector3[][];
-  points: THREE.Vector3[];
-  uv: THREE.Vector2[];
-};
-
-type SplitStats = {
-  capFailures: {
-    maxDanglingVertices: number;
-    maxSegments: number;
-    withDanglingVertices: number;
-    withNoSegments: number;
-    withRejectedLoops: number;
-  };
-  rejectionReasons: {
-    degenerateChild: number;
-    missingCapLoop: number;
-    missingSurfaceOrCap: number;
-    sizeImbalance: number;
-  };
-  rejectedSplits: number;
-  retryCount: number;
-  sourceOpenEdges: number;
-  successfulSplits: number;
-  targetCount: number;
-};
-
-type ChunkBoundaryAudit = {
-  capOnlyOpenEdges: number;
-  chunkCount: number;
-  fractureStats: SplitStats;
-  maxOpenEdges: number;
-  missingCapChunks: number;
-  openChunks: number;
-  surfaceOnlyOpenEdges: number;
-  totalOpenEdges: number;
-  weldedOpenEdges: number;
-  worstChunks: Array<{
-    capStats: CapBuildStats[];
-    chunkIndex: number;
-    openEdges: number;
-    sourceIndex?: number;
-  }>;
-};
-
-const CLIP_EPSILON = 0.00001;
-const CAP_KEY_SCALE = 30000;
-const MIN_CAP_SEGMENT_LENGTH_SQ = 0.0000000001;
-const MIN_CAP_LOOP_AREA = 0.000002;
-const MAX_CAP_REPAIR_DISTANCE_SQ = 0.000004;
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -389,6 +274,192 @@ export async function loadThinkerGeometry(modelPath = "/model/thinker/scene.gltf
   return normalizeGeometry(geometry);
 }
 
+// ---------------------------------------------------------------------------
+// Fracture
+//
+// The figure is cut by planes, one piece at a time, into solid chunks: the
+// clipped surface plus a flat cap on each cut. Every cut point (an edge of
+// the mesh meeting the plane) is computed once and shared, by object, by
+// the two polygons on either side of that edge and by the cap, so the cap
+// boundary matches the surface boundary exactly and the chunk is closed.
+// Pieces that come apart into several islands under a cut are separated at
+// once and each island is size-checked, so no sliver ever reaches the
+// stage.
+// ---------------------------------------------------------------------------
+
+// A vertex lies on the plane if within this distance of it. Tiny on
+// purpose: a vertex that is merely close makes a thin sliver polygon, which
+// is harmless, whereas treating it as on-plane can leave a spurious cut
+// segment when its whole edge lies in the plane.
+const CLIP_EPSILON = 1e-9;
+// Cap loops with less area than this are dropped (a few mesh triangles).
+const MIN_CAP_LOOP_AREA = 1e-7;
+// A cut graph with odd-degree nodes is patched by joining the closest pair
+// if they are within this distance. With shared cut points it should never
+// be needed on a closed mesh; it is a safety net for a damaged scan.
+const MAX_CAP_REPAIR_DISTANCE = 0.002;
+
+type FragmentVertex = {
+  normal: THREE.Vector3;
+  point: THREE.Vector3;
+};
+
+type FragmentPolygon = {
+  kind: "cap" | "surface";
+  vertices: FragmentVertex[];
+};
+
+type FragmentPiece = {
+  box: THREE.Box3;
+  capStats: CapBuildStats[];
+  center: THREE.Vector3;
+  depth: number;
+  /** The source figure only: every triangle's corners, flat, for fast passes. */
+  flat?: Float64Array;
+  id: number;
+  polygons: FragmentPolygon[];
+  totalArea: number;
+};
+
+type SplitPlane = {
+  constant: number;
+  key: string;
+  normal: THREE.Vector3;
+};
+
+type CapNode = {
+  id: number;
+  point: THREE.Vector3;
+  uv: THREE.Vector2;
+};
+
+type CapLoop = {
+  area: number;
+  edgeChains: THREE.Vector3[][];
+  points: THREE.Vector3[];
+  uv: THREE.Vector2[];
+};
+
+export type CapBuildStats = {
+  danglingVertices: number;
+  holeLoops: number;
+  loopCount: number;
+  planeKey: string;
+  repairedGaps: number;
+  rejectedLoops: number;
+  segmentCount: number;
+};
+
+export type SplitStats = {
+  /** Islands too small to keep. */
+  dust: number;
+  /** Extra pieces from cells that came apart into more than one island. */
+  islands: number;
+  seedCount: number;
+  sourceOpenEdges: number;
+};
+
+/** One chunk as typed arrays: what a worker can hand back by transfer. */
+export type ThinkerChunkData = {
+  center: [number, number, number];
+  debug: {
+    capStats: CapBuildStats[];
+    sourceIndex: number;
+  };
+  interiorNormals: Float32Array;
+  interiorPositions: Float32Array;
+  /** Full travel, in the figure's own space, once the chunk has released. */
+  offset: [number, number, number];
+  /** Half the bounding-box diagonal, for the stage's own sanity checks. */
+  radius: number;
+  /** Which part of the figure the chunk belongs to, for the break's order. */
+  phase: "arm" | "head" | "upper" | "lower";
+  /** Breakup progress (0..1) at which this chunk starts moving. */
+  releaseAt: number;
+  scale: number;
+  spin: [number, number, number];
+  surfaceNormals: Float32Array;
+  surfacePositions: Float32Array;
+  /** How much of the breakup (0..1) the chunk's flight takes. */
+  travel: number;
+};
+
+export type ThinkerChunkBuild = {
+  /** Where the pieces break away from, in the figure's space. */
+  breakOrigin: [number, number, number];
+  chunks: ThinkerChunkData[];
+  /** The mean of the chunks' full offsets: where the cloud's centre ends. */
+  drift: [number, number, number];
+  stats: SplitStats;
+};
+
+export type BuildSolidChunkOptions = {
+  /** Pieces along the arm, from the hand to the shoulder. */
+  armPieces: number;
+  /** Pieces through the rest of the body below the head. */
+  bodyPieces: number;
+  /**
+   * The break's path: the arm from the hand to the shoulder, as fractions
+   * of the figure's bounding box (0..1 on each axis). The arm is cut along
+   * it, finest at the hand, and breaks in that order.
+   */
+  breakPath: Array<[number, number, number]>;
+  /** The way the pieces fly, in the figure's own space. */
+  direction: [number, number, number];
+  /** Above this fraction of the figure's height is the head. */
+  headFrom: number;
+  headPieces: number;
+  /** Below this fraction of the figure's height are the legs and the base. */
+  legsFrom: number;
+  /** Offset (figure units) from the path, which follows the surface, into the limb. */
+  pathInset: [number, number, number];
+  seed: number;
+  /** Distance scale of the flight, in the figure's units (it is 3.1 tall). */
+  spread: number;
+};
+
+// How the arm's seeds bunch toward the hand: 1 is even, higher is denser at
+// the hand.
+const ARM_SEED_DENSITY = 1.5;
+// Body seeds keep this far (figure units) from the arm's path.
+const ARM_CLEARANCE = 0.2;
+// The last piece releases this far into the breakup.
+const RELEASE_END = 0.86;
+// How much of the breakup a piece's flight takes once released.
+const TRAVEL_WINDOW = 0.22;
+// Islands smaller than this are dropped as dust.
+const ISLAND_MIN_POLYGONS = 40;
+const ISLAND_MIN_AREA = 0.01;
+// How far along its flight a piece is probed for running into a
+// neighbour (figure units), and the share of its shared face that must
+// land inside the neighbour for that to count.
+const RELEASE_PROBE_STEP = 0.08;
+const RELEASE_PROBE_FRACTION = 0.03;
+
+// The flight, in multiples of `spread`: the push every piece gets along the
+// direction; the extra the piece furthest along it gets over the piece
+// furthest behind; and the fraction of a piece's sideways distance from the
+// centre it moves outward.
+const FLIGHT_PUSH = 0.15;
+const FLIGHT_STRETCH = 1.0;
+const FLIGHT_SPREAD = 0.3;
+
+// Every distinct point on a piece is one Vector3 object, shared by all the
+// polygons that meet there; these ids let maps key on them cheaply.
+const pointIds = new WeakMap<THREE.Vector3, number>();
+let nextPointId = 1;
+
+function idOf(point: THREE.Vector3) {
+  let id = pointIds.get(point);
+
+  if (id === undefined) {
+    id = nextPointId++;
+    pointIds.set(point, id);
+  }
+
+  return id;
+}
+
 function hash01(index: number, seed: number) {
   const value = Math.sin(index * 127.1 + seed * 311.7) * 43758.5453123;
 
@@ -399,119 +470,12 @@ function signedHash(index: number, seed: number) {
   return hash01(index, seed) * 2 - 1;
 }
 
-function pointKey(point: THREE.Vector3, scale = CAP_KEY_SCALE) {
-  return [
-    Math.round(point.x * scale),
-    Math.round(point.y * scale),
-    Math.round(point.z * scale),
-  ].join(",");
-}
+function randomUnitVector(seed: number, salt: number) {
+  const z = signedHash(seed, salt);
+  const angle = hash01(seed, salt + 3) * Math.PI * 2;
+  const radius = Math.sqrt(Math.max(1 - z * z, 0));
 
-function readPosition(attribute: THREE.BufferAttribute, index: number) {
-  return new THREE.Vector3(
-    attribute.getX(index),
-    attribute.getY(index),
-    attribute.getZ(index),
-  );
-}
-
-function readNormal(
-  attribute: THREE.BufferAttribute | undefined,
-  index: number,
-  fallback: THREE.Vector3,
-) {
-  if (!attribute) {
-    return fallback.clone();
-  }
-
-  const normal = new THREE.Vector3(
-    attribute.getX(index),
-    attribute.getY(index),
-    attribute.getZ(index),
-  );
-
-  return normal.lengthSq() > 0.000001 ? normal.normalize() : fallback.clone();
-}
-
-function readUv(attribute: THREE.BufferAttribute | undefined, index: number) {
-  if (!attribute) {
-    return new THREE.Vector2();
-  }
-
-  return new THREE.Vector2(attribute.getX(index), attribute.getY(index));
-}
-
-function getTriangleNormal(points: THREE.Vector3[]) {
-  const normal = new THREE.Vector3()
-    .subVectors(points[1], points[0])
-    .cross(new THREE.Vector3().subVectors(points[2], points[0]));
-
-  return normal.lengthSq() > 0.000001 ? normal.normalize() : new THREE.Vector3(0, 1, 0);
-}
-
-function interpolateVertex(
-  a: FragmentVertex,
-  b: FragmentVertex,
-  t: number,
-  plane?: SplitPlane,
-): FragmentVertex {
-  const point = a.point.clone().lerp(b.point, t);
-
-  if (plane) {
-    point.copy(snapToPlane(point, plane));
-  }
-
-  return {
-    normal: a.normal.clone().lerp(b.normal, t).normalize(),
-    point,
-    uv: a.uv.clone().lerp(b.uv, t),
-  };
-}
-
-function makeSourcePiece(sourceGeometry: THREE.BufferGeometry): FragmentPiece {
-  const geometry = sourceGeometry.index
-    ? sourceGeometry.toNonIndexed()
-    : sourceGeometry.clone();
-
-  if (!geometry.getAttribute("normal")) {
-    geometry.computeVertexNormals();
-  }
-
-  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-  const normal = geometry.getAttribute("normal") as
-    | THREE.BufferAttribute
-    | undefined;
-  const uv = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
-  const polygons: FragmentPolygon[] = [];
-  const triangleCount = Math.floor(position.count / 3);
-
-  for (let triangle = 0; triangle < triangleCount; triangle++) {
-    const start = triangle * 3;
-    const points = [
-      readPosition(position, start),
-      readPosition(position, start + 1),
-      readPosition(position, start + 2),
-    ];
-    const fallbackNormal = getTriangleNormal(points);
-
-    polygons.push({
-      kind: "surface",
-      vertices: points.map((point, corner) => ({
-        normal: readNormal(normal, start + corner, fallbackNormal),
-        point,
-        uv: readUv(uv, start + corner),
-      })),
-    });
-  }
-
-  geometry.dispose();
-
-  return makePiece({
-    capStats: [],
-    depth: 0,
-    id: 0,
-    polygons,
-  });
+  return new THREE.Vector3(Math.cos(angle) * radius, z, Math.sin(angle) * radius);
 }
 
 function polygonArea(vertices: FragmentVertex[]) {
@@ -521,12 +485,13 @@ function polygonArea(vertices: FragmentVertex[]) {
 
   let area = 0;
   const origin = vertices[0].point;
+  const edgeA = new THREE.Vector3();
+  const edgeB = new THREE.Vector3();
 
   for (let index = 1; index < vertices.length - 1; index++) {
-    area += new THREE.Vector3()
-      .subVectors(vertices[index].point, origin)
-      .cross(new THREE.Vector3().subVectors(vertices[index + 1].point, origin))
-      .length() * 0.5;
+    edgeA.subVectors(vertices[index].point, origin);
+    edgeB.subVectors(vertices[index + 1].point, origin);
+    area += edgeA.cross(edgeB).length() * 0.5;
   }
 
   return area;
@@ -547,23 +512,98 @@ function makePiece({
   let totalArea = 0;
 
   polygons.forEach((polygon) => {
-    totalArea += polygonArea(polygon.vertices);
+    if (polygon.kind === "surface") {
+      totalArea += polygonArea(polygon.vertices);
+    }
     polygon.vertices.forEach((vertex) => box.expandByPoint(vertex.point));
   });
 
-  const center = box.isEmpty()
-    ? new THREE.Vector3()
-    : box.getCenter(new THREE.Vector3());
+  const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
 
-  return {
-    box,
-    capStats,
-    center,
-    depth,
-    id,
-    polygons,
-    totalArea,
+  return { box, capStats, center, depth, id, polygons, totalArea };
+}
+
+// The source mesh as one piece, welded: every distinct position becomes one
+// shared Vector3, whatever the glTF's own indexing did at seams.
+function makeSourcePiece(sourceGeometry: THREE.BufferGeometry): FragmentPiece {
+  const geometry = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone();
+
+  if (!geometry.getAttribute("normal")) {
+    geometry.computeVertexNormals();
+  }
+
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const normal = geometry.getAttribute("normal") as THREE.BufferAttribute;
+  const weld = new Map<string, THREE.Vector3>();
+  const polygons: FragmentPolygon[] = [];
+  const triangleCount = Math.floor(position.count / 3);
+  const fallback = new THREE.Vector3(0, 1, 0);
+
+  const pointAt = (index: number) => {
+    const x = position.getX(index);
+    const y = position.getY(index);
+    const z = position.getZ(index);
+    const key = `${x},${y},${z}`;
+    let point = weld.get(key);
+
+    if (!point) {
+      point = new THREE.Vector3(x, y, z);
+      weld.set(key, point);
+    }
+
+    return point;
   };
+
+  for (let triangle = 0; triangle < triangleCount; triangle++) {
+    const start = triangle * 3;
+    const vertices: FragmentVertex[] = [];
+
+    for (let corner = 0; corner < 3; corner++) {
+      const index = start + corner;
+      const n = new THREE.Vector3(normal.getX(index), normal.getY(index), normal.getZ(index));
+
+      vertices.push({
+        normal: n.lengthSq() > 1e-12 ? n.normalize() : fallback.clone(),
+        point: pointAt(index),
+      });
+    }
+
+    if (
+      vertices[0].point !== vertices[1].point &&
+      vertices[1].point !== vertices[2].point &&
+      vertices[0].point !== vertices[2].point
+    ) {
+      polygons.push({ kind: "surface", vertices });
+    }
+  }
+
+  geometry.dispose();
+
+  const piece = makePiece({ capStats: [], depth: 0, id: 0, polygons });
+  const flat = new Float64Array(polygons.length * 9);
+
+  polygons.forEach((polygon, index) => {
+    for (let corner = 0; corner < 3; corner++) {
+      const point = polygon.vertices[corner].point;
+
+      flat[index * 9 + corner * 3] = point.x;
+      flat[index * 9 + corner * 3 + 1] = point.y;
+      flat[index * 9 + corner * 3 + 2] = point.z;
+    }
+  });
+  piece.flat = flat;
+
+  return piece;
+}
+
+// Union-find over shared points: the islands a piece is made of. Points
+// are matched by position (to a fraction of a micron), not by object: a
+// cut across an already-cut edge, or two caps meeting along a line, make
+// the same point twice over.
+const COMPONENT_KEY_SCALE = 1e5;
+
+function componentKey(point: THREE.Vector3) {
+  return `${Math.round(point.x * COMPONENT_KEY_SCALE)},${Math.round(point.y * COMPONENT_KEY_SCALE)},${Math.round(point.z * COMPONENT_KEY_SCALE)}`;
 }
 
 function splitConnectedComponents(piece: FragmentPiece) {
@@ -571,60 +611,80 @@ function splitConnectedComponents(piece: FragmentPiece) {
     return [piece];
   }
 
-  const polygonsByPoint = new Map<string, number[]>();
+  const ids = new Map<string, number>();
+  const idOfPoint = (point: THREE.Vector3) => {
+    const key = componentKey(point);
+    let id = ids.get(key);
 
-  piece.polygons.forEach((polygon, polygonIndex) => {
-    const keys = new Set(
-      polygon.vertices.map((vertex) => pointKey(vertex.point, CAP_KEY_SCALE)),
-    );
-
-    keys.forEach((key) => {
-      polygonsByPoint.set(key, [
-        ...(polygonsByPoint.get(key) ?? []),
-        polygonIndex,
-      ]);
-    });
-  });
-
-  const visited = new Set<number>();
-  const components: FragmentPolygon[][] = [];
-
-  piece.polygons.forEach((_, startIndex) => {
-    if (visited.has(startIndex)) {
-      return;
+    if (id === undefined) {
+      id = ids.size;
+      ids.set(key, id);
     }
 
-    const component: FragmentPolygon[] = [];
-    const queue = [startIndex];
+    return id;
+  };
+  const parent = new Map<number, number>();
+  const find = (id: number) => {
+    let root = id;
 
-    visited.add(startIndex);
-
-    while (queue.length > 0) {
-      const polygonIndex = queue.pop() as number;
-      const polygon = piece.polygons[polygonIndex];
-
-      component.push(polygon);
-
-      polygon.vertices.forEach((vertex) => {
-        const key = pointKey(vertex.point, CAP_KEY_SCALE);
-
-        polygonsByPoint.get(key)?.forEach((neighborIndex) => {
-          if (!visited.has(neighborIndex)) {
-            visited.add(neighborIndex);
-            queue.push(neighborIndex);
-          }
-        });
-      });
+    while (parent.get(root) !== root) {
+      root = parent.get(root) as number;
     }
 
-    components.push(component);
+    let cursor = id;
+
+    while (cursor !== root) {
+      const next = parent.get(cursor) as number;
+      parent.set(cursor, root);
+      cursor = next;
+    }
+
+    return root;
+  };
+  const union = (a: number, b: number) => {
+    const rootA = find(a);
+    const rootB = find(b);
+
+    if (rootA !== rootB) {
+      parent.set(rootA, rootB);
+    }
+  };
+
+  piece.polygons.forEach((polygon) => {
+    const first = idOfPoint(polygon.vertices[0].point);
+
+    if (!parent.has(first)) parent.set(first, first);
+
+    for (let index = 1; index < polygon.vertices.length; index++) {
+      const id = idOfPoint(polygon.vertices[index].point);
+
+      if (!parent.has(id)) parent.set(id, id);
+      union(first, id);
+    }
   });
 
-  return components.map((polygons, componentIndex) =>
+  const groups = new Map<number, FragmentPolygon[]>();
+
+  piece.polygons.forEach((polygon) => {
+    const root = find(idOfPoint(polygon.vertices[0].point));
+    const group = groups.get(root);
+
+    if (group) {
+      group.push(polygon);
+    } else {
+      groups.set(root, [polygon]);
+    }
+  });
+
+  if (groups.size === 1) {
+    return [piece];
+  }
+
+  return Array.from(groups.values()).map((polygons, componentIndex) =>
     makePiece({
       capStats: piece.capStats,
       depth: piece.depth,
-      id: piece.id * 1000 + componentIndex,
+      id: piece.id * 8 + componentIndex,
       polygons,
     }),
   );
@@ -632,9 +692,7 @@ function splitConnectedComponents(piece: FragmentPiece) {
 
 function getPlaneBasis(normal: THREE.Vector3) {
   const reference =
-    Math.abs(normal.y) < 0.92
-      ? new THREE.Vector3(0, 1, 0)
-      : new THREE.Vector3(1, 0, 0);
+    Math.abs(normal.y) < 0.92 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
   const u = new THREE.Vector3().crossVectors(reference, normal).normalize();
   const v = new THREE.Vector3().crossVectors(normal, u).normalize();
 
@@ -644,60 +702,71 @@ function getPlaneBasis(normal: THREE.Vector3) {
 function signedLoopArea(points: THREE.Vector2[]) {
   let area = 0;
 
-  points.forEach((point, index) => {
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
     const next = points[(index + 1) % points.length];
 
     area += point.x * next.y - next.x * point.y;
-  });
+  }
 
   return area * 0.5;
 }
 
-function cleanLoop(points: THREE.Vector3[], plane: SplitPlane) {
-  const { u, v } = getPlaneBasis(plane.normal);
-  let loop = points.filter(
-    (point, index) =>
-      index === 0 ||
-      point.distanceToSquared(points[index - 1]) > MIN_CAP_SEGMENT_LENGTH_SQ,
-  );
+function pointInLoop(point: THREE.Vector2, loop: THREE.Vector2[]) {
+  let inside = false;
 
-  if (
-    loop.length > 1 &&
-    loop[0].distanceToSquared(loop[loop.length - 1]) <=
-      MIN_CAP_SEGMENT_LENGTH_SQ
-  ) {
-    loop = loop.slice(0, -1);
+  for (let index = 0, previous = loop.length - 1; index < loop.length; previous = index++) {
+    const a = loop[index];
+    const b = loop[previous];
+
+    if (
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+    ) {
+      inside = !inside;
+    }
   }
 
-  const loopUv = loop.map((point) => new THREE.Vector2(point.dot(u), point.dot(v)));
+  return inside;
+}
 
-  if (signedLoopArea(loopUv) < 0) {
+// Orients a traced loop counter-clockwise in the plane and strips the
+// points that sit exactly on a straight run (a cut across an earlier, flat
+// cap makes those). The stripped points are kept in `edgeChains`, one chain
+// per surviving edge, so the cap can still be stitched to the surface
+// vertex for vertex.
+function cleanLoop(points: THREE.Vector3[], plane: SplitPlane) {
+  const { u, v } = getPlaneBasis(plane.normal);
+  const loop = points.filter((point, index) => index === 0 || point !== points[index - 1]);
+
+  if (loop.length > 1 && loop[0] === loop[loop.length - 1]) {
+    loop.pop();
+  }
+
+  const toUv = (point: THREE.Vector3) => new THREE.Vector2(point.dot(u), point.dot(v));
+
+  if (signedLoopArea(loop.map(toUv)) < 0) {
     loop.reverse();
   }
 
-  const orientedUv = loop.map(
-    (point) => new THREE.Vector2(point.dot(u), point.dot(v)),
-  );
+  const uv = loop.map(toUv);
   let cornerIndices = loop
     .map((_, index) => index)
     .filter((index) => {
-      const previous = orientedUv[(index - 1 + orientedUv.length) % orientedUv.length];
-      const point = orientedUv[index];
-      const next = orientedUv[(index + 1) % orientedUv.length];
+      const previous = uv[(index - 1 + uv.length) % uv.length];
+      const point = uv[index];
+      const next = uv[(index + 1) % uv.length];
       const before = point.clone().sub(previous);
       const after = next.clone().sub(point);
 
-      if (before.lengthSq() <= 0.0000000001 || after.lengthSq() <= 0.0000000001) {
+      if (before.lengthSq() <= 1e-20 || after.lengthSq() <= 1e-20) {
         return false;
       }
 
       before.normalize();
       after.normalize();
 
-      return !(
-        Math.abs(before.x * after.y - before.y * after.x) < 0.00001 &&
-        before.dot(after) > 0.999
-      );
+      return !(Math.abs(before.x * after.y - before.y * after.x) < 1e-5 && before.dot(after) > 0.999);
     });
 
   if (cornerIndices.length < 3) {
@@ -723,157 +792,47 @@ function cleanLoop(points: THREE.Vector3[], plane: SplitPlane) {
   return {
     edgeChains,
     points: cleaned,
-    uv: cleaned.map((point) => new THREE.Vector2(point.dot(u), point.dot(v))),
+    uv: cornerIndices.map((index) => uv[index]),
   };
 }
 
-function snapToPlane(point: THREE.Vector3, plane: SplitPlane) {
-  const snapped = new THREE.Vector3(
-    Math.round(point.x * CAP_KEY_SCALE) / CAP_KEY_SCALE,
-    Math.round(point.y * CAP_KEY_SCALE) / CAP_KEY_SCALE,
-    Math.round(point.z * CAP_KEY_SCALE) / CAP_KEY_SCALE,
-  );
-
-  snapped.addScaledVector(plane.normal, plane.constant - plane.normal.dot(snapped));
-
-  return snapped;
-}
-
-function getPolygonCutSegment(polygon: FragmentPolygon, plane: SplitPlane) {
-  const intersections: THREE.Vector3[] = [];
-
-  const pushIntersection = (point: THREE.Vector3) => {
-    const snapped = snapToPlane(point, plane);
-
-    if (
-      intersections.every(
-        (existing) => existing.distanceToSquared(snapped) > MIN_CAP_SEGMENT_LENGTH_SQ,
-      )
-    ) {
-      intersections.push(snapped);
-    }
-  };
-
-  polygon.vertices.forEach((current, index) => {
-    const next = polygon.vertices[(index + 1) % polygon.vertices.length];
-    const currentDistance = plane.normal.dot(current.point) - plane.constant;
-    const nextDistance = plane.normal.dot(next.point) - plane.constant;
-
-    if (Math.abs(currentDistance) <= CLIP_EPSILON) {
-      pushIntersection(current.point);
-    }
-
-    if (currentDistance * nextDistance < -CLIP_EPSILON * CLIP_EPSILON) {
-      const denominator = currentDistance - nextDistance;
-      const t =
-        Math.abs(denominator) > 0.0000001
-          ? THREE.MathUtils.clamp(currentDistance / denominator, 0, 1)
-          : 0;
-
-      pushIntersection(interpolateVertex(current, next, t, plane).point);
-    }
-  });
-
-  if (
-    intersections.length === 2 &&
-    intersections[0].distanceToSquared(intersections[1]) > MIN_CAP_SEGMENT_LENGTH_SQ
-  ) {
-    return [intersections[0], intersections[1]] as const;
-  }
-
-  return null;
-}
-
-function clipPolygonSide(
-  polygon: FragmentPolygon,
-  plane: SplitPlane,
-  keepSign: -1 | 1,
-): FragmentPolygon | null {
-  const vertices = polygon.vertices;
-  const clipped: FragmentVertex[] = [];
-  const isInside = (distance: number) =>
-    keepSign < 0 ? distance <= CLIP_EPSILON : distance >= -CLIP_EPSILON;
-
-  vertices.forEach((current, index) => {
-    const next = vertices[(index + 1) % vertices.length];
-    const currentDistance = plane.normal.dot(current.point) - plane.constant;
-    const nextDistance = plane.normal.dot(next.point) - plane.constant;
-    const currentInside = isInside(currentDistance);
-    const nextInside = isInside(nextDistance);
-
-    if (currentInside && nextInside) {
-      clipped.push(next);
-      return;
-    }
-
-    if (currentInside !== nextInside) {
-      const denominator = currentDistance - nextDistance;
-      const t =
-        Math.abs(denominator) > 0.0000001
-          ? THREE.MathUtils.clamp(currentDistance / denominator, 0, 1)
-          : 0;
-      const intersection = interpolateVertex(current, next, t, plane);
-
-      clipped.push(intersection);
-
-      if (!currentInside && nextInside) {
-        clipped.push(next);
-      }
-    }
-  });
-
-  if (clipped.length < 3 || polygonArea(clipped) < 0.0000001) {
-    return null;
-  }
-
-  return {
-    kind: polygon.kind,
-    vertices: clipped,
-  };
-}
-
+// Joins the cut segments into closed loops in the plane. Nodes are the
+// shared cut points themselves, so on a closed piece every node has even
+// degree and the loops close without any tolerance.
 function traceCapLoops(
-  segments: Array<readonly [THREE.Vector3, THREE.Vector3]>,
+  segments: Array<readonly [FragmentVertex, FragmentVertex]>,
   plane: SplitPlane,
 ) {
   const { u, v } = getPlaneBasis(plane.normal);
-  const points = new Map<string, CapGraphPoint>();
-  const edges: Array<{ aKey: string; bKey: string }> = [];
+  const nodes = new Map<number, CapNode>();
+  const edges: Array<{ a: number; b: number }> = [];
   const edgeKeys = new Set<string>();
-  const adjacency = new Map<string, number[]>();
+  const adjacency = new Map<number, number[]>();
 
-  const getPoint = (point: THREE.Vector3) => {
-    const snapped = snapToPlane(point, plane);
-    const key = pointKey(snapped);
-    const existing = points.get(key);
+  const nodeOf = (point: THREE.Vector3) => {
+    const id = idOf(point);
+    const existing = nodes.get(id);
 
     if (existing) {
       return existing;
     }
 
-    const graphPoint = {
-      key,
-      point: snapped,
-      uv: new THREE.Vector2(snapped.dot(u), snapped.dot(v)),
-    };
+    const node = { id, point, uv: new THREE.Vector2(point.dot(u), point.dot(v)) };
 
-    points.set(key, graphPoint);
+    nodes.set(id, node);
 
-    return graphPoint;
+    return node;
   };
 
   const addEdge = (a: THREE.Vector3, b: THREE.Vector3) => {
-    const from = getPoint(a);
-    const to = getPoint(b);
+    const from = nodeOf(a);
+    const to = nodeOf(b);
 
-    if (
-      from.key === to.key ||
-      from.point.distanceToSquared(to.point) <= MIN_CAP_SEGMENT_LENGTH_SQ
-    ) {
+    if (from.id === to.id) {
       return false;
     }
 
-    const edgeKey = from.key < to.key ? `${from.key}|${to.key}` : `${to.key}|${from.key}`;
+    const edgeKey = from.id < to.id ? `${from.id}|${to.id}` : `${to.id}|${from.id}`;
 
     if (edgeKeys.has(edgeKey)) {
       return false;
@@ -882,39 +841,31 @@ function traceCapLoops(
     const edgeIndex = edges.length;
 
     edgeKeys.add(edgeKey);
-    edges.push({ aKey: from.key, bKey: to.key });
-    adjacency.set(from.key, [...(adjacency.get(from.key) ?? []), edgeIndex]);
-    adjacency.set(to.key, [...(adjacency.get(to.key) ?? []), edgeIndex]);
+    edges.push({ a: from.id, b: to.id });
+    adjacency.set(from.id, [...(adjacency.get(from.id) ?? []), edgeIndex]);
+    adjacency.set(to.id, [...(adjacency.get(to.id) ?? []), edgeIndex]);
+
     return true;
   };
 
   segments.forEach(([a, b]) => {
-    addEdge(a, b);
+    addEdge(a.point, b.point);
   });
 
   let repairedGaps = 0;
-  let oddKeys = Array.from(adjacency.entries())
+  let oddIds = Array.from(adjacency.entries())
     .filter(([, edgeIndices]) => edgeIndices.length % 2 === 1)
-    .map(([key]) => key);
+    .map(([id]) => id);
 
-  while (oddKeys.length >= 2) {
+  while (oddIds.length >= 2) {
     let bestPair: [number, number] | null = null;
     let bestDistance = Infinity;
 
-    for (let fromIndex = 0; fromIndex < oddKeys.length - 1; fromIndex++) {
-      const from = points.get(oddKeys[fromIndex]);
+    for (let fromIndex = 0; fromIndex < oddIds.length - 1; fromIndex++) {
+      const from = nodes.get(oddIds[fromIndex]) as CapNode;
 
-      if (!from) {
-        continue;
-      }
-
-      for (let toIndex = fromIndex + 1; toIndex < oddKeys.length; toIndex++) {
-        const to = points.get(oddKeys[toIndex]);
-
-        if (!to) {
-          continue;
-        }
-
+      for (let toIndex = fromIndex + 1; toIndex < oddIds.length; toIndex++) {
+        const to = nodes.get(oddIds[toIndex]) as CapNode;
         const distance = from.point.distanceToSquared(to.point);
 
         if (distance < bestDistance) {
@@ -924,91 +875,80 @@ function traceCapLoops(
       }
     }
 
-    if (!bestPair || bestDistance > MAX_CAP_REPAIR_DISTANCE_SQ) {
+    if (!bestPair || bestDistance > MAX_CAP_REPAIR_DISTANCE * MAX_CAP_REPAIR_DISTANCE) {
       break;
     }
 
-    const from = points.get(oddKeys[bestPair[0]]);
-    const to = points.get(oddKeys[bestPair[1]]);
+    const from = nodes.get(oddIds[bestPair[0]]) as CapNode;
+    const to = nodes.get(oddIds[bestPair[1]]) as CapNode;
 
-    if (!from || !to || !addEdge(from.point, to.point)) {
+    if (!addEdge(from.point, to.point)) {
       break;
     }
 
     repairedGaps += 1;
-    oddKeys = oddKeys.filter(
-      (_, index) => index !== bestPair?.[0] && index !== bestPair?.[1],
-    );
+    oddIds = oddIds.filter((_, index) => index !== bestPair?.[0] && index !== bestPair?.[1]);
   }
 
   const danglingVertices = Array.from(adjacency.values()).filter(
     (edgeIndices) => edgeIndices.length % 2 === 1,
   ).length;
+  const stats: CapBuildStats = {
+    danglingVertices,
+    holeLoops: 0,
+    loopCount: 0,
+    planeKey: plane.key,
+    repairedGaps,
+    rejectedLoops: 0,
+    segmentCount: edges.length,
+  };
 
-  if (danglingVertices > 0 || edges.length < 3) {
-    return {
-      loops: [] as CapLoop[],
-      stats: {
-        danglingVertices,
-        fallbackLoops: 0,
-        loopCount: 0,
-        planeKey: plane.key,
-        repairedGaps,
-        rejectedLoops: danglingVertices,
-        segmentCount: edges.length,
-        tracedLoopCount: 0,
-      } satisfies CapBuildStats,
-    };
+  if (edges.length < 3) {
+    return { loops: [] as CapLoop[], stats };
   }
+  // Nodes of odd degree are the ends of open chains: the plane leaving the
+  // patch of mesh being cut (see carveCell). Those chains are dropped by
+  // the walk below; only closed loops become caps.
 
-  const visited = new Set<number>();
-  const loops: CapLoop[] = [];
-  let rejectedLoops = 0;
+  // At each node, pair each arriving edge with the one leaving most nearly
+  // opposite to it; a node of degree two has only one pairing, and a node
+  // where the section touches itself (degree four) is crossed straight.
   const pairings = new Map<string, number>();
 
-  adjacency.forEach((edgeIndices, key) => {
+  adjacency.forEach((edgeIndices, id) => {
+    const node = nodes.get(id) as CapNode;
     const remaining = [...edgeIndices];
-    const point = points.get(key);
 
-    while (point && remaining.length >= 2) {
+    while (remaining.length >= 2) {
       const edgeIndex = remaining.shift() as number;
       const edge = edges[edgeIndex];
-      const otherKey = edge.aKey === key ? edge.bKey : edge.aKey;
-      const other = points.get(otherKey);
-
-      if (!other) {
-        continue;
-      }
-
-      const incomingDirection = other.uv.clone().sub(point.uv).normalize();
-      let bestCandidateIndex = 0;
+      const other = nodes.get(edge.a === id ? edge.b : edge.a) as CapNode;
+      const incoming = other.uv.clone().sub(node.uv).normalize();
+      let bestCandidate = 0;
       let bestDot = Infinity;
 
       remaining.forEach((candidateEdgeIndex, candidateIndex) => {
         const candidateEdge = edges[candidateEdgeIndex];
-        const candidateOtherKey =
-          candidateEdge.aKey === key ? candidateEdge.bKey : candidateEdge.aKey;
-        const candidateOther = points.get(candidateOtherKey);
-
-        if (!candidateOther) {
-          return;
-        }
-
-        const candidateDirection = candidateOther.uv.clone().sub(point.uv).normalize();
-        const dot = incomingDirection.dot(candidateDirection);
+        const candidateOther = nodes.get(
+          candidateEdge.a === id ? candidateEdge.b : candidateEdge.a,
+        ) as CapNode;
+        const dot = incoming.dot(candidateOther.uv.clone().sub(node.uv).normalize());
 
         if (dot < bestDot) {
           bestDot = dot;
-          bestCandidateIndex = candidateIndex;
+          bestCandidate = candidateIndex;
         }
       });
 
-      const pairedEdgeIndex = remaining.splice(bestCandidateIndex, 1)[0];
+      const paired = remaining.splice(bestCandidate, 1)[0];
 
-      pairings.set(`${key}|${edgeIndex}`, pairedEdgeIndex);
-      pairings.set(`${key}|${pairedEdgeIndex}`, edgeIndex);
+      pairings.set(`${id}|${edgeIndex}`, paired);
+      pairings.set(`${id}|${paired}`, edgeIndex);
     }
   });
+
+  const visited = new Set<number>();
+  const loops: CapLoop[] = [];
 
   edges.forEach((edge, edgeIndex) => {
     if (visited.has(edgeIndex)) {
@@ -1016,39 +956,32 @@ function traceCapLoops(
     }
 
     const loopPoints: THREE.Vector3[] = [];
-    let currentKey = edge.aKey;
-    let nextKey = edge.bKey;
+    let currentId = edge.a;
+    let nextId = edge.b;
     let currentEdgeIndex = edgeIndex;
 
     for (let guard = 0; guard <= edges.length + 1; guard++) {
-      const point = points.get(currentKey);
-
-      if (!point || visited.has(currentEdgeIndex)) {
+      if (visited.has(currentEdgeIndex)) {
         break;
       }
 
-      loopPoints.push(point.point);
+      loopPoints.push((nodes.get(currentId) as CapNode).point);
       visited.add(currentEdgeIndex);
 
-      if (nextKey === edge.aKey) {
+      if (nextId === edge.a) {
         const cleaned = cleanLoop(loopPoints, plane);
-        const area = signedLoopArea(cleaned.uv);
+        const area = Math.abs(signedLoopArea(cleaned.uv));
 
-        if (cleaned.points.length >= 3 && Math.abs(area) >= MIN_CAP_LOOP_AREA) {
-          loops.push({
-            area: Math.abs(area),
-            edgeChains: cleaned.edgeChains,
-            points: cleaned.points,
-            uv: cleaned.uv,
-          });
+        if (cleaned.points.length >= 3 && area >= MIN_CAP_LOOP_AREA) {
+          loops.push({ area, edgeChains: cleaned.edgeChains, points: cleaned.points, uv: cleaned.uv });
         } else {
-          rejectedLoops += 1;
+          stats.rejectedLoops += 1;
         }
 
         return;
       }
 
-      const nextEdgeIndex = pairings.get(`${nextKey}|${currentEdgeIndex}`);
+      const nextEdgeIndex = pairings.get(`${nextId}|${currentEdgeIndex}`);
 
       if (nextEdgeIndex === undefined || visited.has(nextEdgeIndex)) {
         break;
@@ -1056,93 +989,136 @@ function traceCapLoops(
 
       const nextEdge = edges[nextEdgeIndex];
 
-      currentKey = nextKey;
-      nextKey =
-        nextEdge.aKey === currentKey ? nextEdge.bKey : nextEdge.aKey;
+      currentId = nextId;
+      nextId = nextEdge.a === currentId ? nextEdge.b : nextEdge.a;
       currentEdgeIndex = nextEdgeIndex;
     }
 
-    rejectedLoops += 1;
+    stats.rejectedLoops += 1;
   });
 
-  return {
-    loops,
-    stats: {
-      danglingVertices,
-      fallbackLoops: 0,
-      loopCount: loops.length,
-      planeKey: plane.key,
-      repairedGaps,
-      rejectedLoops,
-      segmentCount: edges.length,
-      tracedLoopCount: loops.length,
-    } satisfies CapBuildStats,
-  };
+  stats.loopCount = loops.length;
+
+  return { loops, stats };
 }
 
-function makeCapPolygons(
-  loops: CapLoop[],
-  plane: SplitPlane,
-  normal: THREE.Vector3,
-) {
+// Which loops are the outline of solid material and which are holes in it
+// (the gap between an arm and the chest, say): a loop nested inside an odd
+// number of others is a hole of its innermost container.
+function groupCapRegions(loops: CapLoop[]) {
+  const containers = loops.map((loop, index) =>
+    loops
+      .map((other, otherIndex) => otherIndex)
+      .filter(
+        (otherIndex) =>
+          otherIndex !== index &&
+          loops[otherIndex].area > loop.area &&
+          pointInLoop(loop.uv[0], loops[otherIndex].uv),
+      ),
+  );
+  const regions: Array<{ contour: CapLoop; holes: CapLoop[] }> = [];
+  const regionByLoop = new Map<number, number>();
+
+  loops.forEach((loop, index) => {
+    if (containers[index].length % 2 === 0) {
+      regionByLoop.set(index, regions.length);
+      regions.push({ contour: loop, holes: [] });
+    }
+  });
+
+  loops.forEach((loop, index) => {
+    if (containers[index].length % 2 === 1) {
+      // Innermost container: the one with the smallest area.
+      const parentIndex = containers[index].reduce((best, candidate) =>
+        loops[candidate].area < loops[best].area ? candidate : best,
+      );
+      const region = regionByLoop.get(parentIndex);
+
+      if (region !== undefined) {
+        regions[region].holes.push(loop);
+      }
+    }
+  });
+
+  return regions;
+}
+
+function makeCapPolygons(loops: CapLoop[], normal: THREE.Vector3) {
   const polygons: FragmentPolygon[] = [];
+  const edgeA = new THREE.Vector3();
+  const edgeB = new THREE.Vector3();
 
-  const pushCapTriangle = (points: THREE.Vector3[], normal: THREE.Vector3) => {
-    const triangleNormal = new THREE.Vector3()
-      .subVectors(points[1], points[0])
-      .cross(new THREE.Vector3().subVectors(points[2], points[0]));
+  const pushCapTriangle = (points: THREE.Vector3[]) => {
+    edgeA.subVectors(points[1], points[0]);
+    edgeB.subVectors(points[2], points[0]);
+    const triangleNormal = edgeA.cross(edgeB);
 
-    if (triangleNormal.lengthSq() <= 0.000000001) {
+    // Only a truly collinear triangle is dropped: the ear triangles earcut
+    // makes along the boundary are routinely thinner than any of the
+    // mesh's own, and rejecting them punches holes in the cap.
+    if (triangleNormal.lengthSq() <= 1e-24) {
       return;
     }
 
-    if (triangleNormal.dot(normal) < 0) {
-      [points[1], points[2]] = [points[2], points[1]];
-    }
+    const ordered = triangleNormal.dot(normal) < 0 ? [points[0], points[2], points[1]] : points;
 
     polygons.push({
       kind: "cap",
-      vertices: points.map((point) => ({
-        normal: normal.clone(),
-        point: point.clone(),
-        uv: new THREE.Vector2(),
-      })),
+      vertices: ordered.map((point) => ({ normal: normal.clone(), point })),
     });
   };
 
-  loops.forEach((loop) => {
-    const triangles = THREE.ShapeUtils.triangulateShape(loop.uv, []);
+  groupCapRegions(loops).forEach(({ contour, holes }) => {
+    const rings = [contour, ...holes];
+    const owner: Array<{ local: number; ring: number }> = [];
 
-    triangles.forEach(([aIndex, bIndex, cIndex]) => {
-      const indices = [aIndex, bIndex, cIndex];
-      const edgeChains = indices.map((fromIndex, edgeIndex) => {
-        const toIndex = indices[(edgeIndex + 1) % 3];
+    rings.forEach((ring, ringIndex) => {
+      ring.uv.forEach((_, local) => owner.push({ local, ring: ringIndex }));
+    });
 
-        if ((fromIndex + 1) % loop.points.length === toIndex) {
-          return loop.edgeChains[fromIndex];
+    const triangles = THREE.ShapeUtils.triangulateShape(
+      contour.uv,
+      holes.map((hole) => hole.uv),
+    );
+
+    const chainFor = (from: number, to: number) => {
+      const a = owner[from];
+      const b = owner[to];
+
+      if (a.ring === b.ring) {
+        const ring = rings[a.ring];
+        const count = ring.points.length;
+
+        if ((a.local + 1) % count === b.local) {
+          return ring.edgeChains[a.local];
         }
 
-        if ((toIndex + 1) % loop.points.length === fromIndex) {
-          return [...loop.edgeChains[toIndex]].reverse();
+        if ((b.local + 1) % count === a.local) {
+          return [...ring.edgeChains[b.local]].reverse();
         }
+      }
 
-        return [loop.points[fromIndex], loop.points[toIndex]];
-      });
-      const enrichedEdges = edgeChains
-        .map((chain, edgeIndex) => ({ chain, edgeIndex }))
+      return [rings[a.ring].points[a.local], rings[b.ring].points[b.local]];
+    };
+
+    triangles.forEach((indices) => {
+      const corners = indices.map((index) => rings[owner[index].ring].points[owner[index].local]);
+      const chains = indices.map((from, edge) => chainFor(from, indices[(edge + 1) % 3]));
+      const enriched = chains
+        .map((chain, edge) => ({ chain, edge }))
         .filter(({ chain }) => chain.length > 2);
 
-      if (enrichedEdges.length === 0) {
-        pushCapTriangle(indices.map((index) => loop.points[index]), normal);
+      if (enriched.length === 0) {
+        pushCapTriangle(corners);
         return;
       }
 
-      if (enrichedEdges.length === 1) {
-        const { chain, edgeIndex } = enrichedEdges[0];
-        const opposite = loop.points[indices[(edgeIndex + 2) % 3]];
+      if (enriched.length === 1) {
+        const { chain, edge } = enriched[0];
+        const opposite = corners[(edge + 2) % 3];
 
         for (let index = 0; index < chain.length - 1; index++) {
-          pushCapTriangle([chain[index], chain[index + 1], opposite], normal);
+          pushCapTriangle([chain[index], chain[index + 1], opposite]);
         }
 
         return;
@@ -1150,28 +1126,20 @@ function makeCapPolygons(
 
       const boundary: THREE.Vector3[] = [];
 
-      edgeChains.forEach((chain, edgeIndex) => {
-        boundary.push(...(edgeIndex === 0 ? chain : chain.slice(1)));
+      chains.forEach((chain, edge) => {
+        boundary.push(...(edge === 0 ? chain : chain.slice(1)));
       });
 
-      if (
-        boundary.length > 1 &&
-        boundary[0].distanceToSquared(boundary[boundary.length - 1]) <=
-          MIN_CAP_SEGMENT_LENGTH_SQ
-      ) {
+      if (boundary.length > 1 && boundary[0] === boundary[boundary.length - 1]) {
         boundary.pop();
       }
 
-      const center = indices
-        .map((index) => loop.points[index])
+      const centroid = corners
         .reduce((sum, point) => sum.add(point), new THREE.Vector3())
         .multiplyScalar(1 / 3);
 
       boundary.forEach((point, index) => {
-        pushCapTriangle(
-          [point, boundary[(index + 1) % boundary.length], center],
-          normal,
-        );
+        pushCapTriangle([point, boundary[(index + 1) % boundary.length], centroid]);
       });
     });
   });
@@ -1179,786 +1147,1195 @@ function makeCapPolygons(
   return polygons;
 }
 
-function splitPiece(
-  piece: FragmentPiece,
+// Cuts a set of polygons by a plane: the polygons on each side (crossing
+// ones clipped), and the segments where the plane meets them. Every point
+// where an edge meets the plane is computed once, from the same end,
+// whichever polygon asks for it, and shared by object.
+function cutPolygons(
+  polygons: FragmentPolygon[],
   plane: SplitPlane,
-  nextId: number,
+  memo: Map<number, FragmentVertex> = new Map(),
 ) {
+  const { constant, normal } = plane;
   const negative: FragmentPolygon[] = [];
   const positive: FragmentPolygon[] = [];
-  const segments: Array<readonly [THREE.Vector3, THREE.Vector3]> = [];
+  const segments: Array<readonly [FragmentVertex, FragmentVertex]> = [];
 
-  piece.polygons.forEach((polygon) => {
-    const cutSegment = getPolygonCutSegment(polygon, plane);
+  const intersect = (a: FragmentVertex, b: FragmentVertex, da: number, db: number) => {
+    const ia = idOf(a.point);
+    const ib = idOf(b.point);
+    const canonical = ia < ib;
+    const key = canonical ? ia * 67108864 + ib : ib * 67108864 + ia;
+    const existing = memo.get(key);
 
-    if (cutSegment) {
-      segments.push(cutSegment);
+    if (existing) {
+      return existing;
     }
 
-    const negativePolygon = clipPolygonSide(polygon, plane, -1);
-    const positivePolygon = clipPolygonSide(polygon, plane, 1);
+    const [p, q, dp, dq] = canonical ? [a, b, da, db] : [b, a, db, da];
+    const t = THREE.MathUtils.clamp(dp / (dp - dq), 0, 1);
+    const point = p.point.clone().lerp(q.point, t);
 
-    if (negativePolygon) {
-      negative.push(negativePolygon);
-    }
+    point.addScaledVector(normal, constant - normal.dot(point));
 
-    if (positivePolygon) {
-      positive.push(positivePolygon);
-    }
-  });
-
-  const capResult = traceCapLoops(segments, plane);
-
-  if (capResult.loops.length === 0) {
-    return {
-      capStats: capResult.stats,
-      children: null,
+    const vertex = {
+      normal: p.normal.clone().lerp(q.normal, t).normalize(),
+      point,
     };
-  }
 
-  negative.push(...makeCapPolygons(capResult.loops, plane, plane.normal));
-  positive.push(
-    ...makeCapPolygons(capResult.loops, plane, plane.normal.clone().negate()),
-  );
+    memo.set(key, vertex);
 
-  const nextCapStats = piece.capStats.concat(capResult.stats);
-  const negativePiece = makePiece({
-    capStats: nextCapStats,
-    depth: piece.depth + 1,
-    id: nextId,
-    polygons: negative,
-  });
-  const positivePiece = makePiece({
-    capStats: nextCapStats,
-    depth: piece.depth + 1,
-    id: nextId + 1,
-    polygons: positive,
-  });
-
-  return {
-    capStats: capResult.stats,
-    children: [negativePiece, positivePiece] as const,
+    return vertex;
   };
-}
 
-function randomUnitVector(seed: number, salt: number) {
-  const z = signedHash(seed, salt);
-  const angle = hash01(seed, salt + 3) * Math.PI * 2;
-  const radius = Math.sqrt(Math.max(1 - z * z, 0));
+  const nx = normal.x;
+  const ny = normal.y;
+  const nz = normal.z;
 
-  return new THREE.Vector3(
-    Math.cos(angle) * radius,
-    z,
-    Math.sin(angle) * radius,
-  );
-}
+  for (const polygon of polygons) {
+    const vertices = polygon.vertices;
+    const count = vertices.length;
+    let hasNegative = false;
+    let hasPositive = false;
 
-function getPieceProjection(piece: FragmentPiece, normal: THREE.Vector3) {
-  let min = Infinity;
-  let max = -Infinity;
+    // Most polygons lie wholly on one side: sort those out without
+    // allocating anything.
+    for (let index = 0; index < count; index++) {
+      const p = vertices[index].point;
+      const d = nx * p.x + ny * p.y + nz * p.z - constant;
 
-  piece.polygons.forEach((polygon) => {
-    polygon.vertices.forEach((vertex) => {
-      const projection = vertex.point.dot(normal);
-
-      min = Math.min(min, projection);
-      max = Math.max(max, projection);
-    });
-  });
-
-  return { max, min };
-}
-
-function findIntersectingCutConstant(
-  piece: FragmentPiece,
-  normal: THREE.Vector3,
-  preferred: number,
-) {
-  let chosen = preferred;
-  let chosenDistance = Infinity;
-
-  piece.polygons.forEach((polygon) => {
-    const projections = polygon.vertices.map((vertex) => vertex.point.dot(normal));
-    const min = Math.min(...projections);
-    const max = Math.max(...projections);
-    const span = max - min;
-
-    if (span <= CLIP_EPSILON * 8) {
-      return;
+      if (d < -CLIP_EPSILON) hasNegative = true;
+      else if (d > CLIP_EPSILON) hasPositive = true;
     }
 
-    const margin = Math.min(span * 0.16, Math.max(span - CLIP_EPSILON * 4, 0) * 0.48);
-    const candidate = THREE.MathUtils.clamp(preferred, min + margin, max - margin);
-    const surfacePenalty = polygon.kind === "surface" ? 0 : span * 0.08;
-    const distance = Math.abs(candidate - preferred) + surfacePenalty;
-
-    if (distance < chosenDistance) {
-      chosen = candidate;
-      chosenDistance = distance;
-    }
-  });
-
-  return chosenDistance < Infinity ? chosen : null;
-}
-
-function normalizedPoint(point: THREE.Vector3, box: THREE.Box3, size: THREE.Vector3) {
-  return new THREE.Vector3(
-    THREE.MathUtils.clamp((point.x - box.min.x) / Math.max(size.x, 0.001), 0, 1),
-    THREE.MathUtils.clamp((point.y - box.min.y) / Math.max(size.y, 0.001), 0, 1),
-    THREE.MathUtils.clamp((point.z - box.min.z) / Math.max(size.z, 0.001), 0, 1),
-  );
-}
-
-function getDetailBias(piece: FragmentPiece, modelBox: THREE.Box3, size: THREE.Vector3) {
-  const normalized = normalizedPoint(piece.center, modelBox, size);
-  const handBand =
-    normalized.y > 0.28 &&
-    normalized.y < 0.56 &&
-    normalized.x < 0.3 &&
-    normalized.z > 0.68
-      ? 2.35
-      : 0;
-  const forearmBand =
-    normalized.y > 0.32 &&
-    normalized.y < 0.7 &&
-    normalized.x < 0.4 &&
-    normalized.z > 0.54
-      ? 1.55
-      : 0;
-  const headBand = normalized.y > 0.72 ? 1.1 : 0;
-  const extremityBand =
-    Math.abs(normalized.x - 0.5) > 0.25 && normalized.y > 0.2 ? 0.65 : 0;
-
-  return 1 + handBand + forearmBand + headBand + extremityBand;
-}
-
-function choosePieceIndex({
-  anchor,
-  locked,
-  modelBox,
-  pieces,
-  seed,
-  size,
-  step,
-}: {
-  anchor: THREE.Vector3;
-  locked: Set<number>;
-  modelBox: THREE.Box3;
-  pieces: FragmentPiece[];
-  seed: number;
-  size: THREE.Vector3;
-  step: number;
-}) {
-  let chosenIndex = -1;
-  let chosenScore = -Infinity;
-  const modelExtent = Math.max(size.length(), 0.001);
-
-  pieces.forEach((piece, index) => {
-    if (locked.has(piece.id) || piece.polygons.length < 18) {
-      return;
-    }
-
-    const handDistance = THREE.MathUtils.clamp(
-      piece.center.distanceTo(anchor) / (modelExtent * 0.55),
-      0,
-      1,
-    );
-    const detailBias = getDetailBias(piece, modelBox, size);
-    const random = 0.88 + hash01(piece.id + step * 17, seed + 401) * 0.24;
-    const score =
-      piece.totalArea *
-      detailBias *
-      random *
-      (1.18 - handDistance * 0.22) /
-      (1 + piece.depth * 0.08);
-
-    if (score > chosenScore) {
-      chosenIndex = index;
-      chosenScore = score;
-    }
-  });
-
-  return chosenIndex;
-}
-
-function makeSplitPlane({
-  anchor,
-  attempt,
-  piece,
-  seed,
-  step,
-}: {
-  anchor: THREE.Vector3;
-  attempt: number;
-  piece: FragmentPiece;
-  seed: number;
-  step: number;
-}): SplitPlane | null {
-  const fromAnchor = piece.center.clone().sub(anchor);
-
-  if (fromAnchor.lengthSq() <= 0.000001) {
-    fromAnchor.set(0.7, 0.25, 0.35);
-  }
-
-  fromAnchor.normalize();
-
-  const crackFamilies = [
-    new THREE.Vector3(0.82, 0.24, 0.32),
-    new THREE.Vector3(-0.28, 0.78, 0.42),
-    new THREE.Vector3(0.24, -0.38, 0.89),
-    new THREE.Vector3(0.66, -0.12, -0.64),
-  ];
-  const family =
-    crackFamilies[(piece.depth + attempt + Math.floor(hash01(step, seed) * 4)) % crackFamilies.length];
-  const random = randomUnitVector(piece.id + step * 31 + attempt * 7, seed + 503);
-  const normal = family
-    .clone()
-    .multiplyScalar(0.55)
-    .add(fromAnchor.clone().multiplyScalar(0.28))
-    .add(random.multiplyScalar(0.5))
-    .normalize();
-  const projection = getPieceProjection(piece, normal);
-  const extent = projection.max - projection.min;
-
-  if (extent < 0.035) {
-    return null;
-  }
-
-  const centerBias = 0.5 + signedHash(piece.id + step * 13, seed + attempt * 19) * 0.17;
-  const attemptNudge = signedHash(attempt + piece.depth * 11, seed + step) * 0.08;
-  const t = THREE.MathUtils.clamp(centerBias + attemptNudge, 0.28, 0.72);
-  const preferredConstant = THREE.MathUtils.lerp(projection.min, projection.max, t);
-  const constant = findIntersectingCutConstant(piece, normal, preferredConstant);
-
-  if (constant === null) {
-    return null;
-  }
-
-  return {
-    constant,
-    key: `split:${piece.id}:${step}:${attempt}`,
-    normal,
-  };
-}
-
-function hasSurfaceAndCap(piece: FragmentPiece) {
-  let surfaceArea = 0;
-  let capArea = 0;
-
-  piece.polygons.forEach((polygon) => {
-    if (polygon.kind === "surface") {
-      surfaceArea += polygonArea(polygon.vertices);
-    } else {
-      capArea += polygonArea(polygon.vertices);
-    }
-  });
-
-  return {
-    capArea,
-    hasBoth: surfaceArea > 0.00001 && capArea > 0.00001,
-    surfaceArea,
-  };
-}
-
-function getSplitRejectionReason(
-  parent: FragmentPiece,
-  a: FragmentPiece,
-  b: FragmentPiece,
-  targetCount: number,
-) {
-  const aParts = hasSurfaceAndCap(a);
-  const bParts = hasSurfaceAndCap(b);
-
-  if (!aParts.hasBoth || !bParts.hasBoth) {
-    return "missingSurfaceOrCap" as const;
-  }
-
-  if (a.polygons.length < 12 || b.polygons.length < 12) {
-    return "degenerateChild" as const;
-  }
-
-  const smallerArea = Math.min(a.totalArea, b.totalArea);
-  const largerArea = Math.max(a.totalArea, b.totalArea);
-  const ratio = smallerArea / Math.max(largerArea, 0.000001);
-  const minimumArea = parent.totalArea / Math.max(targetCount * 5.5, 1);
-
-  if (ratio <= 0.045 || smallerArea <= minimumArea) {
-    return "sizeImbalance" as const;
-  }
-
-  return null;
-}
-
-function fractureIntoPieces(
-  sourceGeometry: THREE.BufferGeometry,
-  options: BuildSolidChunkOptions,
-) {
-  const sourcePiece = makeSourcePiece(sourceGeometry);
-  const modelBox = sourcePiece.box.clone();
-  const size = modelBox.getSize(new THREE.Vector3());
-  const targetCount = THREE.MathUtils.clamp(Math.floor(options.chunkCount), 24, 46);
-  const anchor = new THREE.Vector3(
-    modelBox.min.x + size.x * 0.06,
-    modelBox.min.y + size.y * 0.426,
-    modelBox.min.z + size.z * 0.84,
-  );
-  const pieces = [sourcePiece];
-  const locked = new Set<number>();
-  const stats: SplitStats = {
-    capFailures: {
-      maxDanglingVertices: 0,
-      maxSegments: 0,
-      withDanglingVertices: 0,
-      withNoSegments: 0,
-      withRejectedLoops: 0,
-    },
-    rejectionReasons: {
-      degenerateChild: 0,
-      missingCapLoop: 0,
-      missingSurfaceOrCap: 0,
-      sizeImbalance: 0,
-    },
-    rejectedSplits: 0,
-    retryCount: 0,
-    sourceOpenEdges: countOpenGeometryEdges(sourceGeometry),
-    successfulSplits: 0,
-    targetCount,
-  };
-  let nextId = 1;
-
-  for (let step = 0; pieces.length < targetCount && step < targetCount * 36; step++) {
-    const pieceIndex = choosePieceIndex({
-      anchor,
-      locked,
-      modelBox,
-      pieces,
-      seed: options.seed,
-      size,
-      step,
-    });
-
-    if (pieceIndex < 0) {
-      break;
-    }
-
-    const piece = pieces[pieceIndex];
-    let accepted: [FragmentPiece, FragmentPiece, CapBuildStats] | null = null;
-
-    for (let attempt = 0; attempt < 18; attempt++) {
-      const plane = makeSplitPlane({
-        anchor,
-        attempt,
-        piece,
-        seed: options.seed,
-        step,
-      });
-
-      if (!plane) {
-        stats.retryCount += 1;
-        continue;
-      }
-
-      const split = splitPiece(piece, plane, nextId);
-      const result = split.children;
-      const rejectionReason = result
-        ? getSplitRejectionReason(piece, result[0], result[1], targetCount)
-        : "missingCapLoop";
-
-      if (result && !rejectionReason) {
-        accepted = [result[0], result[1], split.capStats];
-        break;
-      }
-
-      if (rejectionReason) {
-        stats.rejectionReasons[rejectionReason] += 1;
-      }
-
-      if (!result) {
-        stats.capFailures.maxDanglingVertices = Math.max(
-          stats.capFailures.maxDanglingVertices,
-          split.capStats.danglingVertices,
-        );
-        stats.capFailures.maxSegments = Math.max(
-          stats.capFailures.maxSegments,
-          split.capStats.segmentCount,
-        );
-        stats.capFailures.withDanglingVertices += Number(
-          split.capStats.danglingVertices > 0,
-        );
-        stats.capFailures.withNoSegments += Number(split.capStats.segmentCount === 0);
-        stats.capFailures.withRejectedLoops += Number(split.capStats.rejectedLoops > 0);
-      }
-      stats.retryCount += 1;
-    }
-
-    if (!accepted) {
-      locked.add(piece.id);
-      stats.rejectedSplits += 1;
+    if (!hasNegative) {
+      // Coplanar polygons go to one side only.
+      (hasPositive ? positive : negative).push(polygon);
       continue;
     }
 
-    pieces.splice(pieceIndex, 1, accepted[0], accepted[1]);
-    nextId += 2;
-    stats.successfulSplits += 1;
-  }
+    if (!hasPositive) {
+      negative.push(polygon);
+      continue;
+    }
 
-  const connectedPieces = pieces.flatMap(splitConnectedComponents);
+    const distances = vertices.map((vertex) => normal.dot(vertex.point) - constant);
+    const sides = distances.map((d) => (d > CLIP_EPSILON ? 1 : d < -CLIP_EPSILON ? -1 : 0));
 
-  return {
-    anchor,
-    modelBox,
-    pieces: connectedPieces,
-    size,
-    stats,
-  };
-}
+    const negativeVertices: FragmentVertex[] = [];
+    const positiveVertices: FragmentVertex[] = [];
+    const cutPoints: FragmentVertex[] = [];
 
-function pushGeometryVertex({
-  center,
-  normal,
-  normals,
-  point,
-  positions,
-  uv,
-  uvs,
-}: {
-  center: THREE.Vector3;
-  normal: THREE.Vector3;
-  normals: number[];
-  point: THREE.Vector3;
-  positions: number[];
-  uv: THREE.Vector2;
-  uvs: number[];
-}) {
-  positions.push(point.x - center.x, point.y - center.y, point.z - center.z);
-  normals.push(normal.x, normal.y, normal.z);
-  uvs.push(uv.x, uv.y);
-}
+    for (let index = 0; index < count; index++) {
+      const current = vertices[index];
+      const nextIndex = (index + 1) % count;
+      const next = vertices[nextIndex];
+      const side = sides[index];
 
-function pushPolygonTriangles({
-  center,
-  normals,
-  polygon,
-  positions,
-  uvs,
-}: {
-  center: THREE.Vector3;
-  normals: number[];
-  polygon: FragmentPolygon;
-  positions: number[];
-  uvs: number[];
-}) {
-  if (polygon.vertices.length < 3) {
-    return;
-  }
+      if (side <= 0) negativeVertices.push(current);
+      if (side >= 0) positiveVertices.push(current);
+      if (side === 0) cutPoints.push(current);
 
-  for (let index = 1; index < polygon.vertices.length - 1; index++) {
-    [polygon.vertices[0], polygon.vertices[index], polygon.vertices[index + 1]].forEach(
-      (vertex) =>
-        pushGeometryVertex({
-          center,
-          normal: vertex.normal,
-          normals,
-          point: vertex.point,
-          positions,
-          uv: vertex.uv,
-          uvs,
-        }),
+      if (side * sides[nextIndex] < 0) {
+        const crossing = intersect(current, next, distances[index], distances[nextIndex]);
+
+        negativeVertices.push(crossing);
+        positiveVertices.push(crossing);
+        cutPoints.push(crossing);
+      }
+    }
+
+    if (negativeVertices.length >= 3) {
+      negative.push({ kind: polygon.kind, vertices: negativeVertices });
+    }
+
+    if (positiveVertices.length >= 3) {
+      positive.push({ kind: polygon.kind, vertices: positiveVertices });
+    }
+
+    // Our polygons are all convex, so a crossing one meets the plane in
+    // exactly two distinct points.
+    const distinct = cutPoints.filter(
+      (vertex, index) => cutPoints.findIndex((other) => other.point === vertex.point) === index,
     );
+
+    if (distinct.length === 2) {
+      segments.push([distinct[0], distinct[1]] as const);
+    }
   }
+
+  return { negative, positive, segments };
 }
 
-function makeBufferGeometry(polygons: FragmentPolygon[], center: THREE.Vector3) {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-  const geometry = new THREE.BufferGeometry();
+// The whole figure's section on a plane: its cut points (shared by object
+// with whatever else is cut on the plane) and its closed loops. Cached per
+// plane, as the two cells either side of a bisector both need it.
+type PlaneSection = {
+  loops: CapLoop[];
+  memo: Map<number, FragmentVertex>;
+  stats: CapBuildStats;
+};
 
-  polygons.forEach((polygon) =>
-    pushPolygonTriangles({
-      center,
-      normals,
-      polygon,
-      positions,
-      uvs,
-    }),
-  );
+function sectionOf(source: FragmentPiece, plane: SplitPlane, cache: Map<string, PlaneSection>) {
+  const cached = cache.get(plane.key);
 
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
+  if (cached) return cached;
 
-  return geometry;
+  const memo = new Map<number, FragmentVertex>();
+  const segments = sectionSegments(source, plane, memo);
+  const { loops, stats } = traceCapLoops(segments, plane);
+  const section = { loops, memo, stats };
+
+  cache.set(plane.key, section);
+
+  return section;
 }
 
-function addGeometryEdges(
-  edgeCounts: Map<string, number>,
-  geometry: THREE.BufferGeometry,
-  keyScale = CAP_KEY_SCALE,
+// Only the segments where the plane meets the polygons: the same cut
+// points as cutPolygons (same memo), without building either side. This
+// runs over the whole figure once per bisector, so it is kept lean.
+function sectionSegments(
+  source: FragmentPiece,
+  plane: SplitPlane,
+  memo: Map<number, FragmentVertex>,
 ) {
-  const position = geometry.getAttribute("position") as
-    | THREE.BufferAttribute
-    | undefined;
+  const polygons = source.polygons;
+  const flat = source.flat;
+  const { constant, normal } = plane;
+  const nx = normal.x;
+  const ny = normal.y;
+  const nz = normal.z;
+  const segments: Array<readonly [FragmentVertex, FragmentVertex]> = [];
 
-  if (!position) {
-    return;
+  const intersect = (a: FragmentVertex, b: FragmentVertex, da: number, db: number) => {
+    const ia = idOf(a.point);
+    const ib = idOf(b.point);
+    const canonical = ia < ib;
+    const key = canonical ? ia * 67108864 + ib : ib * 67108864 + ia;
+    const existing = memo.get(key);
+
+    if (existing) return existing;
+
+    const [p, q, dp, dq] = canonical ? [a, b, da, db] : [b, a, db, da];
+    const t = THREE.MathUtils.clamp(dp / (dp - dq), 0, 1);
+    const point = p.point.clone().lerp(q.point, t);
+
+    point.addScaledVector(normal, constant - normal.dot(point));
+
+    const vertex = { normal: p.normal.clone().lerp(q.normal, t).normalize(), point };
+
+    memo.set(key, vertex);
+
+    return vertex;
+  };
+
+  for (let polygonIndex = 0; polygonIndex < polygons.length; polygonIndex++) {
+    // Triangles wholly on one side, sorted out on the flat array.
+    if (flat) {
+      const base = polygonIndex * 9;
+      const d0 = nx * flat[base] + ny * flat[base + 1] + nz * flat[base + 2] - constant;
+      const d1 = nx * flat[base + 3] + ny * flat[base + 4] + nz * flat[base + 5] - constant;
+      const d2 = nx * flat[base + 6] + ny * flat[base + 7] + nz * flat[base + 8] - constant;
+
+      if (
+        (d0 < -CLIP_EPSILON && d1 < -CLIP_EPSILON && d2 < -CLIP_EPSILON) ||
+        (d0 > CLIP_EPSILON && d1 > CLIP_EPSILON && d2 > CLIP_EPSILON)
+      ) {
+        continue;
+      }
+    }
+
+    const polygon = polygons[polygonIndex];
+    const vertices = polygon.vertices;
+    const count = vertices.length;
+    let first: FragmentVertex | null = null;
+    let second: FragmentVertex | null = null;
+
+    for (let index = 0; index < count; index++) {
+      const current = vertices[index];
+      const next = vertices[(index + 1) % count];
+      const pc = current.point;
+      const pn = next.point;
+      const dc = nx * pc.x + ny * pc.y + nz * pc.z - constant;
+      const dn = nx * pn.x + ny * pn.y + nz * pn.z - constant;
+      const sc = dc > CLIP_EPSILON ? 1 : dc < -CLIP_EPSILON ? -1 : 0;
+      const sn = dn > CLIP_EPSILON ? 1 : dn < -CLIP_EPSILON ? -1 : 0;
+      let hit: FragmentVertex | null = null;
+
+      if (sc === 0) hit = current;
+      else if (sc * sn < 0) hit = intersect(current, next, dc, dn);
+
+      if (!hit) continue;
+
+      if (!first) first = hit;
+      else if (hit.point !== first.point && !second) second = hit;
+    }
+
+    if (first && second) segments.push([first, second] as const);
   }
 
-  for (let index = 0; index < position.count; index += 3) {
-    const points = [0, 1, 2].map(
-      (offset) =>
-        new THREE.Vector3(
-          position.getX(index + offset),
-          position.getY(index + offset),
-          position.getZ(index + offset),
-        ),
-    );
+  return segments;
+}
+
+// Keeps the side of the plane its normal points away from, capped. The
+// cap is the whole figure's section on the plane (so its loops are always
+// closed, however little of the figure `polygons` covers), trimmed by the
+// piece's other planes; the same shared cut points are used for cap and
+// surface, so they meet vertex for vertex.
+function clipToHalfSpace(
+  polygons: FragmentPolygon[],
+  plane: SplitPlane,
+  otherPlanes: SplitPlane[],
+  source: FragmentPiece,
+  sections: Map<string, PlaneSection>,
+) {
+  const section = sectionOf(source, plane, sections);
+  const { negative } = cutPolygons(polygons, plane, section.memo);
+  let cap = makeCapPolygons(section.loops, plane.normal);
+
+  for (const other of otherPlanes) {
+    if (cap.length === 0) break;
+    // Skip planes the cap is wholly inside of.
+    let crosses = false;
+
+    for (const polygon of cap) {
+      if (polygon.vertices.some((vertex) => other.normal.dot(vertex.point) - other.constant > CLIP_EPSILON)) {
+        crosses = true;
+        break;
+      }
+    }
+
+    if (crosses) cap = cutPolygons(cap, other).negative;
+  }
+
+  negative.push(...cap);
+
+  return { polygons: negative, stats: section.stats };
+}
+
+function countOpenGeometryEdges(geometry: THREE.BufferGeometry) {
+  const triangleGeometry = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const position = triangleGeometry.getAttribute("position") as THREE.BufferAttribute;
+  const edgeCounts = new Map<string, number>();
+  const keyAt = (index: number) =>
+    `${position.getX(index)},${position.getY(index)},${position.getZ(index)}`;
+
+  for (let index = 0; index + 2 < position.count; index += 3) {
+    const keys = [keyAt(index), keyAt(index + 1), keyAt(index + 2)];
 
     [
       [0, 1],
       [1, 2],
       [2, 0],
     ].forEach(([from, to]) => {
-      const fromKey = pointKey(points[from], keyScale);
-      const toKey = pointKey(points[to], keyScale);
-
-      if (fromKey === toKey) {
-        return;
-      }
-
-      const key = fromKey < toKey ? `${fromKey}|${toKey}` : `${toKey}|${fromKey}`;
-
+      if (keys[from] === keys[to]) return;
+      const key = keys[from] < keys[to] ? `${keys[from]}|${keys[to]}` : `${keys[to]}|${keys[from]}`;
       edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
     });
   }
-}
 
-function countOpenGeometryEdges(geometry: THREE.BufferGeometry) {
-  const triangleGeometry = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-  const edgeCounts = new Map<string, number>();
-
-  addGeometryEdges(edgeCounts, triangleGeometry);
   triangleGeometry.dispose();
 
   let openEdges = 0;
 
   edgeCounts.forEach((count) => {
-    if (count % 2 === 1) {
-      openEdges += 1;
-    }
+    if (count % 2 === 1) openEdges += 1;
   });
 
   return openEdges;
 }
 
-function auditChunkBoundaries(
-  chunks: SolidThinkerChunk[],
-  fractureStats: SplitStats,
-): ChunkBoundaryAudit {
-  const details = chunks.map((chunk, chunkIndex) => {
-    const edgeCounts = new Map<string, number>();
-    const surfaceEdgeCounts = new Map<string, number>();
-    const capEdgeCounts = new Map<string, number>();
-    const weldedEdgeCounts = new Map<string, number>();
+// ---------------------------------------------------------------------------
+// Seeds: where the pieces are centred, and the order they break in
+// ---------------------------------------------------------------------------
 
-    addGeometryEdges(edgeCounts, chunk.surfaceGeometry);
-    addGeometryEdges(edgeCounts, chunk.interiorGeometry);
-    addGeometryEdges(surfaceEdgeCounts, chunk.surfaceGeometry);
-    addGeometryEdges(capEdgeCounts, chunk.interiorGeometry);
-    addGeometryEdges(weldedEdgeCounts, chunk.surfaceGeometry, 2000);
-    addGeometryEdges(weldedEdgeCounts, chunk.interiorGeometry, 2000);
+type BreakPhase = "arm" | "head" | "upper" | "lower";
 
-    const countOpenEdges = (counts: Map<string, number>) => {
-      let openEdges = 0;
+type Seed = {
+  phase: BreakPhase;
+  point: THREE.Vector3;
+  /** 0..1 along the phase's own order: arm by path, body and head outward. */
+  position: number;
+};
 
-      counts.forEach((count) => {
-        if (count % 2 === 1) {
-          openEdges += 1;
-        }
-      });
+// Ray parity along +x against the whole mesh: is the point inside the
+// figure? Only used for placing seeds, so plain loops are fine.
+function makeInsideTest(piece: FragmentPiece) {
+  const triangles: THREE.Vector3[][] = [];
 
-      return openEdges;
-    };
-    const openEdges = countOpenEdges(edgeCounts);
-
-    return {
-      capOnlyOpenEdges: countOpenEdges(capEdgeCounts),
-      capStats: chunk.debug?.capStats ?? [],
-      chunkIndex,
-      openEdges,
-      sourceIndex: chunk.debug?.sourceIndex,
-      surfaceOnlyOpenEdges: countOpenEdges(surfaceEdgeCounts),
-      weldedOpenEdges: countOpenEdges(weldedEdgeCounts),
-    };
+  piece.polygons.forEach((polygon) => {
+    for (let index = 1; index < polygon.vertices.length - 1; index++) {
+      triangles.push([
+        polygon.vertices[0].point,
+        polygon.vertices[index].point,
+        polygon.vertices[index + 1].point,
+      ]);
+    }
   });
-  const worstChunks = details
-    .filter((detail) => detail.openEdges > 0)
-    .sort((a, b) => b.openEdges - a.openEdges)
-    .slice(0, 8);
 
-  return {
-    capOnlyOpenEdges: details.reduce(
-      (total, detail) => total + detail.capOnlyOpenEdges,
-      0,
-    ),
-    chunkCount: chunks.length,
-    fractureStats,
-    maxOpenEdges: details.reduce(
-      (maxOpenEdges, detail) => Math.max(maxOpenEdges, detail.openEdges),
-      0,
-    ),
-    missingCapChunks: chunks.filter(
-      (chunk) =>
-        (chunk.interiorGeometry.getAttribute("position")?.count ?? 0) === 0,
-    ).length,
-    openChunks: details.filter((detail) => detail.openEdges > 0).length,
-    surfaceOnlyOpenEdges: details.reduce(
-      (total, detail) => total + detail.surfaceOnlyOpenEdges,
-      0,
-    ),
-    totalOpenEdges: details.reduce(
-      (totalOpenEdges, detail) => totalOpenEdges + detail.openEdges,
-      0,
-    ),
-    weldedOpenEdges: details.reduce(
-      (total, detail) => total + detail.weldedOpenEdges,
-      0,
-    ),
-    worstChunks,
+  // Triangles bucketed on y and z, since the ray runs along x.
+  const box = piece.box;
+  const bins = 48;
+  const binY = (y: number) =>
+    THREE.MathUtils.clamp(Math.floor(((y - box.min.y) / Math.max(box.max.y - box.min.y, 1e-6)) * bins), 0, bins - 1);
+  const binZ = (z: number) =>
+    THREE.MathUtils.clamp(Math.floor(((z - box.min.z) / Math.max(box.max.z - box.min.z, 1e-6)) * bins), 0, bins - 1);
+  const buckets: number[][] = Array.from({ length: bins * bins }, () => []);
+
+  triangles.forEach(([a, b, c], index) => {
+    const y0 = binY(Math.min(a.y, b.y, c.y));
+    const y1 = binY(Math.max(a.y, b.y, c.y));
+    const z0 = binZ(Math.min(a.z, b.z, c.z));
+    const z1 = binZ(Math.max(a.z, b.z, c.z));
+
+    for (let y = y0; y <= y1; y++) {
+      for (let z = z0; z <= z1; z++) buckets[y * bins + z].push(index);
+    }
+  });
+
+  return (point: THREE.Vector3) => {
+    let crossings = 0;
+
+    for (const index of buckets[binY(point.y) * bins + binZ(point.z)]) {
+      const [a, b, c] = triangles[index];
+
+      if (
+        (a.y < point.y && b.y < point.y && c.y < point.y) ||
+        (a.y > point.y && b.y > point.y && c.y > point.y) ||
+        (a.z < point.z && b.z < point.z && c.z < point.z) ||
+        (a.z > point.z && b.z > point.z && c.z > point.z) ||
+        (a.x < point.x && b.x < point.x && c.x < point.x)
+      ) {
+        continue;
+      }
+
+      const e1y = b.y - a.y;
+      const e1z = b.z - a.z;
+      const e2y = c.y - a.y;
+      const e2z = c.z - a.z;
+      const det = e1y * -e2z + e1z * e2y;
+
+      if (Math.abs(det) < 1e-12) continue;
+
+      const f = 1 / det;
+      const sy = point.y - a.y;
+      const sz = point.z - a.z;
+      const u = f * (sy * -e2z + sz * e2y);
+
+      if (u < 0 || u > 1) continue;
+
+      const sx = point.x - a.x;
+      const e1x = b.x - a.x;
+      const e2x = c.x - a.x;
+      const qx = sy * e1z - sz * e1y;
+      const qy = sz * e1x - sx * e1z;
+      const qz = sx * e1y - sy * e1x;
+      const v = f * qx;
+
+      if (v < 0 || u + v > 1) continue;
+
+      const t = f * (e2x * qx + e2y * qy + e2z * qz);
+
+      if (t > 1e-9) crossings += 1;
+    }
+
+    return crossings % 2 === 1;
   };
 }
 
-function maybeLogChunkBoundaryAudit(
-  chunks: SolidThinkerChunk[],
-  fractureStats: SplitStats,
-) {
-  if (
-    typeof window === "undefined" ||
-    !window.location.search.includes("auditChunks")
-  ) {
-    return;
+function distanceToPolyline(point: THREE.Vector3, path: THREE.Vector3[]) {
+  let best = Infinity;
+  let bestAlong = 0;
+  let cursor = 0;
+  const segment = new THREE.Vector3();
+  const toPoint = new THREE.Vector3();
+  const lengths = path.slice(1).map((p, i) => p.distanceTo(path[i]));
+  const total = Math.max(
+    lengths.reduce((sum, length) => sum + length, 0),
+    1e-6,
+  );
+
+  for (let index = 0; index < path.length - 1; index++) {
+    segment.subVectors(path[index + 1], path[index]);
+    toPoint.subVectors(point, path[index]);
+    const t = THREE.MathUtils.clamp(
+      toPoint.dot(segment) / Math.max(segment.lengthSq(), 1e-12),
+      0,
+      1,
+    );
+    const distance = toPoint.addScaledVector(segment, -t).length();
+
+    if (distance < best) {
+      best = distance;
+      bestAlong = (cursor + t * lengths[index]) / total;
+    }
+
+    cursor += lengths[index];
   }
 
-  console.info(
-    "Thinker chunk boundary audit",
-    JSON.stringify(auditChunkBoundaries(chunks, fractureStats), null, 2),
-  );
+  return { along: bestAlong, distance: best };
 }
 
-function getPieceReleaseDistance(piece: FragmentPiece, point: THREE.Vector3) {
-  let minimumDistanceSq = Infinity;
-  const yaw = Math.PI / 3;
-  const cosine = Math.cos(yaw);
-  const sine = Math.sin(yaw);
-  const targetX = point.x * cosine + point.z * sine;
-  const targetDepth = -point.x * sine + point.z * cosine;
+// Points spaced along the path, closer together near its start.
+function pointsAlongPath(path: THREE.Vector3[], count: number, seed: number) {
+  const lengths = path.slice(1).map((p, i) => p.distanceTo(path[i]));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  const points: Array<{ along: number; point: THREE.Vector3 }> = [];
 
-  piece.polygons.forEach((polygon) => {
+  for (let index = 0; index < count; index++) {
+    const even = count <= 1 ? 0 : index / (count - 1);
+    const along = THREE.MathUtils.clamp(
+      Math.pow(even, ARM_SEED_DENSITY) + signedHash(index, seed + 301) * 0.015,
+      0,
+      1,
+    );
+    let remaining = along * total;
+    let segmentIndex = 0;
+
+    while (segmentIndex < lengths.length - 1 && remaining > lengths[segmentIndex]) {
+      remaining -= lengths[segmentIndex];
+      segmentIndex += 1;
+    }
+
+    const t = lengths[segmentIndex] > 0 ? remaining / lengths[segmentIndex] : 0;
+    const point = path[segmentIndex].clone().lerp(path[segmentIndex + 1], t);
+
+    points.push({ along, point });
+  }
+
+  return points;
+}
+
+// Farthest-point sampling over the candidates: the next seed is always the
+// candidate furthest from every seed placed so far, which spreads them
+// evenly through the volume.
+function spreadSeeds(
+  candidates: THREE.Vector3[],
+  count: number,
+  existing: THREE.Vector3[],
+  seed: number,
+) {
+  const chosen: THREE.Vector3[] = [];
+  const nearest = candidates.map((candidate) =>
+    existing.reduce((best, point) => Math.min(best, candidate.distanceTo(point)), Infinity),
+  );
+
+  for (let placed = 0; placed < count && candidates.length > 0; placed++) {
+    let bestIndex = -1;
+    let bestDistance = -Infinity;
+
+    candidates.forEach((candidate, index) => {
+      const score = nearest[index] * (0.9 + hash01(index + placed * 7, seed + 311) * 0.2);
+
+      if (score > bestDistance) {
+        bestDistance = score;
+        bestIndex = index;
+      }
+    });
+
+    if (bestIndex < 0 || !isFinite(bestDistance)) break;
+
+    const point = candidates[bestIndex];
+
+    chosen.push(point);
+    candidates.forEach((candidate, index) => {
+      nearest[index] = Math.min(nearest[index], candidate.distanceTo(point));
+    });
+  }
+
+  return chosen;
+}
+
+function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed[] {
+  const modelBox = source.box;
+  const size = modelBox.getSize(new THREE.Vector3());
+  const toModel = (fraction: [number, number, number]) =>
+    new THREE.Vector3(
+      modelBox.min.x + size.x * fraction[0],
+      modelBox.min.y + size.y * fraction[1],
+      modelBox.min.z + size.z * fraction[2],
+    );
+  const path = options.breakPath.map(toModel);
+  const headFloor = modelBox.min.y + size.y * options.headFrom;
+  const legsCeiling = modelBox.min.y + size.y * options.legsFrom;
+  const inside = makeInsideTest(source);
+  const seeds: Seed[] = [];
+
+  // Arm: along the path, pushed a little into the limb.
+  const armPoints = pointsAlongPath(path, options.armPieces, options.seed);
+  const pathInset = new THREE.Vector3(...options.pathInset);
+
+  armPoints.forEach(({ along, point }) => {
+    seeds.push({ phase: "arm", point: point.clone().add(pathInset), position: along });
+  });
+
+  // Body and head: candidates are surface points pushed inward along their
+  // normals, kept if they land inside the figure and clear of the arm.
+  const candidates: Array<{ point: THREE.Vector3; phase: BreakPhase }> = [];
+  const stride = Math.max(1, Math.floor(source.polygons.length / 1400));
+
+  for (let index = 0; index < source.polygons.length; index += stride) {
+    const polygon = source.polygons[index];
+    const centroid = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+
     polygon.vertices.forEach((vertex) => {
-      const projectedX = vertex.point.x * cosine + vertex.point.z * sine;
-      const projectedDepth = -vertex.point.x * sine + vertex.point.z * cosine;
-      const deltaX = projectedX - targetX;
-      const deltaY = vertex.point.y - point.y;
-      const deltaDepth = (projectedDepth - targetDepth) * 0.78;
+      centroid.add(vertex.point);
+      normal.add(vertex.normal);
+    });
+    centroid.multiplyScalar(1 / polygon.vertices.length);
+    normal.normalize();
 
-      minimumDistanceSq = Math.min(
-        minimumDistanceSq,
-        deltaX * deltaX + deltaY * deltaY + deltaDepth * deltaDepth,
-      );
+    const depth = 0.1 + hash01(index, options.seed + 331) * 0.14;
+    const point = centroid.addScaledVector(normal, -depth);
+
+    if (distanceToPolyline(point, path).distance < ARM_CLEARANCE) continue;
+    if (!inside(point)) continue;
+
+    candidates.push({
+      phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
+      point,
+    });
+  }
+
+  const armSeedPoints = seeds.map((seed) => seed.point);
+  const bodySeeds = spreadSeeds(
+    candidates.filter((candidate) => candidate.phase !== "head").map((c) => c.point),
+    options.bodyPieces,
+    armSeedPoints,
+    options.seed,
+  );
+  const headSeeds = spreadSeeds(
+    candidates.filter((candidate) => candidate.phase === "head").map((c) => c.point),
+    options.headPieces,
+    [...armSeedPoints, ...bodySeeds],
+    options.seed + 1,
+  );
+  // Within the head and the upper body the order is front to back along
+  // the flight, which is also the order that keeps each piece's path
+  // clear; the legs and base go together at the end.
+  const direction = new THREE.Vector3(...options.direction).normalize();
+  const frontFirst = (points: THREE.Vector3[]) => {
+    const along = points.map((point) => point.dot(direction));
+    const min = Math.min(...along);
+    const max = Math.max(...along);
+
+    return along.map((value) => 1 - (value - min) / Math.max(max - min, 1e-6));
+  };
+  const bodyOrder = frontFirst(bodySeeds);
+
+  bodySeeds.forEach((point, index) => {
+    seeds.push({
+      phase: point.y < legsCeiling ? "lower" : "upper",
+      point,
+      position: bodyOrder[index],
     });
   });
 
-  return Math.sqrt(minimumDistanceSq);
+  const headOrder = frontFirst(headSeeds);
+
+  headSeeds.forEach((point, index) => {
+    seeds.push({ phase: "head", point, position: headOrder[index] });
+  });
+
+  return seeds;
 }
 
+// ---------------------------------------------------------------------------
+// Cells: the figure clipped to each seed's Voronoi region
+// ---------------------------------------------------------------------------
+
+// The planes that bound a seed's Voronoi region within the figure's
+// bounding box: the box is clipped by every bisector in turn, as a convex
+// polytope, and whichever bisectors survive as faces of it are the ones
+// that can bound the cell. A face may lie wholly inside the figure — a
+// wall between two interior cells that never reaches the surface — so
+// this, not whether the surface crosses a plane, is what decides which
+// planes apply.
+function boundingPlanes(planes: SplitPlane[], box: THREE.Box3) {
+  const min = box.min.clone().addScalar(-0.05);
+  const max = box.max.clone().addScalar(0.05);
+  const corners: THREE.Vector3[] = [];
+
+  for (let index = 0; index < 8; index++) {
+    corners.push(
+      new THREE.Vector3(index & 4 ? max.x : min.x, index & 2 ? max.y : min.y, index & 1 ? max.z : min.z),
+    );
+  }
+
+  type Face = { plane: SplitPlane | null; points: THREE.Vector3[] };
+  let faces: Face[] = [
+    { plane: null, points: [corners[0], corners[2], corners[6], corners[4]] },
+    { plane: null, points: [corners[1], corners[5], corners[7], corners[3]] },
+    { plane: null, points: [corners[0], corners[4], corners[5], corners[1]] },
+    { plane: null, points: [corners[2], corners[3], corners[7], corners[6]] },
+    { plane: null, points: [corners[0], corners[1], corners[3], corners[2]] },
+    { plane: null, points: [corners[4], corners[6], corners[7], corners[5]] },
+  ];
+
+  for (const plane of planes) {
+    const { constant, normal } = plane;
+    const memo = new Map<number, THREE.Vector3>();
+    const crossing = (a: THREE.Vector3, b: THREE.Vector3, da: number, db: number) => {
+      const ia = idOf(a);
+      const ib = idOf(b);
+      const key = ia < ib ? ia * 67108864 + ib : ib * 67108864 + ia;
+      let point = memo.get(key);
+
+      if (!point) {
+        const [p, q, dp, dq] = ia < ib ? [a, b, da, db] : [b, a, db, da];
+
+        point = p.clone().lerp(q, dp / (dp - dq));
+        memo.set(key, point);
+      }
+
+      return point;
+    };
+    const next: Face[] = [];
+    const rim = new Set<THREE.Vector3>();
+
+    for (const face of faces) {
+      const distances = face.points.map((point) => normal.dot(point) - constant);
+
+      if (distances.every((d) => d <= CLIP_EPSILON)) {
+        next.push(face);
+        continue;
+      }
+
+      if (distances.every((d) => d >= -CLIP_EPSILON)) {
+        continue;
+      }
+
+      const kept: THREE.Vector3[] = [];
+
+      face.points.forEach((point, index) => {
+        const other = face.points[(index + 1) % face.points.length];
+        const d = distances[index];
+        const dOther = distances[(index + 1) % face.points.length];
+
+        if (d <= CLIP_EPSILON) kept.push(point);
+
+        if ((d < -CLIP_EPSILON && dOther > CLIP_EPSILON) || (d > CLIP_EPSILON && dOther < -CLIP_EPSILON)) {
+          const point2 = crossing(point, other, d, dOther);
+
+          kept.push(point2);
+          rim.add(point2);
+        }
+      });
+
+      if (kept.length >= 3) next.push({ plane: face.plane, points: kept });
+    }
+
+    if (rim.size >= 3) {
+      // The new face: the rim points, in order around their centre.
+      const points = Array.from(rim);
+      const centre = points
+        .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+        .multiplyScalar(1 / points.length);
+      const { u, v } = getPlaneBasis(normal);
+      const angle = (point: THREE.Vector3) => {
+        const offset = point.clone().sub(centre);
+
+        return Math.atan2(offset.dot(v), offset.dot(u));
+      };
+
+      points.sort((a, b) => angle(a) - angle(b));
+      next.push({ plane, points });
+    }
+
+    faces = next;
+  }
+
+  const bounding = new Set<SplitPlane>();
+
+  faces.forEach((face) => {
+    if (face.plane) bounding.add(face.plane);
+  });
+
+  return bounding;
+}
+
+// The piece around one seed: the surface near it, clipped by the bisector
+// against every other seed whose bisector bounds its region, with a cap on
+// each cut. Working on a patch of the surface rather than the whole figure
+// keeps it fast: the patch holds every surface polygon the cell can
+// contain, and the caps come from the whole figure regardless.
+function carveCell(
+  source: FragmentPiece,
+  seeds: Seed[],
+  seedIndex: number,
+  nearestSeed: Int32Array,
+  id: number,
+  sections: Map<string, PlaneSection>,
+) {
+  const seed = seeds[seedIndex].point;
+  let reach = 0;
+
+  source.polygons.forEach((polygon, polygonIndex) => {
+    if (nearestSeed[polygonIndex] !== seedIndex) return;
+    polygon.vertices.forEach((vertex) => {
+      reach = Math.max(reach, vertex.point.distanceTo(seed));
+    });
+  });
+
+  const radius = reach * 1.3 + 0.2;
+  let polygons = source.polygons.filter((polygon) =>
+    polygon.vertices.some((vertex) => vertex.point.distanceTo(seed) <= radius),
+  );
+  const capStats: CapBuildStats[] = [];
+  // Every other seed's bisector, nearest first, oriented away from this
+  // seed. A plane's key names the pair the same way from either side, so
+  // its section is computed once. Every new cap is trimmed by all of them:
+  // a cap is the whole figure's section and can reach past planes the
+  // surface never did.
+  const planes = seeds
+    .map((other, index) => ({ distance: other.point.distanceTo(seed), index }))
+    .filter(({ index }) => index !== seedIndex)
+    .sort((a, b) => a.distance - b.distance)
+    .map(({ index }) => {
+      const other = seeds[index].point;
+      const normal = other.clone().sub(seed).normalize();
+      const midpoint = seed.clone().add(other).multiplyScalar(0.5);
+
+      return {
+        constant: normal.dot(midpoint),
+        key: `bisector:${Math.min(seedIndex, index)}:${Math.max(seedIndex, index)}`,
+        normal,
+      };
+    });
+
+  const bounding = boundingPlanes(planes, source.box);
+
+  for (const plane of planes) {
+    // Only the planes that bound the region can cut the cell; for the rest,
+    // nothing on our side can be across them.
+    if (!bounding.has(plane)) continue;
+
+    const clipped = clipToHalfSpace(
+      polygons,
+      plane,
+      planes.filter((other) => other !== plane),
+      source,
+      sections,
+    );
+
+    polygons = clipped.polygons;
+    capStats.push(clipped.stats);
+  }
+
+  return makePiece({ capStats, depth: 0, id, polygons });
+}
+
+type CellBuild = {
+  piece: FragmentPiece;
+  seed: Seed;
+};
+
+function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: BuildSolidChunkOptions) {
+  const source = makeSourcePiece(sourceGeometry);
+  const seeds = planSeeds(source, options);
+  const stats: SplitStats = {
+    dust: 0,
+    islands: 0,
+    seedCount: seeds.length,
+    sourceOpenEdges: countOpenGeometryEdges(sourceGeometry),
+  };
+  // Which seed each polygon is nearest (by its first vertex): the sizing of
+  // each cell's patch comes from this.
+  const nearestSeed = new Int32Array(source.polygons.length);
+
+  source.polygons.forEach((polygon, polygonIndex) => {
+    const point = polygon.vertices[0].point;
+    let best = 0;
+    let bestDistance = Infinity;
+
+    seeds.forEach((seed, seedIndex) => {
+      const distance = point.distanceToSquared(seed.point);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = seedIndex;
+      }
+    });
+
+    nearestSeed[polygonIndex] = best;
+  });
+
+  const cells: CellBuild[] = [];
+  const sections = new Map<string, PlaneSection>();
+
+  seeds.forEach((seed, seedIndex) => {
+    const cell = carveCell(source, seeds, seedIndex, nearestSeed, seedIndex, sections);
+    // A cell may come apart into islands where the figure folds back on
+    // itself (the gap between an arm and the chest): each island flies as
+    // its own piece, on the seed's schedule.
+    const islands = splitConnectedComponents(cell);
+
+    if (islands.length > 1) stats.islands += islands.length - 1;
+
+    islands.forEach((island, islandIndex) => {
+      // Dust: a few polygons caught in a fold, or a flake of cap with no
+      // surface of its own.
+      if (
+        island.polygons.length < ISLAND_MIN_POLYGONS ||
+        island.totalArea < ISLAND_MIN_AREA ||
+        !island.polygons.some((polygon) => polygon.kind === "surface")
+      ) {
+        stats.dust += 1;
+        return;
+      }
+      island.id = seedIndex * 8 + islandIndex;
+      cells.push({ piece: island, seed });
+    });
+  });
+
+  return { cells, seeds, stats };
+}
+
+function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
+  let triangleCount = 0;
+
+  polygons.forEach((polygon) => {
+    triangleCount += Math.max(polygon.vertices.length - 2, 0);
+  });
+
+  const positions = new Float32Array(triangleCount * 9);
+  const normals = new Float32Array(triangleCount * 9);
+  let cursor = 0;
+
+  const push = (vertex: FragmentVertex) => {
+    positions[cursor] = vertex.point.x - center.x;
+    positions[cursor + 1] = vertex.point.y - center.y;
+    positions[cursor + 2] = vertex.point.z - center.z;
+    normals[cursor] = vertex.normal.x;
+    normals[cursor + 1] = vertex.normal.y;
+    normals[cursor + 2] = vertex.normal.z;
+    cursor += 3;
+  };
+
+  const edgeA = new THREE.Vector3();
+  const edgeB = new THREE.Vector3();
+
+  polygons.forEach((polygon) => {
+    for (let index = 1; index < polygon.vertices.length - 1; index++) {
+      const a = polygon.vertices[0];
+      const b = polygon.vertices[index];
+      const c = polygon.vertices[index + 1];
+
+      // A cut passing through an old cap's vertex leaves slivers that are
+      // zero-area once stored as float32 relative to the centre; they cannot
+      // rasterise, so leave them out. Judged at the stored precision.
+      edgeA.set(
+        Math.fround(b.point.x - center.x) - Math.fround(a.point.x - center.x),
+        Math.fround(b.point.y - center.y) - Math.fround(a.point.y - center.y),
+        Math.fround(b.point.z - center.z) - Math.fround(a.point.z - center.z),
+      );
+      edgeB.set(
+        Math.fround(c.point.x - center.x) - Math.fround(a.point.x - center.x),
+        Math.fround(c.point.y - center.y) - Math.fround(a.point.y - center.y),
+        Math.fround(c.point.z - center.z) - Math.fround(a.point.z - center.z),
+      );
+      if (edgeA.cross(edgeB).lengthSq() <= 1e-20) {
+        continue;
+      }
+
+      push(a);
+      push(b);
+      push(c);
+    }
+  });
+
+  return {
+    normals: normals.subarray(0, cursor),
+    positions: positions.subarray(0, cursor),
+  };
+}
+
+// When each piece starts moving, 0..1 of the breakup, one piece at a time:
+// up the arm from the hand, then the head, then the upper body, then the
+// legs and base together at the end. A piece may never start before a
+// touching neighbour that its own flight points at, or it would drive
+// into it while the neighbour still sits; where that cuts across the
+// order, the neighbour goes just before it instead. Touching means
+// sharing cut points, so this follows the real cuts, not a guess. The
+// islands of one seed count as one piece throughout.
+function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
+  const count = cells.length;
+
+  if (count <= 1) {
+    return cells.map(() => 0);
+  }
+
+  // Units: one per seed, and one for the whole lower body.
+  const lowerUnit = { phase: "lower" as BreakPhase, position: 0 };
+  const unitOf = new Map<Seed | typeof lowerUnit, number>();
+  const unitRank: number[] = [];
+  const unitCells: number[][] = [];
+  const phaseRank: Record<BreakPhase, number> = { arm: 0, head: 1, upper: 2, lower: 3 };
+
+  cells.forEach(({ seed }, index) => {
+    const key = seed.phase === "lower" ? lowerUnit : seed;
+    let unit = unitOf.get(key);
+
+    if (unit === undefined) {
+      unit = unitRank.length;
+      unitOf.set(key, unit);
+      unitRank.push(phaseRank[key.phase] + THREE.MathUtils.clamp(key.position, 0, 0.999));
+      unitCells.push([]);
+    }
+
+    unitCells[unit].push(index);
+  });
+
+  const unitCount = unitRank.length;
+  const cellUnit = cells.map(({ seed }) => unitOf.get(seed.phase === "lower" ? lowerUnit : seed) as number);
+  const cutPointIds = cells.map(({ piece }) => {
+    const ids = new Set<number>();
+
+    piece.polygons.forEach((polygon) => {
+      if (polygon.kind === "cap") {
+        polygon.vertices.forEach((vertex) => ids.add(idOf(vertex.point)));
+      }
+    });
+
+    return ids;
+  });
+  const touching = (a: number, b: number) => {
+    const [small, big] =
+      cutPointIds[a].size < cutPointIds[b].size ? [cutPointIds[a], cutPointIds[b]] : [cutPointIds[b], cutPointIds[a]];
+
+    for (const id of small) {
+      if (big.has(id)) return true;
+    }
+
+    return false;
+  };
+  // A points at B if, moved a little way along its flight, some of the
+  // face it shares with B ends up inside B's solid. The shared face is
+  // A's cap on the bisector of their seeds; its vertices are where A would
+  // first enter B.
+  const insideTests = cells.map(({ piece }) => makeInsideTest(piece));
+  const probe = new THREE.Vector3();
+  const pointsAt = (a: number, b: number) => {
+    const seedA = cells[a].seed.point;
+    const seedB = cells[b].seed.point;
+    const normal = seedB.clone().sub(seedA);
+
+    if (normal.lengthSq() < 1e-12) return false;
+
+    normal.normalize();
+
+    const constant = normal.dot(seedA.clone().add(seedB).multiplyScalar(0.5));
+    const step = offsets[a].clone().normalize().multiplyScalar(RELEASE_PROBE_STEP);
+    const inside = insideTests[b];
+    let onFace = 0;
+    let entered = 0;
+
+    for (const polygon of cells[a].piece.polygons) {
+      if (polygon.kind !== "cap") continue;
+
+      for (const vertex of polygon.vertices) {
+        if (Math.abs(normal.dot(vertex.point) - constant) > 1e-6) continue;
+        onFace += 1;
+        probe.copy(vertex.point).add(step);
+        if (inside(probe)) entered += 1;
+      }
+    }
+
+    return entered >= 2 && entered >= onFace * RELEASE_PROBE_FRACTION;
+  };
+  // before[u]: units that must start no later than u.
+  const before: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
+
+  for (let a = 0; a < count; a++) {
+    for (let b = a + 1; b < count; b++) {
+      const ua = cellUnit[a];
+      const ub = cellUnit[b];
+
+      if (ua === ub || !touching(a, b)) continue;
+      if (pointsAt(a, b)) before[ua].add(ub);
+      if (pointsAt(b, a)) before[ub].add(ua);
+    }
+  }
+
+  // Two units each needing the other first can only go together.
+  const order: number[][] = [];
+  const placed = new Set<number>();
+
+  while (placed.size < unitCount) {
+    let pick = -1;
+
+    for (let unit = 0; unit < unitCount; unit++) {
+      if (placed.has(unit)) continue;
+      const ready = Array.from(before[unit]).every((other) => placed.has(other));
+
+      if (ready && (pick < 0 || unitRank[unit] < unitRank[pick])) pick = unit;
+    }
+
+    if (pick < 0) {
+      // A cycle: take the unit of lowest rank together with whatever it
+      // is still waiting on.
+      let lowest = -1;
+
+      for (let unit = 0; unit < unitCount; unit++) {
+        if (!placed.has(unit) && (lowest < 0 || unitRank[unit] < unitRank[lowest])) lowest = unit;
+      }
+
+      const group = [lowest, ...Array.from(before[lowest]).filter((other) => !placed.has(other))];
+
+      group.forEach((unit) => placed.add(unit));
+      order.push(group);
+      continue;
+    }
+
+    placed.add(pick);
+    order.push([pick]);
+  }
+
+  const releaseAt = new Array<number>(count).fill(0);
+
+  order.forEach((group, slot) => {
+    const moment = order.length <= 1 ? 0 : (slot / (order.length - 1)) * RELEASE_END;
+
+    group.forEach((unit) => {
+      unitCells[unit].forEach((cell) => {
+        releaseAt[cell] = moment;
+      });
+    });
+  });
+
+  return releaseAt;
+}
+
+/**
+ * Cuts the figure into solid chunks and plans each one's flight.
+ *
+ * The pieces all fly the same way, along `options.direction`: every piece
+ * gets the same push along it, plus a stretch — pieces further along the
+ * direction travel further, so the ones in front never close on the ones
+ * behind — plus a spread sideways from the figure's centre of surface so
+ * neighbours across the line open up too. Together that is an expansion
+ * of space about the centre, stronger along the flight line, which is what
+ * keeps the rigid pieces from passing through one another; the spin is
+ * kept small enough (smaller for bigger pieces) not to undo it.
+ */
 export function buildSolidThinkerChunks(
   sourceGeometry: THREE.BufferGeometry,
   options: BuildSolidChunkOptions,
-) {
-  const { anchor, modelBox, pieces, size, stats } = fractureIntoPieces(
-    sourceGeometry,
-    options,
-  );
-  const commonDirection = new THREE.Vector3(-1.15, -0.36, -0.75).normalize();
-  const sideDirection = new THREE.Vector3(-commonDirection.z, 0, commonDirection.x)
-    .normalize()
-    .multiplyScalar(0.22);
-  const modelExtent = Math.max(size.length(), 0.001);
-  const releaseDirection = new THREE.Vector3(0.58, 0.62, 0.18).normalize();
-  const drafts = pieces.map((piece, index) => {
-    const random = hash01(piece.id, options.seed + 53);
-    const signed = signedHash(piece.id, options.seed + 59);
-    const normalized = normalizedPoint(piece.center, modelBox, size);
-    const handDistance = THREE.MathUtils.clamp(
-      getPieceReleaseDistance(piece, anchor) / (modelExtent * 0.38),
-      0,
-      1,
+): ThinkerChunkBuild {
+  const { cells, seeds, stats } = fractureIntoPieces(sourceGeometry, options);
+  const pieces = cells.map((cell) => cell.piece);
+  const origin = new THREE.Vector3();
+  let weight = 0;
+
+  pieces.forEach((piece) => {
+    origin.addScaledVector(piece.center, piece.totalArea);
+    weight += piece.totalArea;
+  });
+  origin.multiplyScalar(1 / Math.max(weight, 1e-6));
+
+  const direction = new THREE.Vector3(...options.direction).normalize();
+  const along = pieces.map((piece) => piece.center.clone().sub(origin).dot(direction));
+  const minAlong = Math.min(...along);
+  const maxAlong = Math.max(...along);
+  const span = Math.max(maxAlong - minAlong, 1e-6);
+  const driftCenter = new THREE.Vector3();
+  const offsets = pieces.map((piece) => {
+    const fromOrigin = piece.center.clone().sub(origin);
+    const lead = (fromOrigin.dot(direction) - minAlong) / span;
+    const sideways = fromOrigin.clone().addScaledVector(direction, -fromOrigin.dot(direction));
+    const jitter = randomUnitVector(piece.id, options.seed + 23).multiplyScalar(
+      options.spread * 0.025,
     );
-    const fromHand = piece.center.clone().sub(anchor);
-    const directionalWave = THREE.MathUtils.clamp(
-      (fromHand.dot(releaseDirection) / (modelExtent * 0.34) + 1) * 0.5,
-      0,
-      1,
-    );
-    const detailBias = getDetailBias(piece, modelBox, size);
-    const distance =
-      options.spread *
-      (0.78 + random * 0.34 + detailBias * 0.035 + (1 - handDistance) * 0.14);
-    const offset = commonDirection
+
+    return direction
       .clone()
-      .multiplyScalar(distance)
-      .add(sideDirection.clone().multiplyScalar(signed * options.spread * 0.16))
-      .add(new THREE.Vector3(0, signedHash(piece.id, options.seed + 61) * 0.08, 0));
-    const surfacePolygons = piece.polygons.filter(
-      (polygon) => polygon.kind === "surface",
+      .multiplyScalar(options.spread * (FLIGHT_PUSH + FLIGHT_STRETCH * lead))
+      .addScaledVector(sideways, FLIGHT_SPREAD)
+      .add(jitter);
+  });
+  const releaseAt = planReleaseOrder(cells, offsets);
+
+  const chunks = pieces.map((piece, index): ThinkerChunkData => {
+    const offset = offsets[index];
+    const extent = piece.box.getSize(new THREE.Vector3());
+    const radius = extent.length() * 0.5;
+    const spinLimit = THREE.MathUtils.clamp(0.11 / Math.max(radius, 0.05), 0.05, 0.3);
+    const surface = makeFlatArrays(
+      piece.polygons.filter((polygon) => polygon.kind === "surface"),
+      piece.center,
     );
-    const capPolygons = piece.polygons.filter((polygon) => polygon.kind === "cap");
-    const releasePriority =
-      handDistance * 0.72 +
-      directionalWave * 0.18 +
-      THREE.MathUtils.clamp((0.18 - normalized.y) / 0.18, 0, 1) * 0.06 +
-      hash01(piece.id, options.seed + 67) * 0.018;
+    const interior = makeFlatArrays(
+      piece.polygons.filter((polygon) => polygon.kind === "cap"),
+      piece.center,
+    );
+
+    driftCenter.add(offset);
 
     return {
-      chunk: {
-        center: piece.center,
-        debug: {
-          capStats: piece.capStats,
-          sourceIndex: piece.id,
-        },
-        interiorGeometry: makeBufferGeometry(capPolygons, piece.center),
-        offset,
-        releaseAt: 0,
-        scale: 0.94 + random * 0.13,
-        spin: new THREE.Vector3(
-          signedHash(index, options.seed + 71) * Math.PI * 0.11,
-          signedHash(index, options.seed + 73) * Math.PI * 0.14,
-          signedHash(index, options.seed + 79) * Math.PI * 0.09,
-        ),
-        surfaceGeometry: makeBufferGeometry(surfacePolygons, piece.center),
-      } satisfies SolidThinkerChunk,
-      releasePriority,
+      center: [piece.center.x, piece.center.y, piece.center.z],
+      debug: { capStats: piece.capStats, sourceIndex: piece.id },
+      interiorNormals: interior.normals,
+      interiorPositions: interior.positions,
+      offset: [offset.x, offset.y, offset.z],
+      phase: cells[index].seed.phase,
+      radius,
+      releaseAt: releaseAt[index],
+      scale: 0.985,
+      spin: [
+        signedHash(piece.id, options.seed + 71) * spinLimit,
+        signedHash(piece.id, options.seed + 73) * spinLimit,
+        signedHash(piece.id, options.seed + 79) * spinLimit * 0.7,
+      ],
+      surfaceNormals: surface.normals,
+      surfacePositions: surface.positions,
+      travel: Math.min(TRAVEL_WINDOW, 1 - releaseAt[index]),
     };
   });
-  const releaseStart = 0.015;
-  const releaseEnd = 0.95;
-  const sortedDrafts = drafts.sort((a, b) => a.releasePriority - b.releasePriority);
-  const chunks = sortedDrafts.map((draft, order) => {
-    const progress =
-      sortedDrafts.length <= 1 ? 0 : order / Math.max(sortedDrafts.length - 1, 1);
 
-    draft.chunk.releaseAt = THREE.MathUtils.lerp(
-      releaseStart,
-      releaseEnd,
-      Math.pow(progress, 0.72),
+  driftCenter.multiplyScalar(1 / Math.max(chunks.length, 1));
+
+  const hand = seeds.find((seed) => seed.phase === "arm")?.point ?? origin;
+
+  return {
+    breakOrigin: [hand.x, hand.y, hand.z],
+    chunks,
+    drift: [driftCenter.x, driftCenter.y, driftCenter.z],
+    stats,
+  };
+}
+
+/** The typed arrays of a chunk as two geometries: the stone and the cuts. */
+export function makeChunkGeometries(chunk: ThinkerChunkData) {
+  const make = (positions: Float32Array, normals: Float32Array) => {
+    const geometry = new THREE.BufferGeometry();
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    return geometry;
+  };
+
+  return {
+    interiorGeometry: make(chunk.interiorPositions, chunk.interiorNormals),
+    surfaceGeometry: make(chunk.surfacePositions, chunk.surfaceNormals),
+  };
+}
+
+/** Buffers to hand over when posting a build out of a worker. */
+export function chunkTransferables(chunks: ThinkerChunkData[]) {
+  const buffers: ArrayBuffer[] = [];
+
+  chunks.forEach((chunk) => {
+    buffers.push(
+      chunk.surfacePositions.buffer as ArrayBuffer,
+      chunk.surfaceNormals.buffer as ArrayBuffer,
+      chunk.interiorPositions.buffer as ArrayBuffer,
+      chunk.interiorNormals.buffer as ArrayBuffer,
     );
-
-    return draft.chunk;
   });
 
-  maybeLogChunkBoundaryAudit(chunks, stats);
-
-  return chunks;
+  return buffers;
 }

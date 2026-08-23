@@ -5618,10 +5618,10 @@ export default function WeepingCherryTreeCanvas({
       // ---- Text on the glass ---------------------------------------------
       // While the page loads as the television shot the tube shows the
       // name, set like the site's own lockup (Apparel italic), and under it
-      // the tagline in the site's sans. Each is a 2D canvas painted with a
+      // (once, the tagline under it). Each is a 2D canvas painted with a
       // pink phosphor halo, composited into displayTarget so it rides
       // through the raster, scanlines and bloom like any other picture on
-      // the tube. Opacity from sceneFx (glassName / glassTagline).
+      // the tube. Opacity from sceneFx (glassName).
       type GlassTextOptions = {
         text: string;
         // CSS custom property holding the next/font family name — or an
@@ -5774,26 +5774,10 @@ void main() {
         pad: 150,
         letterSpacing: "-0.03em",
         emFrac: 0.17,
-        centerV: 0.6,
-        bloomAlpha: 0.05,
-        haloAlpha: 0.25,
+        centerV: 0.5,
+        bloomAlpha: 0.025,
+        haloAlpha: 0.13,
         haloBlurEm: 0.04,
-      });
-      // The Chinese name under it, in a CJK serif (Noto Serif SC, linked
-      // from the root layout with only these glyphs), tracked wide.
-      const glassTagline = makeGlassText({
-        text: "何雨寒",
-        family: '"Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", serif',
-        fontStyle: "500",
-        fontPx: 220,
-        canvasW: 1536,
-        pad: 150,
-        letterSpacing: "0.16em",
-        emFrac: 0.17,
-        centerV: 0.385,
-        bloomAlpha: 0.03,
-        haloAlpha: 0.15,
-        haloBlurEm: 0.05,
       });
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
@@ -6154,7 +6138,7 @@ void main() {
         const glowPulse =
           1 +
           clamp01(sceneFx.screenGlow) *
-            (0.6 + 0.25 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
+            (0.3 + 0.15 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
         // While the tube is the picture (screenGlow up) the bloom opens up
         // — lower threshold, wider radius — so the bright glass itself
         // blooms into the bezel and the air: a glow, not a tint. It closes
@@ -6163,8 +6147,8 @@ void main() {
         const glowLevel =
           clamp01(sceneFx.screenGlow) *
           smoothstep(0.3, 0.9, clamp01(sceneFx.screenPower));
-        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.62, glowLevel);
-        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.95, glowLevel);
+        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.78, glowLevel);
+        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.7, glowLevel);
         crtBloomPass.strength =
           CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.1 * glowLevel);
         crtComposer.render();
@@ -6457,7 +6441,9 @@ void main() {
 
             // Dark glass outside the raster: unpowered phosphor, grey-green,
             // a touch lighter than black so the dark tube reads as glass.
-            vec3 glass = vec3(0.05, 0.056, 0.053);
+            // The unpowered tube is dark glass; with the room dark too it
+            // is barely there, not a grey slab in a black room.
+            vec3 glass = vec3(0.05, 0.056, 0.053) * mix(0.06, 1.0, uRoomGlass);
             col = mix(glass, col, inRegion);
 
             // Phosphor mask: RGB triads in device pixels with a half-period
@@ -6694,9 +6680,15 @@ void main() {
       // middle of the front and the left half simply is not lit.
       // Nominal intensities; updateCrtRig scales them by sceneFx.roomLight,
       // the incandescent switch-on curve (0 -> flare -> settle at 1).
-      const CRT_KEY_INTENSITY = 900;
-      const CRT_FILL_INTENSITY = 16;
-      const CRT_KICKER_INTENSITY = 55;
+      // The key sits low enough that the set's own printed labels, lit,
+      // stay below white: the lamp picks the set out of an even base light
+      // (crtBase) rather than carrying it alone.
+      // The room is dark: the set is barely there, picked out of an even,
+      // faint base light (crtBase) by a lamp that is little more than a
+      // suggestion, and the tube is the only real light in the shot.
+      const CRT_KEY_INTENSITY = 140;
+      const CRT_FILL_INTENSITY = 6;
+      const CRT_KICKER_INTENSITY = 12;
       const crtKey = new THREE.SpotLight(0xffb0c9, CRT_KEY_INTENSITY, 18, 0.26, 0.55, 2);
       crtKey.position.set(5.6, 2.9, 1.3);
       crtKey.target.position.set(1.05, 0.1, 0.3);
@@ -6733,6 +6725,14 @@ void main() {
       crtKicker.target.position.set(0.2, 0.3, 0);
       crtScene.add(crtKicker.target);
       crtScene.add(crtKicker);
+      // Base: a faint, even, cool light over the whole set, scaled with the
+      // lamp (updateCrtRig), so the half the key does not reach still reads
+      // as a dark television rather than a hole with a screen in it.
+      const CRT_BASE_INTENSITY = 7;
+      // Fraction of the base light left on with the lamp off.
+      const CRT_BASE_DARK = 0.85;
+      const crtBase = new THREE.AmbientLight(0xa39db8, 0);
+      crtScene.add(crtBase);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
       // Tight (distance 1.8): it should catch the bezel lip around the
@@ -6984,6 +6984,9 @@ void main() {
         crtKey.intensity = CRT_KEY_INTENSITY * roomLight;
         crtFill.intensity = CRT_FILL_INTENSITY * roomLight;
         crtKicker.intensity = CRT_KICKER_INTENSITY * roomLight;
+        // The base light is mostly the lamp's; a trace of it stays on so
+        // the set is just there in the dark before the lamp comes on.
+        crtBase.intensity = CRT_BASE_INTENSITY * Math.max(roomLight, CRT_BASE_DARK);
         crtScreenUniforms.uRoomGlass.value = roomLight;
         crtScreenUniforms.uKeyDir.value.copy(crtKey.position).normalize();
         crtScreenUniforms.uFillDir.value.copy(crtFill.position).normalize();
@@ -7070,8 +7073,67 @@ void main() {
             // texture convention GLTFLoader geometry expects.
             const texLoader = new THREE.TextureLoader(manager);
             const maxAniso = renderer.capabilities.getMaxAnisotropy();
-            const loadTex = (url: string, srgb: boolean) => {
-              const t = texLoader.load(url, () => {
+            // The set's printed labels (channel numerals, the badges) are
+            // pure white in the basecolor: lit, they clip and bloom like
+            // little lamps. Fold the brightest texels down toward mid-grey
+            // so print stays print; everything below the knee is untouched.
+            const softenLabels = (texture: THREE.Texture) => {
+              const image = texture.image as HTMLImageElement | undefined;
+              if (!image || !image.width) return;
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) return;
+              ctx.drawImage(image, 0, 0);
+              const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const data = pixels.data;
+              // The body's own texels sit at 30-60; the print and the
+              // lighter trim from about 90 up, the stickers to 255.
+              const knee = 64;
+              const slope = 0.3;
+              for (let i = 0; i < data.length; i += 4) {
+                const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+                if (lum <= knee) continue;
+                const scale = (knee + (lum - knee) * slope) / lum;
+                data[i] *= scale;
+                data[i + 1] *= scale;
+                data[i + 2] *= scale;
+              }
+              ctx.putImageData(pixels, 0, 0);
+              texture.image = canvas;
+              texture.needsUpdate = true;
+            };
+            // The roughness map is 0 (mirror) over the deck, so every
+            // numeral's face throws a hard white highlight of the lamp.
+            // A floor keeps the plastic's sheen but spreads those out.
+            const ROUGHNESS_FLOOR = 110;
+            const floorRoughness = (texture: THREE.Texture) => {
+              const image = texture.image as HTMLImageElement | undefined;
+              if (!image || !image.width) return;
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) return;
+              ctx.drawImage(image, 0, 0);
+              const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const data = pixels.data;
+              // Roughness is the green channel (glTF packing); the file is
+              // greyscale, so lift all three.
+              for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 1] < ROUGHNESS_FLOOR) {
+                  data[i] = data[i + 1] = data[i + 2] = ROUGHNESS_FLOOR;
+                }
+              }
+              ctx.putImageData(pixels, 0, 0);
+              texture.image = canvas;
+              texture.needsUpdate = true;
+            };
+            const loadTex = (url: string, srgb: boolean, kind: "map" | "roughness" | "other" = "other") => {
+              const t = texLoader.load(url, (texture) => {
+                if (kind === "map") softenLabels(texture);
+                if (kind === "roughness") floorRoughness(texture);
                 texturesDone += 1;
                 reportCrtProgress();
               });
@@ -7083,10 +7145,10 @@ void main() {
               return t;
             };
             const tvMaterial = new THREE.MeshStandardMaterial({
-              map: loadTex(CRT_MODEL.textures.map, true),
+              map: loadTex(CRT_MODEL.textures.map, true, "map"),
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
-              roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
+              roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false, "roughness"),
               envMapIntensity: 0.25,
             });
             model.traverse((obj) => {
@@ -7265,12 +7327,6 @@ void main() {
             glassName.updateRect();
             glassName.uniforms.uOpacity.value = clamp01(sceneFx.glassName) * hum;
             renderer.render(glassName.scene, halftoneCamera);
-          }
-          if (sceneFx.glassTagline > 0.001) {
-            glassTagline.updateRect();
-            glassTagline.uniforms.uOpacity.value =
-              clamp01(sceneFx.glassTagline) * hum;
-            renderer.render(glassTagline.scene, halftoneCamera);
           }
           renderer.autoClear = hadAutoClear;
         }
@@ -7948,7 +8004,6 @@ void main() {
         sceneTarget.dispose();
         displayTarget.dispose();
         glassName.dispose();
-        glassTagline.dispose();
         overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();

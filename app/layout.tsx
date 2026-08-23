@@ -52,21 +52,6 @@ export default function RootLayout({
       className={`${inter.variable} ${displaySerif.variable}`}
       lang="en"
     >
-      <head>
-        {/* The Chinese name shown on the television during the load. Only
-            those three glyphs are requested (text=), so the file is a few
-            KB; the canvas overlay loads it via document.fonts. */}
-        <link href="https://fonts.googleapis.com" rel="preconnect" />
-        <link
-          crossOrigin="anonymous"
-          href="https://fonts.gstatic.com"
-          rel="preconnect"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&text=%E4%BD%95%E9%9B%A8%E5%AF%92&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body>
         <SiteBackground />
         {children}

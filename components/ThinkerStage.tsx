@@ -9,35 +9,58 @@ import {
   type KeyboardEvent,
   type MutableRefObject,
   type PointerEvent,
-  type RefObject,
 } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import * as THREE from "three";
 
 import {
-  buildSolidThinkerChunks,
-  loadThinkerGeometry,
+  CAMERA_OFFSET,
+  loadThinkerChunks,
+  THINKER_BASE_YAW,
+} from "@/components/thinkerChunks";
+import {
+  makeChunkGeometries,
+  type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
 
 gsap.registerPlugin(ScrollTrigger);
 
 /**
- * The Thinker, ported from kevinsworks: the figure is cut into 25 solid
- * chunks that drift apart as the page scrolls, drag-rotatable, on a black
- * stage with one hard key. Here it lives inside the home page's panel
- * (the box that grows over the tree scene), and its scroll progress comes
- * from a spacer element the page provides rather than its own sticky
- * section. The progress runs: 0 -> 0.3 the whole stage zooms out from
- * 130% to 100% (the figure arrives too close and settles); 0.35 -> 0.98
- * the breakup, as in the original.
+ * The Thinker, ported from kevinsworks: the figure is cut into solid chunks
+ * that fly away as the page scrolls, drag-rotatable, on a black stage with
+ * one hard key. Here it lives inside the home page's panel (the box that
+ * grows over the tree scene). The page tells it which stretch of scroll it
+ * owns — from the moment the panel starts growing to the end of the page —
+ * and where in that stretch the break begins (a fifth of the way into the
+ * panel's growth, after lukebaffait.fr, whose fragments start streaming
+ * off while its box is still small).
+ *
+ * From the break to 0.96 of the stretch, every piece flies the same way —
+ * left, a little up, toward the viewer — the ones in front further, while
+ * the camera backs off and follows to keep the cloud in view; the last few
+ * percent are a settle.
  *
  * Model: "The Thinker by Auguste Rodin" by Rigsters (Sketchfab), CC-BY-4.0 —
  * see public/model/thinker/license.txt. Geometry only; the textures are
  * not used.
  */
 
-type ProgressRef = MutableRefObject<{ value: number }>;
+/**
+ * Where the scroll is, 0..1 across the stage's stretch, and where in that
+ * stretch the break begins (set from the page's layout on every refresh).
+ */
+type ProgressRef = MutableRefObject<{ breakStart: number; value: number }>;
+
+/** The stage's stretch of the page, in scroll pixels; re-read on refresh. */
+export type ThinkerTiming = () => {
+  /** Scroll position at which the break begins. */
+  breakAt: number;
+  /** Scroll position at which the stage's progress reaches 1. */
+  end: number;
+  /** Scroll position at which the stage's progress starts (0). */
+  start: number;
+};
 type DragRotation = {
   active: boolean;
   lastX: number;
@@ -50,17 +73,57 @@ type DragRotation = {
 };
 type DragRotationRef = MutableRefObject<DragRotation>;
 
-const THINKER_BASE_YAW = Math.PI / 3;
-// The arrival zoom: 130% -> 100% over the first stretch of the scroll.
-const ZOOM_START = 1.3;
-const ZOOM_END_AT = 0.3;
-const HOLD_END = 0.35;
-const BREAK_END = 0.98;
+// Where the breakup ends, as a fraction of the stage's stretch (where it
+// starts comes from the page, see ThinkerTiming).
+const BREAK_END = 0.96;
+// Camera distance to what it looks at: at rest, close on the upper two
+// thirds of the figure; over the breakup it backs off slowly and evenly
+// (on the scroll, not the pieces' easing) while its aim pans down to the
+// figure's middle — but never far enough to keep the whole cloud in the
+// frame: the pieces in front are meant to stream past the edge, as on
+// lukebaffait.fr.
+const CAMERA_DISTANCE = 5.0;
+const CAMERA_DISTANCE_BROKEN = 9.6;
+const CAMERA_DISTANCE_COMPACT = 6.2;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 11.2;
+// Where the camera aims (figure height, centre 0): the chest at rest, the
+// middle once broken.
+const LOOK_AT_Y = 0.55;
+const LOOK_AT_Y_BROKEN = -0.05;
+// How much of the cloud's drift the camera follows: all of it would hide
+// that the pieces are streaming off to one side, none would lose them.
+const DRIFT_FOLLOW = 0.3;
+const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
   return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+// How far along its flight a piece is, in multiples of its planned
+// offset, for how far it is into its own travel window (1 = the window's
+// end): quick off the mark and slowing through the window, so the pieces
+// are visibly peeling off while the panel is still small (as on
+// lukebaffait.fr, whose sequence is mostly played out by the time its box
+// is full), then drifting on steadily the same way for as long as the
+// scroll lasts.
+const DRIFT_ON = 0.3;
+
+function travelAt(x: number) {
+  if (x <= 0) return 0;
+  if (x <= 1) return x * (2 - x);
+  return 1 + (x - 1) * DRIFT_ON;
+}
+
+// How far through the breakup the scroll is, 0..1, linear: the chunks take
+// their travel from this.
+function breakupAt({ breakStart, value }: { breakStart: number; value: number }) {
+  return THREE.MathUtils.clamp(
+    (value - breakStart) / (BREAK_END - breakStart),
+    0,
+    1,
+  );
 }
 
 function usePrefersReducedMotion() {
@@ -75,30 +138,38 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-// Scroll progress 0..1 across the trigger element: from its top entering
-// the bottom of the viewport (it follows the page's own scroll section, so
-// there is no dead zone) to its bottom reaching the bottom.
+// Scroll progress 0..1 across the stretch the page hands over, and the
+// break's place in it, both re-read from the layout on every refresh.
 function useThinkerScrollProgress({
   progressRef,
   reducedMotion,
-  triggerRef,
+  timing,
 }: {
   progressRef: ProgressRef;
   reducedMotion: boolean;
-  triggerRef: RefObject<HTMLElement | null>;
+  timing: ThinkerTiming;
 }) {
   useEffect(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return undefined;
     progressRef.current.value = 0;
-    if (reducedMotion) return undefined;
+    const readBreakStart = () => {
+      const { breakAt, end, start } = timing();
+      progressRef.current.breakStart = THREE.MathUtils.clamp(
+        (breakAt - start) / Math.max(end - start, 1),
+        0,
+        BREAK_END - 0.05,
+      );
+    };
+    readBreakStart();
+    // Marker mode (see DebugMarkers) holds the figure whole.
+    if (reducedMotion || window.location.search.includes("thinkerMarkers")) return undefined;
     const tween = gsap.to(progressRef.current, {
       ease: "none",
       scrollTrigger: {
-        end: "bottom bottom",
-        scrub: 1.08,
-        start: "top bottom",
-        trigger,
+        end: () => timing().end,
+        invalidateOnRefresh: true,
+        onRefresh: readBreakStart,
+        scrub: 0.9,
+        start: () => timing().start,
       },
       value: 1,
     });
@@ -108,56 +179,66 @@ function useThinkerScrollProgress({
       tween.scrollTrigger?.kill();
       tween.kill();
     };
-  }, [progressRef, reducedMotion, triggerRef]);
+  }, [progressRef, reducedMotion, timing]);
 }
 
-function useThinkerGeometry() {
-  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+function useThinkerChunks() {
+  const [build, setBuild] = useState<ThinkerChunkBuild | null>(null);
   useEffect(() => {
     let active = true;
-    let loaded: THREE.BufferGeometry | null = null;
-    loadThinkerGeometry()
+    loadThinkerChunks()
       .then((next) => {
-        loaded = next;
         if (active) {
-          setGeometry(next);
+          setBuild(next);
           ScrollTrigger.refresh();
         }
       })
       .catch((error: unknown) => {
-        console.error("Unable to load thinker model.", error);
+        console.error("Unable to build The Thinker's chunks.", error);
       });
     return () => {
       active = false;
-      loaded?.dispose();
     };
   }, []);
-  return geometry;
+  return build;
 }
 
 function CameraRig({
+  drift,
   progressRef,
   reducedMotion,
 }: {
+  /** Where the cloud's centre ends up relative to the figure's, on stage. */
+  drift: THREE.Vector3;
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
-  const { camera, size } = useThree();
-  const lookAt = useMemo(() => new THREE.Vector3(0, 0.02, 0), []);
+  const { camera, scene, size } = useThree();
+  const lookAt = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const target = useMemo(() => new THREE.Vector3(), []);
 
   useFrame(({ clock }) => {
-    const progress = reducedMotion ? 0 : progressRef.current.value;
-    const breakup = smoothPhase(HOLD_END, BREAK_END, progress);
+    // Linear in the scroll: a slow, even zoom-out and pan.
+    const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const compact = size.width < 720;
-    target.set(
-      compact ? 0.16 - breakup * 0.12 : 0.46 - breakup * 0.22,
-      compact ? 0.12 : 0.24 + breakup * 0.08,
-      compact ? 6.9 : 5.95 - breakup * 0.14,
-    );
+    const distance = compact
+      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, breakup)
+      : THREE.MathUtils.lerp(CAMERA_DISTANCE, CAMERA_DISTANCE_BROKEN, breakup);
+    // Aimed at the chest, panning down to the middle and after the cloud
+    // as it goes; the camera sits up and to the right of that line.
+    lookAt.copy(drift).multiplyScalar(DRIFT_FOLLOW * breakup);
+    lookAt.y += THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup);
+    target.copy(CAMERA_OFFSET).multiplyScalar(distance).add(lookAt);
     if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
     camera.position.lerp(target, 0.08);
     camera.lookAt(lookAt);
+    // The fog follows the camera so the figure stays clear and only the
+    // far side of the cloud sinks into the black.
+    if (scene.fog instanceof THREE.Fog) {
+      const reach = camera.position.distanceTo(lookAt);
+      scene.fog.near = reach + 0.8;
+      scene.fog.far = reach + 5.2;
+    }
   });
   return null;
 }
@@ -173,14 +254,15 @@ function StageLights({
   const rimLightRef = useRef<THREE.DirectionalLight>(null);
 
   useFrame(({ clock }) => {
-    const progress = reducedMotion ? 0 : progressRef.current.value;
-    const breakup = smoothPhase(HOLD_END, BREAK_END, progress);
+    const breakup = reducedMotion ? 0 : travelAt(breakupAt(progressRef.current));
     const pulse = reducedMotion
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
       keyLightRef.current.intensity = 15.5 + breakup * 5.5 + pulse;
+      // The cone opens as the pieces spread, so none fly out of the light.
+      keyLightRef.current.angle = 0.36 + breakup * 0.3;
     }
     if (rimLightRef.current) {
       rimLightRef.current.intensity = 3.2 + breakup * 2.8;
@@ -192,11 +274,11 @@ function StageLights({
       <ambientLight intensity={0.035} />
       <spotLight
         ref={keyLightRef}
-        angle={0.34}
+        angle={0.36}
         castShadow
         color="#ffffff"
         decay={1.05}
-        distance={9}
+        distance={12}
         intensity={15.5}
         penumbra={0.06}
         position={[-3.4, 3.2, 2.8]}
@@ -205,10 +287,10 @@ function StageLights({
         shadow-mapSize-width={2048}
       />
       <spotLight
-        angle={0.24}
+        angle={0.26}
         color="#f4f5ff"
         decay={1.2}
-        distance={8}
+        distance={10}
         intensity={5}
         penumbra={0.05}
         position={[3.2, 2.1, -1.5]}
@@ -225,26 +307,30 @@ function StageLights({
 }
 
 function ChunkedThinker({
+  build,
   dragRotationRef,
   progressRef,
   reducedMotion,
-  sourceGeometry,
 }: {
+  build: ThinkerChunkBuild;
   dragRotationRef: DragRotationRef;
   progressRef: ProgressRef;
   reducedMotion: boolean;
-  sourceGeometry: THREE.BufferGeometry;
 }) {
   const stageRef = useRef<THREE.Group>(null);
   const chunkRefs = useRef<Array<THREE.Group | null>>([]);
   const chunks = useMemo(
     () =>
-      buildSolidThinkerChunks(sourceGeometry, {
-        chunkCount: 25,
-        seed: 211,
-        spread: 1.95,
-      }),
-    [sourceGeometry],
+      build.chunks.map((chunk) => ({
+        ...makeChunkGeometries(chunk),
+        center: new THREE.Vector3(...chunk.center),
+        offset: new THREE.Vector3(...chunk.offset),
+        releaseAt: chunk.releaseAt,
+        scale: chunk.scale,
+        spin: new THREE.Vector3(...chunk.spin),
+        travelWindow: chunk.travel,
+      })),
+    [build],
   );
 
   useEffect(() => {
@@ -257,38 +343,31 @@ function ChunkedThinker({
   }, [chunks]);
 
   useFrame(({ clock, size }) => {
-    const progress = reducedMotion ? 0 : progressRef.current.value;
-    const breakup = reducedMotion ? 0 : smoothPhase(HOLD_END, BREAK_END, progress);
-    const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progress);
-    // Arrival: the whole stage starts at 130% and eases out to 100%.
-    const zoom = reducedMotion
-      ? 1
-      : THREE.MathUtils.lerp(ZOOM_START, 1, smoothPhase(0, ZOOM_END_AT, progress));
+    const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
+    const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
 
     chunks.forEach((chunk, index) => {
       const group = chunkRefs.current[index];
       if (!group) return;
-      const localProgress = THREE.MathUtils.clamp(
-        (breakup - chunk.releaseAt) / Math.max(1 - chunk.releaseAt, 0.24),
+      // Each chunk's flight takes its own window of the breakup once it
+      // has released, then carries on the same way.
+      const localProgress = Math.max(
+        (breakup - chunk.releaseAt) / Math.max(chunk.travelWindow, 0.01),
         0,
-        1,
       );
-      const travel = smoothPhase(0, 1, localProgress) * (1 + settle * 0.12);
+      const travel = travelAt(localProgress) * (1 + settle * 0.06);
+      const turn = Math.min(travel, 1.5);
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
       group.position.copy(chunk.center).addScaledVector(chunk.offset, travel);
       group.position.y += breathing;
-      group.rotation.set(
-        chunk.spin.x * travel,
-        chunk.spin.y * travel,
-        chunk.spin.z * travel,
-      );
-      group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, travel));
+      group.rotation.set(chunk.spin.x * turn, chunk.spin.y * turn, chunk.spin.z * turn);
+      group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));
     });
 
     if (stageRef.current) {
       const compact = size.width < 720;
-      const stageScale = (compact ? 0.92 : 1) * zoom;
+      const stageScale = compact ? 0.92 : 1;
       const drag = dragRotationRef.current;
       drag.yaw = THREE.MathUtils.lerp(drag.yaw, drag.targetYaw, drag.active ? 0.32 : 0.12);
       drag.pitch = THREE.MathUtils.lerp(
@@ -297,24 +376,21 @@ function ChunkedThinker({
         drag.active ? 0.32 : 0.12,
       );
       stageRef.current.scale.setScalar(stageScale);
-      stageRef.current.position.set(compact ? -0.03 : 0.02, -0.08, 0);
+      const spread = travelAt(breakup);
       stageRef.current.rotation.set(
-        -0.1 + breakup * 0.04 + drag.pitch,
-        THINKER_BASE_YAW - breakup * 0.035 + drag.yaw,
+        -0.08 + spread * 0.04 + drag.pitch,
+        THINKER_BASE_YAW - spread * 0.05 + drag.yaw,
         0.012,
       );
     }
   });
 
   return (
-    <group
-      ref={stageRef}
-      position={[0.02, -0.08, 0]}
-      rotation={[-0.1, THINKER_BASE_YAW, 0.012]}
-    >
+    <group ref={stageRef} rotation={[-0.08, THINKER_BASE_YAW, 0.012]}>
+      <DebugMarkers />
       {chunks.map((chunk, index) => (
         <group
-          key={`${index}-${chunk.releaseAt.toFixed(3)}`}
+          key={index}
           ref={(node) => {
             chunkRefs.current[index] = node;
           }}
@@ -346,11 +422,60 @@ function ChunkedThinker({
   );
 }
 
-function StageFloor() {
+// Development aid: `?thinkerMarkers=x,y,z;x,y,z;...` (figure space) draws
+// a coloured sphere at each point, for placing the break path by eye.
+const MARKER_COLOURS = ["#ff2a2a", "#2aff2a", "#2a6aff", "#ffd02a", "#ff2ad0", "#2affff", "#ff8a2a", "#ffffff"];
+
+function DebugMarkers() {
+  const points = useMemo(() => {
+    if (typeof window === "undefined") return [] as THREE.Vector3[];
+    const raw = new URLSearchParams(window.location.search).get("thinkerMarkers");
+    if (!raw) return [] as THREE.Vector3[];
+    return raw.split(";").map((triple) => {
+      const [x, y, z] = triple.split(",").map(Number);
+      return new THREE.Vector3(x, y, z);
+    });
+  }, []);
   return (
-    <mesh position={[0, -1.61, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[13, 13]} />
-      <shadowMaterial color="#000000" opacity={0.82} />
+    <>
+      {points.map((point, index) => (
+        <mesh key={index} position={point} renderOrder={1000}>
+          <sphereGeometry args={[0.07, 12, 12]} />
+          <meshBasicMaterial
+            color={MARKER_COLOURS[index % MARKER_COLOURS.length]}
+            depthTest={false}
+            depthWrite={false}
+            transparent
+          />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+// The figure's shadow on the floor. It fades as the pieces break away —
+// the lower ones fly below it — and never writes depth, so nothing that
+// passes under it is cut off.
+function StageFloor({
+  progressRef,
+  reducedMotion,
+}: {
+  progressRef: ProgressRef;
+  reducedMotion: boolean;
+}) {
+  const materialRef = useRef<THREE.ShadowMaterial>(null);
+
+  useFrame(() => {
+    const spread = reducedMotion ? 0 : travelAt(breakupAt(progressRef.current));
+    if (materialRef.current) {
+      materialRef.current.opacity = 0.82 * (1 - spread);
+    }
+  });
+
+  return (
+    <mesh position={[0, FLOOR_Y, 0]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[14, 14]} />
+      <shadowMaterial ref={materialRef} color="#000000" depthWrite={false} opacity={0.82} />
     </mesh>
   );
 }
@@ -366,10 +491,31 @@ function ThinkerCanvas({
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
-  const geometry = useThinkerGeometry();
+  const build = useThinkerChunks();
+  // The cloud's drift, turned through the stage's resting yaw into the
+  // camera's space.
+  const drift = useMemo(
+    () =>
+      build
+        ? new THREE.Vector3(...build.drift).applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            THINKER_BASE_YAW,
+          )
+        : new THREE.Vector3(),
+    [build],
+  );
   return (
     <Canvas
-      camera={{ far: 100, fov: 34, near: 0.1, position: [0.46, 0.24, 5.95] }}
+      camera={{
+        far: 100,
+        fov: 34,
+        near: 0.1,
+        position: [
+          CAMERA_OFFSET.x * CAMERA_DISTANCE,
+          CAMERA_OFFSET.y * CAMERA_DISTANCE,
+          CAMERA_OFFSET.z * CAMERA_DISTANCE,
+        ],
+      }}
       dpr={[1, 1.75]}
       // Frozen while the panel is closed: no point drawing behind the tree.
       frameloop={active ? "always" : "never"}
@@ -380,20 +526,24 @@ function ThinkerCanvas({
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
       }}
+      // Size from the layout box, not the transformed one: the panel grows
+      // from scale(0), and following that would rebuild the drawing buffer
+      // every frame of the growth at whatever size it had reached.
+      resize={{ offsetSize: true }}
       shadows
       style={{ height: "100%", width: "100%" }}
     >
       <color args={[STAGE_BLACK]} attach="background" />
-      <fog args={[STAGE_BLACK, 5.1, 9.2]} attach="fog" />
-      <CameraRig progressRef={progressRef} reducedMotion={reducedMotion} />
+      <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
+      <CameraRig drift={drift} progressRef={progressRef} reducedMotion={reducedMotion} />
       <StageLights progressRef={progressRef} reducedMotion={reducedMotion} />
-      <StageFloor />
-      {geometry ? (
+      <StageFloor progressRef={progressRef} reducedMotion={reducedMotion} />
+      {build ? (
         <ChunkedThinker
+          build={build}
           dragRotationRef={dragRotationRef}
           progressRef={progressRef}
           reducedMotion={reducedMotion}
-          sourceGeometry={geometry}
         />
       ) : null}
     </Canvas>
@@ -402,14 +552,14 @@ function ThinkerCanvas({
 
 export default function ThinkerStage({
   active,
-  triggerRef,
+  timing,
 }: {
   /** Whether the panel holding the stage is open enough to be seen. */
   active: boolean;
-  /** The scroll spacer whose extent drives the stage's progress. */
-  triggerRef: RefObject<HTMLElement | null>;
+  /** The stretch of the page's scroll the stage owns, and its break point. */
+  timing: ThinkerTiming;
 }) {
-  const progressRef = useRef({ value: 0 });
+  const progressRef = useRef({ breakStart: 0.05, value: 0 });
   const dragRotationRef = useRef<DragRotation>({
     active: false,
     lastX: 0,
@@ -422,6 +572,15 @@ export default function ThinkerStage({
   });
   const [isDragging, setIsDragging] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
+
+  // Exposed so headless captures can read the scrubbed state.
+  useEffect(() => {
+    const debug = { progress: progressRef.current };
+    (window as unknown as Record<string, unknown>).__thinkerStage = debug;
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__thinkerStage;
+    };
+  }, []);
 
   const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRotationRef.current;
@@ -483,7 +642,7 @@ export default function ThinkerStage({
     }
   };
 
-  useThinkerScrollProgress({ progressRef, reducedMotion, triggerRef });
+  useThinkerScrollProgress({ progressRef, reducedMotion, timing });
 
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ background: STAGE_BLACK }}>

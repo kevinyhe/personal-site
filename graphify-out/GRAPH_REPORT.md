@@ -1,16 +1,16 @@
-# Graph Report - arbor-web  (2026-08-20)
+# Graph Report - arbor-web  (2026-08-23)
 
 ## Corpus Check
-- 200 files · ~3,033,093 words
+- 75 files · ~106,025 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 871 nodes · 1107 edges · 148 communities (124 shown, 24 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 18 edges (avg confidence: 0.5)
+- 731 nodes · 1098 edges · 64 communities (47 shown, 17 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 6 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b904bcde`
+- Built from commit: `0c97aa3d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -64,36 +64,25 @@
 - clamp01
 - polyfills.js
 - smoothstep
-- .buildBlossomMeshes
+- TreeTuner.tsx
 - SpatialHash
 - Preserve Typography
+- thinkerFragments.ts
+- loadThinkerGeometry
 - CanopyLobe
-- page.ts
-- webpack.js
-- routes.d.ts
-- CanopyOcclusion
-- validator.ts
-- package.json
-- cache-life.d.ts
+- fbm2
+- carveCell
+- buildSolidThinkerChunks
+- fractureIntoPieces
 - ProblemStatementTransition.tsx
-- package.json
 - AGENTS.md
-- layout.ts
-- page.ts
-- webpack.js
-- routes.d.ts
-- validator.ts
-- createSakuraBlossomGeometry
-- package.json
-- cache-life.d.ts
-- package.json
 - .append
 
 ## God Nodes (most connected - your core abstractions)
-1. `WeepingCherryGenerator` - 41 edges
-2. `lerp()` - 20 edges
-3. `clamp01()` - 19 edges
-4. `WeepingCherryTreeCanvas()` - 16 edges
+1. `WeepingCherryGenerator` - 39 edges
+2. `lerp()` - 19 edges
+3. `clamp01()` - 17 edges
+4. `WeepingCherryTreeCanvas()` - 17 edges
 5. `compilerOptions` - 16 edges
 6. `validate()` - 14 edges
 7. `smoothstep()` - 13 edges
@@ -106,17 +95,17 @@
   .agents/skills/caveman-compress/scripts/compress.py → .agents/skills/caveman-compress/scripts/validate.py
 - `resolveSceneQuality()` --calls--> `getViewportWidth()`  [EXTRACTED]
   components/BareThreeCanvas.tsx → components/viewportMetrics.ts
-- `benchmark_pair()` --calls--> `validate()`  [EXTRACTED]
-  .agents/skills/caveman-compress/scripts/benchmark.py → .agents/skills/caveman-compress/scripts/validate.py
-- `main()` --calls--> `backup_dir_for()`  [EXTRACTED]
-  .agents/skills/caveman-compress/scripts/cli.py → .agents/skills/caveman-compress/scripts/compress.py
-- `main()` --calls--> `compress_file()`  [EXTRACTED]
-  .agents/skills/caveman-compress/scripts/cli.py → .agents/skills/caveman-compress/scripts/compress.py
+- `WeepingCherryTreeCanvas()` --calls--> `addViewportChangeListener()`  [EXTRACTED]
+  components/BareThreeCanvas.tsx → components/viewportMetrics.ts
+- `WeepingCherryTreeCanvas()` --calls--> `getViewportMetrics()`  [EXTRACTED]
+  components/BareThreeCanvas.tsx → components/viewportMetrics.ts
+- `HeroIntro()` --calls--> `loadThinkerChunks()`  [EXTRACTED]
+  components/HeroIntro.tsx → components/thinkerChunks.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (148 total, 24 thin omitted)
+## Communities (64 total, 17 thin omitted)
 
 ### Community 0 - "compilerOptions"
 Cohesion: 0.07
@@ -124,23 +113,23 @@ Nodes (29): autoprefixer, eslint, eslint-config-next, @eslint/eslintrc, devDepen
 
 ### Community 1 - "package.json"
 Cohesion: 0.06
-Nodes (30): d3-force, d3-selection, d3-zoom, gsap, lenis, next, dependencies, d3-force (+22 more)
+Nodes (32): d3-force, d3-selection, d3-zoom, gsap, lenis, next, dependencies, d3-force (+24 more)
 
 ### Community 2 - "What You Must Do When Invoked"
 Cohesion: 0.06
-Nodes (32): ./*, dom, dom.iterable, esnext, .next-b94432/types/**/*.ts, .next-build94432/types/**/*.ts, next-env.d.ts, .next-s3b1e/types/**/*.ts (+24 more)
+Nodes (31): ./*, dom, dom.iterable, esnext, .next-b94432/types/**/*.ts, .next-build94432/types/**/*.ts, next-env.d.ts, .next-s94432/types/**/*.ts (+23 more)
 
 ### Community 3 - "What You Must Do When Invoked"
 Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 4 - "What You Must Do When Invoked"
-Cohesion: 0.11
-Nodes (12): applyBlossomWind(), applyPetalTranslucency(), Branch, branchGrowKey(), createPetalDetailTexture(), createSakuraBudGeometry(), getBranchFrame(), lerp() (+4 more)
+Cohesion: 0.12
+Nodes (11): Branch, createPetalDetailTexture(), createSakuraBlossomGeometry(), createSakuraBudGeometry(), getBranchFrame(), lerp(), makeRng(), randomPointInUnitSphere() (+3 more)
 
 ### Community 5 - "WeepingCherryTreeCanvas"
-Cohesion: 0.20
-Nodes (13): dampSpring(), disposeMaterialTextures(), easeOutCubic(), homographyAdj(), homographyBasis(), homographyMul(), WeepingCherryTreeCanvas(), addViewportChangeListener() (+5 more)
+Cohesion: 0.25
+Nodes (8): dampSpring(), disposeMaterialTextures(), easeOutCubic(), homographyAdj(), homographyBasis(), homographyMul(), resolveSceneQuality(), WeepingCherryTreeCanvas()
 
 ### Community 6 - "devDependencies"
 Cohesion: 0.08
@@ -155,8 +144,8 @@ Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 9 - "clamp01"
-Cohesion: 0.30
-Nodes (11): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getTwigWindAmplitude(), getTwigWindFlutter() (+3 more)
+Cohesion: 0.26
+Nodes (12): arborGustEnvelope(), clamp01(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getTwigWindAmplitude(), getTwigWindFlutter() (+4 more)
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -198,9 +187,13 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 Cohesion: 0.33
 Nodes (4): displaySerif, inter, metadata, SiteBackground()
 
-### Community 28 - ".update"
-Cohesion: 0.39
-Nodes (3): arborGustEnvelope(), FallingPetalSystem, wrapAngle()
+### Community 33 - "CanopyOcclusion"
+Cohesion: 0.35
+Nodes (3): CanopyOcclusion, makeInsideTest(), planReleaseOrder()
+
+### Community 34 - "createSakuraBlossomGeometry"
+Cohesion: 0.08
+Nodes (34): HERO_POSE, HeroIntro(), HeroIntroProps, LOADING_POSE, sceneFx, buildInWorker(), buildOnMainThread(), CAMERA_OFFSET (+26 more)
 
 ### Community 35 - "compress.py"
 Cohesion: 0.12
@@ -247,92 +240,72 @@ Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
 
 ### Community 49 - "polyfills.js"
-Cohesion: 0.22
-Nodes (9): e(), eb(), ib(), nb(), ob(), rb(), sb(), t() (+1 more)
+Cohesion: 0.43
+Nodes (6): addViewportChangeListener(), getViewportHeight(), getViewportMetrics(), getViewportWidth(), readDocumentDimension(), ViewportMetrics
 
 ### Community 50 - "smoothstep"
 Cohesion: 0.06
-Nodes (35): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, BlossomPlacement (+27 more)
+Nodes (34): applyBlossomWind(), applyPetalTranslucency(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE (+26 more)
 
-### Community 51 - ".buildBlossomMeshes"
-Cohesion: 0.12
-Nodes (14): Diff, FirstArg, LayoutProps, MaybeField, Negative, NonNegative, Numeric, OmitWithTag (+6 more)
+### Community 51 - "TreeTuner.tsx"
+Cohesion: 0.33
+Nodes (9): Field, FIELDS, TreeTuner(), freezeBlock(), isTreeTuningEnabled(), setTreeTuning(), TREE_BASE_SCALE, TREE_TUNING_DEFAULT (+1 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
 Nodes (4): Hard Rule, Preserve Typography, Verification, Workflow
 
-### Community 54 - "CanopyLobe"
-Cohesion: 0.22
-Nodes (9): e(), eb(), ib(), nb(), ob(), rb(), sb(), t() (+1 more)
+### Community 54 - "thinkerFragments.ts"
+Cohesion: 0.07
+Nodes (28): ACCESSOR_ITEM_SIZE, AccessorValues, BreakPhase, CapBuildStats, CapLoop, CapNode, CellBuild, COMPONENT_BYTE_SIZE (+20 more)
 
-### Community 55 - "page.ts"
-Cohesion: 0.12
-Nodes (14): Diff, FirstArg, LayoutProps, MaybeField, Negative, NonNegative, Numeric, OmitWithTag (+6 more)
-
-### Community 56 - "webpack.js"
-Cohesion: 0.32
-Nodes (12): applyHandler(), applyInvalidatedModules(), createModuleHotObject(), createRequire(), hotApply(), hotCheck(), internalApply(), setStatus() (+4 more)
-
-### Community 57 - "routes.d.ts"
+### Community 55 - "loadThinkerGeometry"
 Cohesion: 0.17
-Nodes (11): AppRoutes, LayoutProps, LayoutRoutes, LayoutSlotMap, PageProps, PageRoutes, ParamMap, ParamsOf (+3 more)
+Nodes (11): BuildSolidChunkOptions, chunkTransferables(), fetchBuffer(), findMeshWorldMatrix(), getNodeMatrix(), loadThinkerGeometry(), normalizeGeometry(), readAccessor() (+3 more)
 
-### Community 59 - "validator.ts"
+### Community 57 - "fbm2"
+Cohesion: 0.50
+Nodes (4): createBarkTextures(), fbm2(), noiseHash2(), valueNoise2()
+
+### Community 58 - "carveCell"
+Cohesion: 0.29
+Nodes (11): boundingPlanes(), carveCell(), cleanLoop(), clipToHalfSpace(), cutPolygons(), getPlaneBasis(), idOf(), sectionOf() (+3 more)
+
+### Community 59 - "buildSolidThinkerChunks"
 Cohesion: 0.33
-Nodes (5): AppPageConfig, __Check, __IsExpected, LayoutConfig, __Unused
+Nodes (9): buildSolidThinkerChunks(), distanceToPolyline(), hash01(), makeFlatArrays(), planSeeds(), pointsAlongPath(), randomUnitVector(), signedHash() (+1 more)
+
+### Community 60 - "fractureIntoPieces"
+Cohesion: 0.33
+Nodes (7): componentKey(), countOpenGeometryEdges(), fractureIntoPieces(), makePiece(), makeSourcePiece(), polygonArea(), splitConnectedComponents()
 
 ### Community 64 - "ProblemStatementTransition.tsx"
-Cohesion: 0.06
-Nodes (27): elsewhere, facts, metadata, facts, metadata, roles, skillGroups, menuLinks (+19 more)
-
-### Community 103 - "layout.ts"
-Cohesion: 0.12
-Nodes (14): Diff, FirstArg, LayoutProps, MaybeField, Negative, NonNegative, Numeric, OmitWithTag (+6 more)
-
-### Community 104 - "page.ts"
-Cohesion: 0.12
-Nodes (14): Diff, FirstArg, LayoutProps, MaybeField, Negative, NonNegative, Numeric, OmitWithTag (+6 more)
-
-### Community 105 - "webpack.js"
-Cohesion: 0.32
-Nodes (12): applyHandler(), applyInvalidatedModules(), createModuleHotObject(), createRequire(), hotApply(), hotCheck(), internalApply(), setStatus() (+4 more)
-
-### Community 106 - "routes.d.ts"
-Cohesion: 0.17
-Nodes (11): AppRoutes, LayoutProps, LayoutRoutes, LayoutSlotMap, PageProps, PageRoutes, ParamMap, ParamsOf (+3 more)
-
-### Community 107 - "validator.ts"
-Cohesion: 0.33
-Nodes (5): AppPageConfig, __Check, __IsExpected, LayoutConfig, __Unused
-
-### Community 108 - "createSakuraBlossomGeometry"
-Cohesion: 0.40
-Nodes (4): createSakuraBlossomGeometry(), makeRng(), resolveSceneQuality(), sakuraPetalOutline()
+Cohesion: 0.07
+Nodes (19): elsewhere, facts, metadata, facts, metadata, roles, skillGroups, CRT_ASSETS (+11 more)
 
 ### Community 143 - ".append"
-Cohesion: 0.36
+Cohesion: 0.33
 Nodes (3): applyBranchWind(), BranchGeometryBuilder, OccupiedPoint
 
 ## Knowledge Gaps
-- **377 isolated node(s):** `type`, `TEntry`, `SegmentParams`, `PageProps`, `LayoutProps` (+372 more)
+- **321 isolated node(s):** `metadata`, `elsewhere`, `facts`, `metadata`, `skillGroups` (+316 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **24 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `CanopyOcclusion`, `clamp01`, `createSakuraBlossomGeometry`, `.append`, `smoothstep`?**
+- **Why does `WeepingCherryGenerator` connect `What You Must Do When Invoked` to `CanopyOcclusion`, `smoothstep`, `clamp01`, `.append`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Why does `WeepingCherryTreeCanvas()` connect `WeepingCherryTreeCanvas` to `createSakuraBlossomGeometry`, `What You Must Do When Invoked`, `clamp01`, `polyfills.js`, `smoothstep`, `.update`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
-- **Why does `devDependencies` connect `compilerOptions` to `package.json`?**
-  _High betweenness centrality (0.003) - this node is a cross-community bridge._
-- **What connects `type`, `TEntry`, `SegmentParams` to the rest of the system?**
-  _377 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `metadata`, `elsewhere`, `facts` to the rest of the system?**
+  _321 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
   _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
-  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
-- **Should `What You Must Do When Invoked` be split into smaller, more focused modules?**
   _Cohesion score 0.06060606060606061 - nodes in this community are weakly interconnected._
+- **Should `What You Must Do When Invoked` be split into smaller, more focused modules?**
+  _Cohesion score 0.0625 - nodes in this community are weakly interconnected._
 - **Should `What You Must Do When Invoked` be split into smaller, more focused modules?**
   _Cohesion score 0.07407407407407407 - nodes in this community are weakly interconnected._
