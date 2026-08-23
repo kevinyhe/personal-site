@@ -41,10 +41,10 @@ const HERO_POSE = {
 
 // Minimum time the television is on screen before the reveal may start:
 // the switch-on sequence (dark glass 0.35 s, the tube powering up over
-// 0.5 s, the name warming in by ~1.15 s) plus 2.7 s with the name up. The
+// 0.25 s, the name warming in by ~0.9 s) plus 2.7 s with the name up. The
 // tree builds behind it; on a slow machine it simply holds the name a
 // little longer — the tree is never shown loading.
-const TV_DWELL_MS = 3850;
+const TV_DWELL_MS = 3600;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -150,8 +150,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     // the name warms onto the phosphor once the picture is steady.
     const powerOn = gsap.timeline();
     powerOn
-      .to(sceneFx, { screenPower: 1, duration: 0.5, ease: "power1.inOut" }, 0.35)
-      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.15);
+      .to(sceneFx, { screenPower: 1, duration: 0.25, ease: "power1.inOut" }, 0.35)
+      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 0.9);
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
       for (const tween of tweens) tween.kill();
