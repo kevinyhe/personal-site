@@ -5437,7 +5437,7 @@ export default function WeepingCherryTreeCanvas({
       // Line height as a fraction of the glass height, and the block's
       // centre as a fraction up the glass. Above the site band's hero so it
       // never shares a pixel with the "Kevin He." lockup.
-      const TAGLINE_LINE_FRAC = 0.066;
+      const TAGLINE_LINE_FRAC = 0.085;
       const TAGLINE_CENTER_V = 0.62;
       const taglineCanvas = document.createElement("canvas");
       taglineCanvas.width = TAGLINE_CANVAS_W;
@@ -6043,7 +6043,7 @@ void main() {
         return geo;
       };
 
-      // Virtual raster line count for this viewport: ~2.5 device px per
+      // Virtual raster line count for this viewport: ~1.8 device px per
       // line at the END pose (the canvas renders at DPR 1), the coarsest
       // pitch whose scanlines still resolve there. Glass height at the end
       // pose is drawingBufferSize.y * CRT_END_FILL / monitor height. The
@@ -6053,7 +6053,7 @@ void main() {
       // lands, and sizing the raster from it re-pitched every line by ~30%
       // in one frame if the user was already scrolled in.
       const CRT_MONITOR_H = 1.62;
-      const CRT_PX_PER_LINE = 2.5;
+      const CRT_PX_PER_LINE = 1.8;
       const crtRasterLines = () =>
         THREE.MathUtils.clamp(
           Math.round(
