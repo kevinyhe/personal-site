@@ -394,8 +394,21 @@ export type ThinkerChunkBuild = {
 };
 
 export type BuildSolidChunkOptions = {
-  /** Pieces along the arm, from the hand to the shoulder. */
+  /** Pieces along the arm's path beyond the hand. */
   armPieces: number;
+  /**
+   * Seeds placed by hand (figure-space bounding-box fractions, like
+   * breakPath), released before everything else in this order. The first
+   * two sit either side of the palm's diagonal fracture, so the first cut
+   * falls exactly on their bisector.
+   */
+  handSeeds: Array<[number, number, number]>;
+  /**
+   * Extra body seeds placed by hand rather than sampled — guards, so a
+   * neighbouring limb (the knee the hand rests against) keeps its own
+   * pieces instead of being carved into the hand's.
+   */
+  guardSeeds: Array<[number, number, number]>;
   /** Pieces through the rest of the body below the head. */
   bodyPieces: number;
   /**
@@ -416,24 +429,26 @@ export type BuildSolidChunkOptions = {
   seed: number;
   /** Distance scale of the flight, in the figure's units (it is 3.1 tall). */
   spread: number;
-  /**
-   * Anchors of the break's sweep across the body, as fractions of the
-   * figure's bounding box like `breakPath`. Once the arm has gone, the
-   * break front leaves the head and the right knee together and sweeps
-   * to the tail, where the last piece goes.
-   */
-  sweepHead: [number, number, number];
-  sweepKnee: [number, number, number];
-  sweepTail: [number, number, number];
 };
+
+// Once the arm's opening run is done, the break grows outward from the
+// path's end. Distance below that point counts this many times over, so
+// the growth reaches the head well before the legs and the base.
+const DOWNWARD_LAG = 2;
 
 // How the arm's seeds bunch toward the hand: 1 is even, higher is denser at
 // the hand.
 const ARM_SEED_DENSITY = 1.5;
+// Arm path seeds start this far along the path: the stretch before it is
+// the hand, which gets its explicitly placed seeds instead.
+const ARM_PATH_FROM = 0.24;
 // Body seeds keep this far (figure units) from the arm's path.
 const ARM_CLEARANCE = 0.2;
 // The last piece releases this far into the breakup.
 const RELEASE_END = 0.86;
+// The first gap between releases is this many times the last: the trickle
+// of single pieces at the start becomes an exponential cascade by the end.
+const RELEASE_ACCELERATION = 12;
 // How much of the breakup a piece's flight takes once released.
 const TRAVEL_WINDOW = 0.22;
 // Islands smaller than this are dropped as dust.
@@ -1463,7 +1478,8 @@ type BreakPhase = "arm" | "head" | "upper" | "lower";
 type Seed = {
   phase: BreakPhase;
   point: THREE.Vector3;
-  /** 0..1 along the break: arm by path, everything else along the sweep. */
+  /** 0..1 along the break: arm by path, everything else by how soon the
+   * growth outward from the arm's end reaches it. */
   position: number;
 };
 
@@ -1594,8 +1610,10 @@ function pointsAlongPath(path: THREE.Vector3[], count: number, seed: number) {
   for (let index = 0; index < count; index++) {
     const even = count <= 1 ? 0 : index / (count - 1);
     const along = THREE.MathUtils.clamp(
-      Math.pow(even, ARM_SEED_DENSITY) + signedHash(index, seed + 301) * 0.015,
-      0,
+      ARM_PATH_FROM +
+        (1 - ARM_PATH_FROM) * Math.pow(even, ARM_SEED_DENSITY) +
+        signedHash(index, seed + 301) * 0.015,
+      ARM_PATH_FROM,
       1,
     );
     let remaining = along * total;
@@ -1670,7 +1688,17 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
   const inside = makeInsideTest(source);
   const seeds: Seed[] = [];
 
-  // Arm: along the path, pushed a little into the limb.
+  // The hand first, from its own seeds — the first two frame the palm's
+  // diagonal fracture — then the arm along the path, pushed a little into
+  // the limb. Hand seeds take the earliest positions.
+  options.handSeeds.forEach((fractionPoint, index) => {
+    seeds.push({
+      phase: "arm",
+      point: toModel(fractionPoint),
+      position: (index / Math.max(options.handSeeds.length, 1)) * ARM_PATH_FROM,
+    });
+  });
+
   const armPoints = pointsAlongPath(path, options.armPieces, options.seed);
   const pathInset = new THREE.Vector3(...options.pathInset);
 
@@ -1708,11 +1736,14 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
   }
 
   const armSeedPoints = seeds.map((seed) => seed.point);
-  const bodySeeds = spreadSeeds(
-    candidates.filter((candidate) => candidate.phase !== "head").map((c) => c.point),
-    options.bodyPieces,
-    armSeedPoints,
-    options.seed,
+  const guardPoints = options.guardSeeds.map(toModel);
+  const bodySeeds = guardPoints.concat(
+    spreadSeeds(
+      candidates.filter((candidate) => candidate.phase !== "head").map((c) => c.point),
+      options.bodyPieces - guardPoints.length,
+      [...armSeedPoints, ...guardPoints],
+      options.seed,
+    ),
   );
   const headSeeds = spreadSeeds(
     candidates.filter((candidate) => candidate.phase === "head").map((c) => c.point),
@@ -1720,34 +1751,28 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
     [...armSeedPoints, ...bodySeeds],
     options.seed + 1,
   );
-  // Everything but the arm breaks along one sweep: the break front opens
-  // on the head-to-right-knee diagonal (head and knee release together)
-  // and moves from there to the tail, which goes last. The sweep axis
-  // points from the diagonal's midpoint toward the tail, with its
-  // component along the diagonal removed so head and knee project alike.
-  const head = toModel(options.sweepHead);
-  const knee = toModel(options.sweepKnee);
-  const tail = toModel(options.sweepTail);
-  const diagonal = knee.clone().sub(head).normalize();
-  const sweep = tail.clone().sub(head.clone().add(knee).multiplyScalar(0.5));
-
-  sweep.addScaledVector(diagonal, -sweep.dot(diagonal)).normalize();
-
-  const sweepStart = head.dot(sweep);
-  const sweepSpan = Math.max(tail.dot(sweep) - sweepStart, 1e-6);
-  const alongSweep = (point: THREE.Vector3) =>
-    THREE.MathUtils.clamp((point.dot(sweep) - sweepStart) / sweepSpan, 0, 1);
+  // Everything but the arm breaks in the order the growth reaches it:
+  // plain distance from the arm path's end, except that distance spent
+  // going downward counts DOWNWARD_LAG times over — so the break climbs
+  // through the chest and head first and the legs and base wait, the
+  // base's far corner longest of all.
+  const growthPoint = path[path.length - 1].clone().add(pathInset);
+  const reach = (point: THREE.Vector3) =>
+    point.distanceTo(growthPoint) +
+    DOWNWARD_LAG * Math.max(0, growthPoint.y - point.y);
+  const others = [...bodySeeds, ...headSeeds];
+  const farthest = Math.max(...others.map(reach), 1e-6);
 
   bodySeeds.forEach((point) => {
     seeds.push({
       phase: point.y < legsCeiling ? "lower" : "upper",
       point,
-      position: alongSweep(point),
+      position: reach(point) / farthest,
     });
   });
 
   headSeeds.forEach((point) => {
-    seeds.push({ phase: "head", point, position: alongSweep(point) });
+    seeds.push({ phase: "head", point, position: reach(point) / farthest });
   });
 
   return seeds;
@@ -2156,6 +2181,51 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
 
     return entered >= 2 && entered >= onFace * RELEASE_PROBE_FRACTION;
   };
+  // A piece can also fly clean through one it never touched. For pairs
+  // whose flight corridor comes close enough, a coarser probe: sample
+  // points of the mover, stepped along its whole flight, inside-tested
+  // against the other.
+  const radii = cells.map(({ piece }) => piece.box.getSize(new THREE.Vector3()).length() / 2);
+  const samples = cells.map(({ piece }) => {
+    const points: THREE.Vector3[] = [];
+    const stride = Math.max(1, Math.floor(piece.polygons.length / 40));
+
+    for (let index = 0; index < piece.polygons.length; index += stride) {
+      points.push(piece.polygons[index].vertices[0].point);
+    }
+
+    return points;
+  });
+  const segmentPoint = new THREE.Vector3();
+  const fliesThrough = (a: number, b: number) => {
+    // Corridor filter: is b anywhere near the line a travels?
+    const start = cells[a].piece.center;
+    const flight = offsets[a];
+    const toB = probe.subVectors(cells[b].piece.center, start);
+    const t = THREE.MathUtils.clamp(toB.dot(flight) / Math.max(flight.lengthSq(), 1e-12), 0, 1);
+
+    segmentPoint.copy(start).addScaledVector(flight, t);
+
+    if (segmentPoint.distanceTo(cells[b].piece.center) > (radii[a] + radii[b]) * 0.8) {
+      return false;
+    }
+
+    // Seen from the mover, the other piece drifts backward through it:
+    // testing the other's points against the mover's own volume catches a
+    // small piece being swallowed whole, which sampling the mover's
+    // surface can step right over.
+    const inside = insideTests[a];
+    let hits = 0;
+
+    for (const fraction of [0.15, 0.3, 0.45, 0.6, 0.75, 0.9]) {
+      for (const point of samples[b]) {
+        probe.copy(point).addScaledVector(flight, -fraction);
+        if (inside(probe) && ++hits >= 3) return true;
+      }
+    }
+
+    return false;
+  };
   // before[u]: units that must start no later than u.
   const before: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
 
@@ -2164,9 +2234,15 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
       const ua = cellUnit[a];
       const ub = cellUnit[b];
 
-      if (ua === ub || !touching(a, b)) continue;
-      if (pointsAt(a, b)) before[ua].add(ub);
-      if (pointsAt(b, a)) before[ub].add(ua);
+      if (ua === ub) continue;
+
+      if (touching(a, b)) {
+        if (pointsAt(a, b)) before[ua].add(ub);
+        if (pointsAt(b, a)) before[ub].add(ua);
+      } else {
+        if (fliesThrough(a, b)) before[ua].add(ub);
+        if (fliesThrough(b, a)) before[ub].add(ua);
+      }
     }
   }
 
@@ -2205,9 +2281,19 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   }
 
   const releaseAt = new Array<number>(count).fill(0);
+  // Gaps between releases shrink geometrically: slot k sits at the sum of
+  // gaps g^0..g^(k-1), scaled so the last slot lands on RELEASE_END. That
+  // is what makes the number of pieces coming off grow exponentially.
+  const slots = order.length;
+  const decay = slots > 2 ? Math.pow(RELEASE_ACCELERATION, -1 / (slots - 2)) : 1;
+  const total = decay === 1 ? Math.max(slots - 1, 1) : (1 - Math.pow(decay, slots - 1)) / (1 - decay);
+  const momentAt = (slot: number) =>
+    slots <= 1
+      ? 0
+      : (RELEASE_END * (decay === 1 ? slot : (1 - Math.pow(decay, slot)) / (1 - decay))) / total;
 
   order.forEach((group, slot) => {
-    const moment = order.length <= 1 ? 0 : (slot / (order.length - 1)) * RELEASE_END;
+    const moment = momentAt(slot);
 
     group.forEach((unit) => {
       unitCells[unit].forEach((cell) => {
