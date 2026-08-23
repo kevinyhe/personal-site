@@ -80,10 +80,10 @@ const BREAK_END = 0.96;
 // thirds of the figure; over the breakup it eases slightly closer while
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
-const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 4.5;
-const CAMERA_DISTANCE_COMPACT = 6.2;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 5.7;
+const CAMERA_DISTANCE = 6.5;
+const CAMERA_DISTANCE_BROKEN = 6.15;
+const CAMERA_DISTANCE_COMPACT = 8.05;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 7.7;
 // Where the camera aims (figure height, centre 0): the chest at rest, the
 // middle once broken.
 const LOOK_AT_Y = 0.55;
