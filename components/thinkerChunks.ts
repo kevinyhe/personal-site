@@ -70,10 +70,14 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   guardSeeds: [fraction(-1.08, -0.42, 0.22)],
   // The hand itself: the first two seeds sit either side of the palm's
   // diagonal fracture — the cut runs from mid-palm up to just below the
-  // thumb — and the third is the small remainder by the wrist.
+  // thumb — and the rest sit off-axis at uneven spacings, so the follow-up
+  // shards come in different sizes with faces at different angles rather
+  // than as slices off one plane.
   handSeeds: [
     fraction(-1.22, -0.38, 0.58),
     fraction(-1.1, -0.2, 0.68),
+    fraction(-1.24, -0.31, 0.71),
+    fraction(-1.06, -0.33, 0.59),
     fraction(-1.15, -0.08, 0.7),
   ],
   // The statue's left arm, traced on the surface from the hand hanging
