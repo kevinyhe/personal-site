@@ -526,7 +526,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           exactly viewport-sized. transform-origin 0 0 because the
           homography maps from the viewport's top-left corner. */}
       <div
-        className="fixed inset-0 z-20"
+        // pointer-events-none is load-bearing: this layer sits above the
+        // statue's panel, and without it every drag meant for the statue
+        // dies here. The links inside re-enable their own events.
+        className="pointer-events-none fixed inset-0 z-20"
         ref={heroLayerRef}
         style={{ transformOrigin: "0 0", willChange: "transform" }}
       >
