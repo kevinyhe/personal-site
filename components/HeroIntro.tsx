@@ -9,12 +9,19 @@ import {
   useState,
 } from "react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
+
+gsap.registerPlugin(ScrollTrigger);
 
 type HeroIntroProps = {
   children: ReactNode;
 };
+
+// Scroll-driven orbit of the tree: 60% of the intro's 35-degree sweep, the
+// other way round (counter-clockwise from above).
+const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -28,6 +35,8 @@ const LOADING_POSE = {
   glassTagline: 0,
   screenGlow: 1,
   screenPower: 0,
+  roomLight: 0,
+  orbit: 0,
   backdropLevel: 0.4,
 };
 const HERO_POSE = {
@@ -38,22 +47,25 @@ const HERO_POSE = {
   glassTagline: 0,
   screenGlow: 0,
   screenPower: 1,
+  roomLight: 1,
+  orbit: 0,
   backdropLevel: 1,
 };
 
 // Minimum time the television is on screen before the reveal may start:
-// the switch-on sequence (dark glass 0.35 s, the tube powering up over
-// 0.175 s, the name warming in by ~0.8 s, the tagline at 1.9 s) plus 2.7 s
-// with the name up. The
+// the lamp coming on (0.3 s), the tube powering up (0.95 s), the name
+// warming in by ~1.4 s and the Chinese name at 2.5 s, plus 2.7 s with the
+// name up. The
 // tree builds behind it; on a slow machine it simply holds the name a
 // little longer — the tree is never shown loading.
-const TV_DWELL_MS = 4200;
+const TV_DWELL_MS = 4800;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
+  const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   // The veil's bar is for the television's own assets only (GLB + four
   // textures): the thing the page is actually waiting on before it can
   // show anything.
@@ -138,25 +150,34 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     if (!tvShown) return undefined;
     const overlay = overlayRef.current;
     const tweens: gsap.core.Tween[] = [];
+    // The veil is black over a black room: it can go quickly, and the lamp
+    // then does the revealing.
     if (overlay) {
       tweens.push(
         gsap.to(overlay, {
           autoAlpha: 0,
-          duration: 0.5,
+          duration: 0.25,
           ease: "power2.out",
           pointerEvents: "none",
         }),
       );
     }
-    // Switch-on: the set sits with a dark tube for a beat, then powers up
-    // — the centre line, the raster opening, the overbright settle — and
-    // the name warms onto the phosphor once the picture is steady.
+    // Switch-on. The room is dark. At 0.3 s the lamp comes on like a
+    // filament bulb: it flares well past its steady level in a few frames,
+    // sags back below it, then settles with a small wobble — the overshoot
+    // is what reads as incandescent rather than a fade. The tube powers up
+    // once the lamp has settled, the name warms onto the phosphor once the
+    // picture is steady, and the Chinese name follows.
     const powerOn = gsap.timeline();
     powerOn
-      .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.35)
-      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 0.8)
-      // The tagline follows once the name has settled.
-      .to(sceneFx, { glassTagline: 1, duration: 0.7, ease: "power2.out" }, 1.9);
+      .to(sceneFx, { roomLight: 1.8, duration: 0.07, ease: "power3.in" }, 0.3)
+      .to(sceneFx, { roomLight: 0.78, duration: 0.2, ease: "power2.out" }, 0.37)
+      .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
+      .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
+      .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
+      .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.95)
+      .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4)
+      .to(sceneFx, { glassTagline: 1, duration: 0.7, ease: "power2.out" }, 2.5);
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
       for (const tween of tweens) tween.kill();
@@ -206,13 +227,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const heroItems = gsap.utils.toArray<HTMLElement>(
       root.querySelectorAll("[data-hero-animate]"),
     );
-    // Each word of the name lockup, with the direction its letters should
-    // rise in. y is in em so the travel scales with the clamp()ed font size
+    // Each word of the name lockup, with the end its letters start rising
+    // from: "Kevin" from its LAST letter and "He." from its FIRST, so the
+    // rise begins at the gap between the words and spreads to the outer
+    // ends. y is in em so the travel scales with the clamp()ed font size
     // instead of being a fixed pixel drop that vanishes on a large display.
     const letterGroups = gsap.utils
       .toArray<HTMLElement>(root.querySelectorAll("[data-hero-letters]"))
       .map((group) => ({
-        from: group.dataset.heroLetters === "rtl" ? "end" : "start",
+        from: group.dataset.heroLetters === "rtl" ? "start" : "end",
         letters: gsap.utils.toArray<HTMLElement>(
           group.querySelectorAll("[data-hero-letter]"),
         ),
@@ -264,10 +287,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // ticking against detached nodes if the user navigates mid-intro.
       const letterTweens = letterGroups.map((group) =>
         gsap.to(group.letters, {
-          duration: 0.9,
+          duration: 1.35,
           ease: "power2.inOut",
           paused: true,
-          stagger: { each: 0.06, from: group.from as "start" | "end" },
+          stagger: { each: 0.09, from: group.from as "start" | "end" },
           yPercent: 0,
         }),
       );
@@ -301,12 +324,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         )
         .to(sceneFx, { halftone: 1, duration: 0.7, ease: "power1.in" }, 0.95)
         .to(sceneFx, { treeDrop: 0, duration: 1.6, ease: "power3.out" }, 0.1)
-        // The name leads the page. Each letter slides up from behind the
-        // hairline, "Kevin" running left to right and "He." right to left
-        // so the two words resolve toward the centre. No opacity anywhere
-        // in this tween: the letters are masked, not faded, which is what
-        // makes them read as rising out of the bar rather than
-        // materialising in front of it.
+        // The name leads the page. Each letter slides up from below its
+        // word's base, starting at the gap between the words and spreading
+        // outward. No opacity anywhere in this tween: the letters are
+        // masked, not faded, which is what makes them read as rising out
+        // of the page rather than materialising in front of it.
         .add(() => {
           for (const tween of letterTweens) tween.play();
         }, 0.85)
@@ -331,6 +353,86 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       delete (window as unknown as Record<string, unknown>).__heroTimeline;
     };
   }, [revealStarted]);
+
+  // The document is taller than the viewport again (the scroll section
+  // below), so until the reveal is done nothing may scroll: wheel, touch,
+  // scroll keys, scrollbar drags — and anything that slips through snaps
+  // back to the top.
+  useLayoutEffect(() => {
+    if (revealComplete) return undefined;
+    const { body, documentElement } = document;
+    const forceTop = () => {
+      documentElement.scrollTop = 0;
+      body.scrollTop = 0;
+      window.scrollTo(0, 0);
+    };
+    const block = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const SCROLL_KEYS = new Set([" ", "ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp"]);
+    const blockKeys = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (SCROLL_KEYS.has(event.key)) event.preventDefault();
+    };
+    const options = { capture: true, passive: false } as AddEventListenerOptions;
+    forceTop();
+    window.addEventListener("wheel", block, options);
+    window.addEventListener("touchmove", block, options);
+    window.addEventListener("keydown", blockKeys, options);
+    window.addEventListener("scroll", forceTop, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", block, options);
+      window.removeEventListener("touchmove", block, options);
+      window.removeEventListener("keydown", blockKeys, options);
+      window.removeEventListener("scroll", forceTop);
+    };
+  }, [revealComplete]);
+
+  // The next page, on scroll: one scrubbed timeline. The top strip fades,
+  // the name sinks out of the bottom of the frame, and the tree sinks out
+  // too while the camera orbits it counter-clockwise through 60% of the
+  // intro's sweep.
+  useEffect(() => {
+    const root = rootRef.current;
+    const scrollSpace = scrollSpaceRef.current;
+    if (!revealComplete || !root || !scrollSpace) return undefined;
+    const strip = root.querySelector<HTMLElement>("[data-hero-strip]");
+    const lockup = root.querySelector<HTMLElement>("[data-hero-lockup]");
+    if (!strip || !lockup) return undefined;
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    // Exposed so headless captures can read the scrubbed state.
+    (window as unknown as Record<string, unknown>).__scrollScene = true;
+    const ctx = gsap.context(() => {
+      // From the lockup's laid-out top (offsetTop ignores the transform the
+      // scrub applies, so this stays right on refresh) to just past the
+      // bottom of the viewport.
+      const exitOffset = () => window.innerHeight - lockup.offsetTop + 8;
+      const tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: {
+          end: "bottom bottom",
+          invalidateOnRefresh: true,
+          scrub: prefersReducedMotion ? true : 0.5,
+          start: "top top",
+          trigger: scrollSpace,
+        },
+      });
+      tl.to(strip, { autoAlpha: 0, duration: 0.3 }, 0)
+        .to(lockup, { y: exitOffset, duration: 0.9, ease: "power1.in" }, 0)
+        .to(sceneFx, { treeDrop: 1, duration: 0.85, ease: "power1.in" }, 0)
+        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 1 }, 0);
+    }, root);
+    return () => {
+      ctx.revert();
+      sceneFx.treeDrop = 0;
+      sceneFx.orbit = 0;
+      delete (window as unknown as Record<string, unknown>).__scrollScene;
+    };
+  }, [revealComplete]);
 
   // The canvas owns the DOM homography (same-frame application); on unmount
   // just clear whatever transform it left behind.
@@ -366,6 +468,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       >
         {children}
       </div>
+
+      {/* Scroll room for the next page; every visible layer is fixed, so
+          this spacer is the only thing giving the document height. */}
+      <div aria-hidden="true" className="h-[200vh]" ref={scrollSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree

@@ -6274,6 +6274,8 @@ void main() {
         uPower: { value: 1 },
         // World directions from the glass to the key and fill lights, for
         // the glossy-glass reflections (set per frame in updateCrtRig).
+        // The room lamp's level, for what the glass reflects of it.
+        uRoomGlass: { value: 1 },
         uKeyDir: { value: new THREE.Vector3(1, 0.5, 0.3).normalize() },
         uFillDir: { value: new THREE.Vector3(-1, 0.6, 0.8).normalize() },
         uTime: { value: 0 },
@@ -6325,6 +6327,7 @@ void main() {
           uniform float uPower;
           uniform vec3 uKeyDir;
           uniform vec3 uFillDir;
+          uniform float uRoomGlass;
           uniform float uTime;
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
@@ -6572,7 +6575,7 @@ void main() {
               // The picture itself washes reflections out; the dark tube
               // shows them in full.
               float showRefl = mix(1.0, 0.1, smoothstep(0.3, 1.0, uPower));
-              col += uFx * showRefl * fresnel * (
+              col += uFx * showRefl * fresnel * uRoomGlass * (
                 vec3(1.0, 0.74, 0.83) * keySpec +
                 vec3(0.6, 0.56, 1.0) * fillSpec +
                 roomRefl);
@@ -6689,7 +6692,12 @@ void main() {
       // The split is the cone: a tight spot (12.6 degrees, wide penumbra)
       // aimed at the right half of the set, so the light dies across the
       // middle of the front and the left half simply is not lit.
-      const crtKey = new THREE.SpotLight(0xffb0c9, 900, 18, 0.26, 0.55, 2);
+      // Nominal intensities; updateCrtRig scales them by sceneFx.roomLight,
+      // the incandescent switch-on curve (0 -> flare -> settle at 1).
+      const CRT_KEY_INTENSITY = 900;
+      const CRT_FILL_INTENSITY = 16;
+      const CRT_KICKER_INTENSITY = 55;
+      const crtKey = new THREE.SpotLight(0xffb0c9, CRT_KEY_INTENSITY, 18, 0.26, 0.55, 2);
       crtKey.position.set(5.6, 2.9, 1.3);
       crtKey.target.position.set(1.05, 0.1, 0.3);
       crtScene.add(crtKey.target);
@@ -6711,7 +6719,7 @@ void main() {
       // there so the dark half of the set and the floor read as surfaces
       // in a room rather than holes, and so the key's shadow has
       // something to fall on. No shadow of its own.
-      const crtFill = new THREE.SpotLight(0x7c78ff, 16, 22, 0.95, 1.0, 2);
+      const crtFill = new THREE.SpotLight(0x7c78ff, CRT_FILL_INTENSITY, 22, 0.95, 1.0, 2);
       crtFill.position.set(-5.5, 3.6, 4.8);
       crtFill.target.position.set(0, -0.6, 0);
       crtScene.add(crtFill.target);
@@ -6720,7 +6728,7 @@ void main() {
       // than behind it, in a pink a step off the key's, low — so the dark
       // side gets a soft pink edge and a hint of its form, not a second
       // key.
-      const crtKicker = new THREE.SpotLight(0xf26bd6, 55, 16, 0.5, 0.7, 2);
+      const crtKicker = new THREE.SpotLight(0xf26bd6, CRT_KICKER_INTENSITY, 16, 0.5, 0.7, 2);
       crtKicker.position.set(-4.4, 3.2, 0.9);
       crtKicker.target.position.set(0.2, 0.3, 0);
       crtScene.add(crtKicker.target);
@@ -6970,6 +6978,13 @@ void main() {
         crtScreenUniforms.uTime.value = elapsed;
         crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
         crtScreenUniforms.uPower.value = clamp01(sceneFx.screenPower);
+        // The room's lamp: one curve scales every practical in the room,
+        // and what the glass reflects of them.
+        const roomLight = Math.max(0, sceneFx.roomLight);
+        crtKey.intensity = CRT_KEY_INTENSITY * roomLight;
+        crtFill.intensity = CRT_FILL_INTENSITY * roomLight;
+        crtKicker.intensity = CRT_KICKER_INTENSITY * roomLight;
+        crtScreenUniforms.uRoomGlass.value = roomLight;
         crtScreenUniforms.uKeyDir.value.copy(crtKey.position).normalize();
         crtScreenUniforms.uFillDir.value.copy(crtFill.position).normalize();
         // Virtual raster (see crtRasterLines) and the mip level whose
@@ -7597,6 +7612,16 @@ void main() {
       const idleFrameInterval = 1000 / 30;
       const activeFrameWindow = 260;
 
+      // Scroll-driven orbit (sceneFx.orbit, radians about the hero target's
+      // vertical axis; positive is counter-clockwise seen from above, the
+      // opposite sense to the intro's sweep in from the side).
+      const applyScrollOrbit = () => {
+        if (sceneFx.orbit === 0) return;
+        camera.position
+          .sub(HERO_CAMERA_TARGET)
+          .applyAxisAngle(UP, sceneFx.orbit)
+          .add(HERO_CAMERA_TARGET);
+      };
       const setCameraFov = (fov: number) => {
         if (Math.abs(camera.fov - fov) < 0.01) return;
         camera.fov = fov;
@@ -7859,6 +7884,7 @@ void main() {
               camera.position.copy(FINAL_CAMERA_POSITION);
               reportIntroComplete();
             }
+            applyScrollOrbit();
           } else {
             camera.position.copy(INTRO_CAMERA_POSITION);
             lookTarget.copy(HERO_CAMERA_TARGET);
@@ -7869,6 +7895,7 @@ void main() {
           camera.position.copy(FINAL_CAMERA_POSITION);
           lookTarget.copy(HERO_CAMERA_TARGET);
           setCameraFov(HERO_CAMERA_FOV);
+          applyScrollOrbit();
         }
         // Blossoms bloom out of their spur points during the intro dolly.
         // (The scroll-driven tree drop above is a group translation, so the
