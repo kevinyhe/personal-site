@@ -88,9 +88,10 @@ const CAMERA_DISTANCE_COMPACT_BROKEN = 5.7;
 // middle once broken.
 const LOOK_AT_Y = 0.55;
 const LOOK_AT_Y_BROKEN = -0.05;
-// How far (figure units) the camera tracks leftward over the breakup.
-const DOLLY_LEFT = 1.1;
-const DOLLY_LEFT_COMPACT = 0.8;
+// How far the camera swings around the figure over the breakup (radians
+// about the vertical, negative = around to the left), aim staying put.
+const ORBIT_LEFT = -0.55;
+const ORBIT_LEFT_COMPACT = -0.4;
 
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
@@ -110,7 +111,7 @@ function smoothPhase(start: number, end: number, value: number) {
 const DRIFT_ON = 0.3;
 // Released pieces also gain this much travel per second of plain time, so
 // they never hang still in the air when the scroll rests.
-const DRIFT_PER_SECOND = 0.02;
+const DRIFT_PER_SECOND = 0.016;
 
 function travelAt(x: number) {
   if (x <= 0) return 0;
@@ -205,6 +206,8 @@ function useThinkerChunks() {
   return build;
 }
 
+const UP = new THREE.Vector3(0, 1, 0);
+
 function CameraRig({
   progressRef,
   reducedMotion,
@@ -223,14 +226,15 @@ function CameraRig({
     const distance = compact
       ? THREE.MathUtils.lerp(CAMERA_DISTANCE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, breakup)
       : THREE.MathUtils.lerp(CAMERA_DISTANCE, CAMERA_DISTANCE_BROKEN, breakup);
-    // Aimed at the chest, panning down to the middle and tracking left as
-    // the pieces go; the camera sits up and to the right of that line.
-    lookAt.set(
-      -(compact ? DOLLY_LEFT_COMPACT : DOLLY_LEFT) * breakup,
-      THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup),
-      0,
-    );
-    target.copy(CAMERA_OFFSET).multiplyScalar(distance).add(lookAt);
+    // Aimed at the chest, panning down to the middle; the camera itself
+    // swings around to the left as the pieces go — a rotation about the
+    // figure, not a sideways move.
+    lookAt.set(0, THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup), 0);
+    target
+      .copy(CAMERA_OFFSET)
+      .applyAxisAngle(UP, (compact ? ORBIT_LEFT_COMPACT : ORBIT_LEFT) * breakup)
+      .multiplyScalar(distance)
+      .add(lookAt);
     if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
     camera.position.lerp(target, 0.08);
     camera.lookAt(lookAt);

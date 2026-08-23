@@ -448,9 +448,9 @@ const ARM_CLEARANCE = 0.2;
 const RELEASE_END = 0.86;
 // The first gap between releases is this many times the last: the trickle
 // of single pieces at the start becomes an exponential cascade by the end.
-const RELEASE_ACCELERATION = 12;
+const RELEASE_ACCELERATION = 24;
 // How much of the breakup a piece's flight takes once released.
-const TRAVEL_WINDOW = 0.22;
+const TRAVEL_WINDOW = 0.275;
 // Islands smaller than this are dropped as dust.
 const ISLAND_MIN_POLYGONS = 40;
 const ISLAND_MIN_AREA = 0.01;
