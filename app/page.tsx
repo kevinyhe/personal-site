@@ -137,7 +137,7 @@ export default function Home() {
                 between the words on one line). */}
             <span
               className={
-                "ml-[-0.095em] text-[0.58em] font-normal tracking-[-0.07em] " +
+                "ml-[-0.095em] text-[0.58em] font-normal tracking-[-0.091em] " +
                 CLIP_AT_BASE
               }
               data-hero-letters="ltr"
