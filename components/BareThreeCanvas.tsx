@@ -3199,7 +3199,9 @@ class FallingPetalSystem {
         // is elsewhere and shed in a sweep as it passes over their anchor.
         // The threshold is most of the way up the envelope, so a shower of
         // petals is visibly the consequence of the canopy being pushed over.
-        const releaseRate = 0.06 + Math.max(0, gustHere - 0.55) * 8;
+        // Gust shedding held well down (was x8 above 0.55): a gust should
+        // loosen a few petals, not empty the canopy.
+        const releaseRate = 0.05 + Math.max(0, gustHere - 0.62) * 2.5;
         this.timers[i] -= dt * releaseRate;
         if (this.timers[i] <= 0) this.release(i, gustHere);
       } else {
@@ -5539,46 +5541,6 @@ export default function WeepingCherryTreeCanvas({
       renderer.shadowMap.enabled = false;
       mount.appendChild(renderer.domElement);
 
-      // ---- Petal overlay -------------------------------------------------
-      // The page's type is DOM, layered over this canvas, so everything
-      // drawn here sits behind the name. The loose petals should fall IN
-      // FRONT of it: a second, transparent canvas above the DOM layer
-      // re-renders just the petals each frame (same scene, same camera),
-      // after a depth-only pass of everything else, so a petal behind a
-      // branch stays behind it. It lives on document.body because the
-      // mount's own stacking context (z 0) can never rise above the DOM
-      // layer (z 20). Off while the camera is on the television.
-      const PETAL_LAYER = 2;
-      const overlayCanvas = document.createElement("canvas");
-      overlayCanvas.setAttribute("aria-hidden", "true");
-      Object.assign(overlayCanvas.style, {
-        position: "fixed",
-        top: "0",
-        left: "0",
-        width: "var(--arbor-screen-w, 100dvw)",
-        height: "var(--arbor-screen-h, 100dvh)",
-        pointerEvents: "none",
-        zIndex: "25",
-      });
-      document.body.appendChild(overlayCanvas);
-      const overlayRenderer = new THREE.WebGLRenderer({
-        canvas: overlayCanvas,
-        alpha: true,
-        antialias: true,
-        powerPreference: "low-power",
-      });
-      overlayRenderer.setClearColor(0x000000, 0);
-      overlayRenderer.setSize(width, height);
-      overlayRenderer.setPixelRatio(getRenderPixelRatio());
-      overlayRenderer.outputColorSpace = THREE.SRGBColorSpace;
-      overlayRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      overlayRenderer.toneMappingExposure = 1.15;
-      overlayRenderer.shadowMap.enabled = false;
-      // Depth-only stand-in for the tree and backdrop in the overlay's
-      // first pass: no colour, just occlusion.
-      const overlayDepthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
-      let overlayCleared = true;
-
       // ---- Halftone post-pass -------------------------------------------
       // The scene renders into an offscreen target each frame, then a
       // fullscreen triangle redraws that frame as a Bayer-dithered dot grid
@@ -7369,11 +7331,6 @@ void main() {
       const roseGlow = new THREE.PointLight(ROSE_GLOW_COLOR, 18, 30, 2);
       roseGlow.position.copy(ROSE_GLOW_POSITION);
       scene.add(roseGlow);
-      // The petal overlay renders with the camera on PETAL_LAYER only, and
-      // lights are layer-tested like anything else.
-      for (const light of [hemi, key, rim, roseGlow]) {
-        light.layers.enable(PETAL_LAYER);
-      }
 
       // Void backdrop: animated fluid pink gradient (shaders at the top of
       // the file). Kept smooth on purpose — the halftone post-pass
@@ -7487,9 +7444,6 @@ void main() {
       await reportSceneBuildProgress();
 
       worldGroup.add(tree.group);
-      if (tree.petals) {
-        for (const mesh of tree.petals.meshes) mesh.layers.enable(PETAL_LAYER);
-      }
       // Petal brush: pointer position and velocity carried into the tree
       // group's local space (the petal sim lives there).
       const petalPointerPos = new THREE.Vector3();
@@ -7499,32 +7453,6 @@ void main() {
       // World-space reach of the brush; the group is scaled ~0.7, so this
       // is divided by the scale on the way in.
       const PETAL_BRUSH_RADIUS = 2.6;
-      const renderPetalOverlay = () => {
-        const show =
-          !!tree.petals && tree.group.visible && sceneFx.crtProgress <= 0.001;
-        if (!show) {
-          if (!overlayCleared) {
-            overlayRenderer.clear();
-            overlayCleared = true;
-          }
-          return;
-        }
-        overlayCleared = false;
-        // The environment is a render-target texture owned by the main
-        // context; the overlay context cannot sample it.
-        const env = scene.environment;
-        scene.environment = null;
-        overlayRenderer.autoClear = true;
-        scene.overrideMaterial = overlayDepthOnly;
-        camera.layers.set(0);
-        overlayRenderer.render(scene, camera);
-        scene.overrideMaterial = null;
-        overlayRenderer.autoClear = false;
-        camera.layers.set(PETAL_LAYER);
-        overlayRenderer.render(scene, camera);
-        camera.layers.set(0);
-        scene.environment = env;
-      };
       await reportSceneBuildProgress();
 
       const finePointerQuery = window.matchMedia("(pointer: fine)");
@@ -7690,8 +7618,6 @@ void main() {
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
         renderer.setPixelRatio(getRenderPixelRatio());
-        overlayRenderer.setSize(w, h);
-        overlayRenderer.setPixelRatio(getRenderPixelRatio());
         // Keep the halftone target and its uniforms in step with the
         // drawing buffer (setSize x pixel ratio).
         renderer.getDrawingBufferSize(drawingBufferSize);
@@ -7967,7 +7893,6 @@ void main() {
         camera.lookAt(lookTarget);
         placeVoidBackdrop();
         renderComposite(elapsed);
-        renderPetalOverlay();
         if (!reportedReady) {
           reportedReady = true;
           void reportSceneBuildProgress();
@@ -8031,9 +7956,6 @@ void main() {
         halftoneGeometry.dispose();
         halftoneMaterial.dispose();
         renderer.dispose();
-        overlayDepthOnly.dispose();
-        overlayRenderer.dispose();
-        overlayCanvas.remove();
         const disposedTextures = new Set<THREE.Texture>();
         scene.traverse((object) => {
           const mesh = object as THREE.Mesh;
