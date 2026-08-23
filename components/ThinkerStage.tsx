@@ -77,22 +77,21 @@ type DragRotationRef = MutableRefObject<DragRotation>;
 // starts comes from the page, see ThinkerTiming).
 const BREAK_END = 0.96;
 // Camera distance to what it looks at: at rest, close on the upper two
-// thirds of the figure; over the breakup it backs off slowly and evenly
-// (on the scroll, not the pieces' easing) while its aim pans down to the
-// figure's middle — but never far enough to keep the whole cloud in the
-// frame: the pieces in front are meant to stream past the edge, as on
-// lukebaffait.fr.
+// thirds of the figure; over the breakup it eases slightly closer while
+// dollying to the left (on the scroll, not the pieces' easing), letting
+// the debris stream past the frame's edge, as on lukebaffait.fr.
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 9.6;
+const CAMERA_DISTANCE_BROKEN = 4.5;
 const CAMERA_DISTANCE_COMPACT = 6.2;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 11.2;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 5.7;
 // Where the camera aims (figure height, centre 0): the chest at rest, the
 // middle once broken.
 const LOOK_AT_Y = 0.55;
 const LOOK_AT_Y_BROKEN = -0.05;
-// How much of the cloud's drift the camera follows: all of it would hide
-// that the pieces are streaming off to one side, none would lose them.
-const DRIFT_FOLLOW = 0.3;
+// How far (figure units) the camera tracks leftward over the breakup.
+const DOLLY_LEFT = 1.1;
+const DOLLY_LEFT_COMPACT = 0.8;
+
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
@@ -109,6 +108,9 @@ function smoothPhase(start: number, end: number, value: number) {
 // is full), then drifting on steadily the same way for as long as the
 // scroll lasts.
 const DRIFT_ON = 0.3;
+// Released pieces also gain this much travel per second of plain time, so
+// they never hang still in the air when the scroll rests.
+const DRIFT_PER_SECOND = 0.02;
 
 function travelAt(x: number) {
   if (x <= 0) return 0;
@@ -204,12 +206,9 @@ function useThinkerChunks() {
 }
 
 function CameraRig({
-  drift,
   progressRef,
   reducedMotion,
 }: {
-  /** Where the cloud's centre ends up relative to the figure's, on stage. */
-  drift: THREE.Vector3;
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
@@ -224,10 +223,13 @@ function CameraRig({
     const distance = compact
       ? THREE.MathUtils.lerp(CAMERA_DISTANCE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, breakup)
       : THREE.MathUtils.lerp(CAMERA_DISTANCE, CAMERA_DISTANCE_BROKEN, breakup);
-    // Aimed at the chest, panning down to the middle and after the cloud
-    // as it goes; the camera sits up and to the right of that line.
-    lookAt.copy(drift).multiplyScalar(DRIFT_FOLLOW * breakup);
-    lookAt.y += THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup);
+    // Aimed at the chest, panning down to the middle and tracking left as
+    // the pieces go; the camera sits up and to the right of that line.
+    lookAt.set(
+      -(compact ? DOLLY_LEFT_COMPACT : DOLLY_LEFT) * breakup,
+      THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup),
+      0,
+    );
     target.copy(CAMERA_OFFSET).multiplyScalar(distance).add(lookAt);
     if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
     camera.position.lerp(target, 0.08);
@@ -319,6 +321,8 @@ function ChunkedThinker({
 }) {
   const stageRef = useRef<THREE.Group>(null);
   const chunkRefs = useRef<Array<THREE.Group | null>>([]);
+  // Per chunk, how long it has been adrift (seconds of wall time).
+  const adriftRef = useRef<Float32Array>(new Float32Array(0));
   const chunks = useMemo(
     () =>
       build.chunks.map((chunk) => ({
@@ -342,9 +346,13 @@ function ChunkedThinker({
     };
   }, [chunks]);
 
-  useFrame(({ clock, size }) => {
+  useFrame(({ clock, size }, delta) => {
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
+
+    if (adriftRef.current.length !== chunks.length) {
+      adriftRef.current = new Float32Array(chunks.length);
+    }
 
     chunks.forEach((chunk, index) => {
       const group = chunkRefs.current[index];
@@ -355,7 +363,18 @@ function ChunkedThinker({
         (breakup - chunk.releaseAt) / Math.max(chunk.travelWindow, 0.01),
         0,
       );
-      const travel = travelAt(localProgress) * (1 + settle * 0.06);
+      // Time keeps a released piece moving even while the scroll rests;
+      // its share fades with localProgress so scrolling back still brings
+      // the piece home.
+      if (localProgress > 0 && !reducedMotion) {
+        adriftRef.current[index] += Math.min(delta, 0.1);
+      } else {
+        adriftRef.current[index] = 0;
+      }
+
+      const adrift =
+        DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
+      const travel = (travelAt(localProgress) + adrift) * (1 + settle * 0.06);
       const turn = Math.min(travel, 1.5);
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
@@ -492,18 +511,6 @@ function ThinkerCanvas({
   reducedMotion: boolean;
 }) {
   const build = useThinkerChunks();
-  // The cloud's drift, turned through the stage's resting yaw into the
-  // camera's space.
-  const drift = useMemo(
-    () =>
-      build
-        ? new THREE.Vector3(...build.drift).applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            THINKER_BASE_YAW,
-          )
-        : new THREE.Vector3(),
-    [build],
-  );
   return (
     <Canvas
       camera={{
@@ -535,7 +542,7 @@ function ThinkerCanvas({
     >
       <color args={[STAGE_BLACK]} attach="background" />
       <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
-      <CameraRig drift={drift} progressRef={progressRef} reducedMotion={reducedMotion} />
+      <CameraRig progressRef={progressRef} reducedMotion={reducedMotion} />
       <StageLights progressRef={progressRef} reducedMotion={reducedMotion} />
       <StageFloor progressRef={progressRef} reducedMotion={reducedMotion} />
       {build ? (
