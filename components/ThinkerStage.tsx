@@ -126,9 +126,6 @@ const STAGE_BLACK = "#0a0a0a";
 // finished (RobotOutro's ROBOT_FADE_START matches), so the two scenes never
 // share the screen — the hand-off reads as a cut, not a dissolve.
 const STATUE_FADE_END = 0.2;
-// The statue camera blends into the rally chase over about a second of
-// wall time once the robot phase opens.
-const CAMERA_BLEND_SECONDS = 1;
 const STATUE_FOV = 34;
 // The chase camera does not roll. Banking the camera tips the horizon, and
 // on screen that is indistinguishable from the robot itself leaning — which
@@ -341,11 +338,11 @@ function CameraRig({
 
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     const dt = Math.min(delta, 0.05);
-    chase.blend = THREE.MathUtils.clamp(
-      chase.blend + (robotPhase > 0 ? dt / CAMERA_BLEND_SECONDS : -dt * 2),
-      0,
-      1,
-    );
+    // A cut, not a pan. Easing the lens from the statue's framing into the
+    // chase swept it across an empty stage for a second before the robot
+    // had even arrived; the chase camera now owns the frame outright from
+    // the first robot pixel.
+    chase.blend = robotPhase > 0 ? 1 : 0;
 
     const persp = camera as THREE.PerspectiveCamera;
     if (chase.blend <= 0) {
@@ -368,16 +365,15 @@ function CameraRig({
       return;
     }
 
-    // Seed the springs from wherever the statue camera actually is, so the
-    // hand-over starts without a jump.
-    if (!chase.seeded) {
+    // First frame of the outro: the springs are snapped onto their targets
+    // below rather than started from the statue camera, so the scene opens
+    // already framed on the robot instead of sliding into place.
+    const seeding = !chase.seeded;
+    if (seeding) {
       chase.seeded = true;
-      chase.position.copy(camera.position);
       chase.velocity.set(0, 0, 0);
-      chase.lookPosition.copy(lookAt);
       chase.lookVelocity.set(0, 0, 0);
       chase.roll = 0;
-      chase.fov = STATUE_FOV;
     }
 
     const speed = robotState.speed;
@@ -416,23 +412,33 @@ function CameraRig({
       scratch.positionTarget.x += scratch.forward.z * 1.1;
       scratch.positionTarget.z += -scratch.forward.x * 1.1;
       scratch.positionTarget.y = ROBOT_GROUND_Y + 0.9;
+      // Aimed well ahead of the robot along its travel, so it sits back
+      // from the centre of frame rather than pinned to it.
       scratch.lookTarget
         .copy(robotState.position)
-        .addScaledVector(scratch.forward, Math.min(speed * 0.45, 2.4));
+        .addScaledVector(scratch.forward, Math.min(speed * 0.7, 3.4));
       scratch.lookTarget.y = ROBOT_GROUND_Y + 0.35;
     }
+    if (seeding) {
+      chase.position.copy(scratch.positionTarget);
+      chase.lookPosition.copy(scratch.lookTarget);
+    }
+    // Loose springs on purpose. Tracking the robot tightly held it dead
+    // centre for the whole run, which read as the robot standing still
+    // while the ground moved; lagging the rig lets the robot swing across
+    // the frame as it slides and settle back as it slows.
     dampSpring(
       chase.position,
       chase.velocity,
       scratch.positionTarget,
-      robotState.resting ? 1.6 : 4.2,
+      robotState.resting ? 1.6 : 2.4,
       dt,
     );
     dampSpring(
       chase.lookPosition,
       chase.lookVelocity,
       scratch.lookTarget,
-      robotState.resting ? 2.2 : 7.0,
+      robotState.resting ? 2.2 : 2.0,
       dt,
     );
 
@@ -449,7 +455,10 @@ function CameraRig({
     const fovTarget = robotState.resting
       ? 36
       : STATUE_FOV + 8 * THREE.MathUtils.clamp(speed / 6, 0, 1);
-    chase.fov += (fovTarget - chase.fov) * Math.min(1, 3 * dt);
+    // Snapped on the cut frame, eased after it, so the outro opens at its
+    // own focal length instead of zooming out of the statue's.
+    if (seeding) chase.fov = fovTarget;
+    else chase.fov += (fovTarget - chase.fov) * Math.min(1, 3 * dt);
     const time = clock.elapsedTime;
     const noiseX = (Math.sin(time * 1.31) + Math.sin(time * 2.17)) * 0.01;
     const noiseY = (Math.sin(time * 1.73) + Math.sin(time * 2.93)) * 0.01;
