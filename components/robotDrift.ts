@@ -190,10 +190,10 @@ type DriverPhase = {
  * speed v costs v²/R of lateral acceleration and only mu*g = 2.1 is
  * available, so a tighter arc has to be a slower one.
  */
-const U_DURATION = 1.7;
-const U_OUTER = 2.2;
-const U_INNER = 1.4;
-const U_YAW = 1.1;
+const U_DURATION = 2.7;
+const U_OUTER = 1.1;
+const U_INNER = 0.4;
+const U_YAW = 2.1;
 
 const SCHEDULE: DriverPhase[] = [
   // On backwards from the start, down the RIGHT-hand side of the goal: the
@@ -211,7 +211,7 @@ const SCHEDULE: DriverPhase[] = [
   // The 180, spun the OTHER way: it continues the direction the U was
   // already turning rather than snapping back against it, so the whole run
   // keeps rotating one way from first frame to last.
-  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
+  { duration: 0.4, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
   // A second reverse entry, this time into the goal. Both sides are driven
   // backwards hard while the nose is trimmed onto the finish heading, so
   // the robot slides tail-first toward the mouth with the body still
