@@ -135,32 +135,39 @@ const SPIN_SAMPLE_RATE = 120;
  * is threaded onto this after its own floor position, which is prepended
  * per ball so the pick-up is continuous with where the ball was lying.
  *
- * These points are NOT the roller axles. An earlier version used the axle
- * positions straight out of the model, which threaded the ball's centre
- * through the middle of every sprocket it passed — the ball appeared
- * impaled on them. Each point here is instead relaxed out of every intake
- * roller's circle until the ball's surface clears it: solid parts (the 16T,
- * 24T, 30T, 32T sprockets and the 36T gear) get full clearance of
- * rollerRadius + BALL_RADIUS, while the flex wheels are allowed to squash
- * up to 0.05 into the ball, because that is what a compliant wheel
- * does when it grips one. Ball and roller geometry both come from
- * public/model/robot/robot-meta.json, so this can be recomputed if the
- * robot is re-exported.
+ * The route follows the mechanism rather than cutting through it: in along
+ * the floor, UNDER both rows of front flex wheels, onto the underside of
+ * the 32T, rearward and fully around the back 16T, then forward again and
+ * up the face of the 30T, over its top, and out across the indexer flex
+ * wheels. In profile that is an S.
  *
- * The route that falls out: along the floor, under the front lip rollers,
- * then up the FRONT face of the tower (the sprockets sit behind it), over
- * the top of the 30T pair, and back along the indexer to the exit.
+ * What may look wrong but is not: the path passes inside the pitch circles
+ * of the sprockets. That is correct, because the sprockets are not in the
+ * ball's way — every one of them sits at |x| = 0.17 to 0.30 in the model
+ * while the ball only spans +/-0.156, so the chain runs go down either side
+ * and the ball rides between them. The only parts actually in the corridor
+ * are the eight flex wheels at |x| = 0.08 to 0.12, and those are compliant:
+ * the path keeps the ball's surface within 0.06 of each, which is the grip
+ * that carries it. Positions and radii come from
+ * public/model/robot/robot-meta.json, so this can be rechecked whenever the
+ * robot is re-exported.
  */
 const CARRY_PATH: Array<[number, number]> = [
-  [0.74, 0.16], // on the floor, just short of the front lip
-  [0.58, 0.2], // drawn under the lip rollers
-  [0.513, 0.286], // off the lip, starting to climb
-  [0.55, 0.7], // up the FRONT face of the tower
-  [0.55, 1.05],
-  [0.5, 1.4], // over the top of the 30T sprockets
-  [0.18, 1.56], // onto the indexer
-  [-0.12, 1.57],
-  [-0.36, 1.57], // the exit, level with the goal trough
+  [0.9, 0.16], // on the floor, ahead of the intake
+  [0.702, 0.16], // under the first row of flex wheels
+  [0.486, 0.2], // under the second row
+  [0.097, 0.307], // onto the underside of the 32T
+  [-0.047, 0.556], // around its back — the ball is heading rearward now
+  [-0.199, 0.727], // behind the back 16T
+  [-0.086, 0.923], // and over its top: the top of the S
+  [0.14, 0.923], // back forward again
+  [0.344, 0.895], // onto the front of the 30T
+  [0.517, 1.196], // up its face
+  [0.344, 1.497], // over its top
+  [-0.004, 1.497],
+  [-0.118, 1.5], // across the indexer flex wheels
+  [-0.364, 1.52],
+  [-0.52, 1.52], // out of the back, level with the goal trough
 ];
 
 /**
