@@ -25,14 +25,34 @@ type HeroIntroProps = {
 // other way round (counter-clockwise from above).
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
-// The panel starts growing when the name's exit is 60% done and finishes
-// at the timeline's end. The hero spacer is stretched (270vh originally,
-// now 432vh) so the growth takes 2.25x its original scroll length; the
-// other tween fractions below are rescaled by 170/332 so the name, tree
-// and orbit keep their old absolute pacing. The Thinker inside the panel
-// starts breaking the moment it starts growing.
-const PANEL_GROW_AT = 0.123;
-const PANEL_GROW_DURATION = 0.877;
+// How long the tree takes to drop out of frame. The name's rise to the
+// middle is pinned to exactly this, so the two land together: the tree is
+// gone and the name has arrived on the same frame.
+const TREE_DROP_DURATION = 0.292;
+// The panel starts the instant that happens — no gap — and finishes at the
+// timeline's end. The hero spacer is stretched (270vh originally, now
+// 432vh); the other tween fractions below are rescaled by 170/332 so the
+// name, tree and orbit keep their old absolute pacing. The Thinker inside
+// the panel starts breaking the moment it starts growing.
+const PANEL_GROW_AT = TREE_DROP_DURATION;
+const PANEL_GROW_DURATION = 1 - PANEL_GROW_AT;
+// How long the two words take to clear the frame sideways, and the moment
+// the last of them is gone — which is when the statement below them
+// arrives.
+
+// When the statue's canvas starts drawing, as a fraction of the same
+// timeline. It MUST lead PANEL_GROW_AT: the canvas is frozen while the
+// panel is closed, so whatever scroll passes between this and the panel's
+// first pixel is the stage's only chance to compile its shaders and upload
+// the chunk geometry. It matters more now than it did — the box no longer
+// creeps up from nothing, it appears at PANEL_APPEAR_SCALE already big
+// enough to see what is inside it.
+const PANEL_OPEN_AT = 0.22;
+const WORD_EXIT_DURATION = 0.42;
+const WORD_EXIT_END = PANEL_GROW_AT + WORD_EXIT_DURATION;
+// How far into the panel's growth the statue waits before it starts coming
+// apart, in viewport heights of scroll.
+const CHUNK_DELAY_VIEWPORTS = 0.3;
 
 // The statue owns the screen until the panel has finished growing AND held
 // at full screen for this much further scroll; only then does the page cut
@@ -83,8 +103,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   const statueSpaceRef = useRef<HTMLDivElement | null>(null);
-  // The panel is "open" (worth drawing the statue) once it has grown past
-  // a sliver; flipped by the scroll timeline, never on every frame.
+  // The panel is "open" (the statue's canvas runs its live loop) from a
+  // little BEFORE the panel starts growing, so the stage is already drawn
+  // when the first pixel of the box appears; flipped by the scroll
+  // timeline, never on every frame.
   const [panelOpen, setPanelOpen] = useState(false);
   const panelOpenRef = useRef(false);
   // The veil's bar is for the television's own assets only (GLB + four
@@ -462,14 +484,35 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     // Exposed so headless captures can read the scrubbed state.
     (window as unknown as Record<string, unknown>).__scrollScene = true;
     const ctx = gsap.context(() => {
-      // From the lockup's laid-out top (offsetTop ignores the transform the
-      // scrub applies, so this stays right on refresh) to just past the
-      // bottom of the viewport.
-      const exitOffset = () => window.innerHeight - lockup.offsetTop + 8;
+      // The lockup no longer leaves down the bottom. It rises from its
+      // bottom-anchored rest to the MIDDLE of the viewport, arriving exactly
+      // as the panel starts to grow; the two words are then pushed apart to
+      // the edges by the growing box.
+      //
+      // All three measurements come from offsetTop/offsetLeft/offsetWidth,
+      // never getBoundingClientRect: offset* is the laid-out box and ignores
+      // the transform the scrub has already applied, so a refresh mid-scroll
+      // re-reads the same numbers instead of compounding them.
+      const centreOffset = () =>
+        (window.innerHeight - lockup.offsetHeight) / 2 - lockup.offsetTop;
+      const words = gsap.utils.toArray<HTMLElement>(
+        lockup.querySelectorAll("[data-hero-letters]"),
+      );
+      const statement = root.querySelector<HTMLElement>("[data-hero-statement]");
+      // Clear of the frame, not parked at its edge: the type layer sits
+      // ABOVE the panel (z-20 over z-15), so a word left at the edge would
+      // still be sitting on the full-screen box at the end of the growth.
+      // The margin covers the letters' negative side margins and the ink
+      // that overhangs the em box.
+      const clearance = () => window.innerWidth * 0.06;
+      const outLeft = () =>
+        -(words[0].offsetLeft + words[0].offsetWidth) - clearance();
+      const outRight = () =>
+        window.innerWidth - words[1].offsetLeft + clearance();
       const tl = gsap.timeline({
         defaults: { ease: "none" },
         onUpdate: () => {
-          const open = tl.progress() > 0.38;
+          const open = tl.progress() > PANEL_OPEN_AT;
           if (open !== panelOpenRef.current) {
             panelOpenRef.current = open;
             setPanelOpen(open);
@@ -478,23 +521,64 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         scrollTrigger: {
           end: "bottom bottom",
           invalidateOnRefresh: true,
-          scrub: prefersReducedMotion ? true : 0.5,
+          // Small now that the PAGE itself glides (components/SmoothScroll).
+          // This used to carry all the smoothing at 1.4, which on top of an
+          // eased scroll would smooth twice and read as the scene dragging
+          // behind the page. Enough is left to take the edge off.
+          scrub: prefersReducedMotion ? true : 0.3,
           start: "top top",
           trigger: scrollSpace,
         },
       });
       // Times are fractions of the whole 432vh scroll: the hero's exit in
-      // the first 0.205, the panel from 0.123 (see PANEL_GROW_AT).
+      // the first 0.205, the panel from TREE_DROP_DURATION.
       gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
       tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
-        .to(lockup, { y: exitOffset, duration: 0.205, ease: "power1.in" }, 0)
-        .to(sceneFx, { treeDrop: 1, duration: 0.292, ease: "power1.in" }, 0)
+        // Up to the middle over the WHOLE of the tree's fall, so the name
+        // arrives on the frame the tree finishes leaving.
+        .to(
+          lockup,
+          { y: centreOffset, duration: TREE_DROP_DURATION, ease: "power2.out" },
+          0,
+        )
+        .to(
+          sceneFx,
+          { treeDrop: 1, duration: TREE_DROP_DURATION, ease: "power1.in" },
+          0,
+        )
         .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.343 }, 0)
+        // The box grows out of NOTHING — it starts at scale 0 and is never
+        // set to any other size, so there is nothing to pop. The ease is
+        // linear on purpose: an ease with no slope at its start (power2.inOut,
+        // what this was) leaves the box under 1% of the screen for the first
+        // 23vh, which reads as a gap rather than a growth. Linear crosses
+        // 20px within about 4vh and climbs steadily from there.
         .to(
           panel,
-          { scale: 1, duration: PANEL_GROW_DURATION, ease: "power2.inOut" },
+          { duration: PANEL_GROW_DURATION, ease: "none", scale: 1 },
+          PANEL_GROW_AT,
+        )
+        // Shoved apart by the box, accelerating out of frame. They start
+        // with the growth and are gone by roughly its half-way point, so
+        // they clear ahead of the box's own edges rather than racing them.
+        .to(
+          words[0],
+          { x: outLeft, duration: WORD_EXIT_DURATION, ease: "power2.in" },
+          PANEL_GROW_AT,
+        )
+        .to(
+          words[1],
+          { x: outRight, duration: WORD_EXIT_DURATION, ease: "power2.in" },
           PANEL_GROW_AT,
         );
+      // Takes the name's place the moment the last letter clears the frame.
+      if (statement) {
+        tl.to(
+          statement,
+          { autoAlpha: 1, duration: 0.05, ease: "power2.out" },
+          WORD_EXIT_END,
+        );
+      }
     }, root);
     return () => {
       ctx.revert();
@@ -568,7 +652,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     );
     const end = pageEnd;
     return {
-      breakAt: growStart,
+      // The stage opens with the box; the figure holds together for a beat
+      // of scroll after that before the first piece goes.
+      breakAt: growStart + viewportHeight * CHUNK_DELAY_VIEWPORTS,
       end,
       start: growStart,
       statueEnd,
