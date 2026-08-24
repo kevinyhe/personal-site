@@ -44,10 +44,10 @@
  *
  * Choreography: enter from off-screen right driving hard leftward; snap one
  * side into reverse so the nose whips past the direction of travel and the
- * robot rides backwards on its momentum (the reverse entry); hold a power
- * slide around a circle near frame centre with the outside wheels overspun;
- * then straighten, counter-steer, and roll to rest facing the camera's
- * 10 o'clock.
+ * robot rides backwards on its momentum (the reverse entry); hold a short
+ * power slide with the outside wheels overspun; then straighten,
+ * counter-steer, and roll to rest with the robot's BACK pointed at the goal,
+ * which is where it scores from.
  */
 
 export type RobotDriftFrame = {
@@ -91,6 +91,22 @@ export type RobotDriftOptions = {
  */
 export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
 
+/**
+ * Where the nose points once the robot has stopped: the exact opposite of
+ * TEN_OCLOCK_HEADING, about +30 degrees.
+ *
+ * The robot scores out of its back — the intake feeds a tower to an indexer
+ * at the top rear, and the triangular aligner that seats against the goal
+ * mouth is back there too — so it has to finish reversed into the goal. The
+ * goal therefore sits along the robot's rear direction, -(sin h, 0, cos h),
+ * which for this heading is up and to the left, away from the camera. That
+ * keeps the shot readable: the goal is upstage and clear of the robot's
+ * silhouette, the camera still looks at the front of the robot, and the
+ * whole run finishes on the same screen axis the scene was framed around
+ * instead of a new one.
+ */
+const BACKED_IN_HEADING = TEN_OCLOCK_HEADING + Math.PI;
+
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
 /** Scaled-down gravity, robot lengths per s^2 (see the header comment). */
@@ -106,6 +122,8 @@ const MAX_WHEEL_SPEED = 4.5;
  *  stop them, so the slide runs long instead of hooking up again a moment
  *  after the flick. */
 const MU_KINETIC = 0.42;
+/** Distance from the robot's centre to its front bumper, robot lengths. */
+const NOSE_OFFSET = 0.5;
 /** Nose error below which the parking driver lets go of the sticks, rad. */
 const NOSE_SETTLED = 0.04;
 /** Gripping friction coefficient near zero slip. Only a little above the
@@ -150,6 +168,16 @@ type DriverPhase = {
  * single circle. Total rotation is bimodal — the parking controller either
  * catches the nose on this turn or takes a whole extra one — so these sit
  * in the middle of the lower band rather than near its edge.
+ *
+ * The two sliding phases were then cut from 4.5 s to 1.5 s. Nothing about
+ * that is a rescale: the path is integrated, so a third of the time is a
+ * third of the tyre work, and at the old yaw caps the robot barely came
+ * round at all. The caps in those two phases were raised (1.42 -> 2.6 and
+ * 1.05 -> 1.8 rad/s) to spend the shorter slide harder. Swept in a grid,
+ * the low band holds up to about yawTarget 3.0 in the reverse ride and 2.0
+ * in the power slide before the run gains a whole extra turn, so these sit
+ * clear of that edge. Entry, flick, exit and park keep their old lengths;
+ * the whole run is 5.3 s.
  */
 const SCHEDULE: DriverPhase[] = [
   // Entry: flat out across the frame, driving in nose-first.
@@ -163,15 +191,15 @@ const SCHEDULE: DriverPhase[] = [
   // budget is spent longitudinally (little lateral grip is left to eat the
   // momentum), and the robot sails on with the nose far past the direction
   // of travel.
-  { duration: 1.0, left: -2.9, right: 4.5, yawGain: 1.6, yawTarget: 1.42 },
+  { duration: 0.4, left: -2.9, right: 4.5, yawGain: 1.6, yawTarget: 2.6 },
   // Power slide: ease the yaw down and feed forward drive back in so the
   // spin opens into a circle; the right side overspins the whole way,
   // pumping energy into the slide.
-  { duration: 3.5, left: 2.3, right: 4.5, yawGain: 2.8, yawTarget: 1.05 },
+  { duration: 1.1, left: 2.3, right: 4.5, yawGain: 2.8, yawTarget: 1.8 },
   // Exit: straighten out and let the slide bleed off.
-  { duration: 1.1, headingGain: 3.4, headingTarget: TEN_OCLOCK_HEADING, left: 0.5, right: 0.5, yawGain: 2.4 },
-  // Park: sticks to zero, small trims settle the nose on 10 o'clock.
-  { duration: 1.6, headingGain: 3.4, headingTarget: TEN_OCLOCK_HEADING, left: 0, right: 0, yawGain: 2.4 },
+  { duration: 1.1, headingGain: 3.4, headingTarget: BACKED_IN_HEADING, left: 0.5, right: 0.5, yawGain: 2.4 },
+  // Park: sticks to zero, small trims back the robot's tail into the goal.
+  { duration: 1.6, headingGain: 3.4, headingTarget: BACKED_IN_HEADING, left: 0, right: 0, yawGain: 2.4 },
 ];
 
 const START_HEADING = -Math.PI / 2;
@@ -343,14 +371,60 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 }
 
 /**
- * Where the run ends — the outro scene picks the robot up from this pose.
- * The heading is the final frame's CONTINUOUS heading, two full turns past
- * the wrapped TEN_OCLOCK_HEADING (about TEN_OCLOCK_HEADING + 4 * PI): keep
- * using it as-is for continuity with the played-back frames, and wrap it
- * before comparing against TEN_OCLOCK_HEADING itself.
+ * When the intake should swallow a ball, as seconds into the run. Spread
+ * across the entry, the flick, the reverse ride and the power slide so the
+ * robot collects one every half second or so while it is still moving fast.
+ * The last one lands just before the slide ends; nothing is picked up in the
+ * exit or the park, where a ball vanishing under a nearly stationary robot
+ * would read as a glitch.
  */
-export const DRIFT_REST_POSE = (() => {
+const PICKUP_TIMES = [0.3, 0.7, 1.15, 1.7, 2.35];
+
+// One simulation at module load, shared by the two exports below. Neither
+// depends on the options: wheelRadius only scales the reported wheel speeds,
+// and the internal step is pinned near INTERNAL_RATE whatever the sample rate.
+const RUN = (() => {
   const frames = buildDriftPath();
   const last = frames[frames.length - 1];
-  return { heading: last.heading, position: last.position };
+  // Nearest recorded frame. Frame times are an exact grid, so this is the
+  // index the time falls on, clamped in case a pickup time is ever edited
+  // past the end of the run.
+  const frameAt = (time: number) => {
+    const rate = (frames.length - 1) / last.time;
+    return frames[clamp(Math.round(time * rate), 0, frames.length - 1)];
+  };
+  return {
+    finish: { heading: last.heading, position: last.position },
+    // Where the front bumper is at each pickup time. Read off the simulated
+    // path rather than guessed, so a ball sitting here is exactly where the
+    // intake sweeps through.
+    pickups: PICKUP_TIMES.map((time) => {
+      const frame = frameAt(time);
+      const position: [number, number] = [
+        frame.position[0] + NOSE_OFFSET * Math.sin(frame.heading),
+        frame.position[1] + NOSE_OFFSET * Math.cos(frame.heading),
+      ];
+      return { position, time };
+    }),
+  };
 })();
+
+/**
+ * Where the run ends — the resting pose, and the pose the goal is placed
+ * against. The heading is the final frame's CONTINUOUS heading; the run now
+ * stays inside one turn, so it is also within a few degrees of
+ * BACKED_IN_HEADING, but wrap it before comparing if that ever changes.
+ *
+ * The goal sits just off the robot's REAR, along -(sin h, 0, cos h) from
+ * this position — see BACKED_IN_HEADING for why the robot finishes reversed
+ * into it.
+ */
+export const DRIFT_FINISH: { heading: number; position: [number, number] } = RUN.finish;
+
+/**
+ * Ball pickups: the moment the intake takes each ball, and the ground
+ * position the ball has to be sitting at for that to happen. In run order.
+ * The scene places a ball at each position and removes it at the matching
+ * time, feeding it up the tower to the indexer.
+ */
+export const BALL_PICKUP_TIMES: Array<{ position: [number, number]; time: number }> = RUN.pickups;
