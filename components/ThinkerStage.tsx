@@ -106,33 +106,44 @@ const BREAK_END = 0.96;
 const CAMERA_DISTANCE = 5.0;
 const CAMERA_DISTANCE_BROKEN = 5.1;
 const CAMERA_DISTANCE_COMPACT_BROKEN = 6.3;
-// The shot OPENS on the hand — the piece that breaks first — and pulls out
-// from there. World position of the hand: the hand seeds' own model coords
-// (see thinkerChunks) turned by the stage group's yaw, computed once rather
-// than eyeballed. It sits at the front of the figure, nearest the lens,
-// which is why the break starts there and why the camera can sit this close
-// without the rest of the figure crossing in front of it.
-const HAND_LOOK_AT = new THREE.Vector3(-0.033, -0.137, 1.329);
-const CAMERA_DISTANCE_HAND = 1.45;
-const CAMERA_DISTANCE_HAND_COMPACT = 1.9;
-// Where the camera aims (figure height, centre 0): the pan runs hand ->
+// The shot OPENS on the blow — where the figure struck the floor, the point
+// the whole fracture is measured from — and pulls out from there. The
+// position comes from the build itself (`breakOrigin`), turned into world
+// space by the stage group's own rotation, so if the impact moves the
+// camera follows it without anything here being retyped. This is the
+// fallback for the frames before the build has landed.
+const IMPACT_FALLBACK = new THREE.Vector3(-0.15, -1.5, 0.25);
+// Far enough back that the blow reads in context — the base and the legs
+// above it — rather than filling the frame with anatomy you cannot place.
+const CAMERA_DISTANCE_CLOSE = 2.6;
+const CAMERA_DISTANCE_CLOSE_COMPACT = 3.2;
+// The stage group's own rotation. Shared with ChunkedThinker's <group> so
+// the camera and the figure cannot drift apart.
+const STAGE_ROTATION: [number, number, number] = [-0.08, THINKER_BASE_YAW, 0.012];
+// Where the camera aims (figure height, centre 0): the pan runs impact ->
 // chest -> middle as a quadratic Bezier, so the aim ARCS up the figure and
 // back down instead of sliding along a straight line between two points.
 const LOOK_AT_Y = 0.85;
 const LOOK_AT_Y_BROKEN = -0.05;
 const LOOK_AT_MID = new THREE.Vector3(0.05, LOOK_AT_Y + 0.1, 0.35);
 const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
-// Where the camera sits for the opening hand shot, per unit of distance:
-// nearly head-on and a little BELOW the hand, so the move out to
+// Where the camera sits for the opening shot, per unit of distance: hard to
+// the RIGHT of the figure and a little below the blow, so the move out to
 // CAMERA_OFFSET's high three-quarter view is a real tilt and swing rather
-// than a straight dolly back.
-const CAMERA_OFFSET_HAND = new THREE.Vector3(0.18, -0.06, 1).normalize();
+// than a straight dolly back. Both this and CAMERA_OFFSET sit well to the
+// right, and the swing below runs leftward, so the whole move reads
+// right-to-left.
+const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.45, 1).normalize();
+// The blow lands on the floor, so aiming straight at it puts half the frame
+// below the ground and empty. The opening aim is lifted this far above it,
+// which fills the frame with the base and the legs standing out of it.
+const IMPACT_AIM_LIFT = 0.45;
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
 // The swing rides the RAW breakup while the zoom rides its smoothstep, so
 // the orbit keeps drifting after the pull-out has settled.
-const ORBIT_LEFT = -0.7;
-const ORBIT_LEFT_COMPACT = -0.5;
+const ORBIT_LEFT = -1.0;
+const ORBIT_LEFT_COMPACT = -0.7;
 
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
@@ -144,11 +155,6 @@ const STAGE_BLACK = "#0a0a0a";
 // share the screen — the hand-off reads as a cut, not a dissolve.
 const STATUE_FADE_END = 0.08;
 const STATUE_FOV = 34;
-// The chase camera does not roll. Banking the camera tips the horizon, and
-// on screen that is indistinguishable from the robot itself leaning — which
-// it must not do. Kept as a constant so the lateral-acceleration term below
-// stays readable; raise it to bring the bank back.
-const CAMERA_ROLL_MAX = 0;
 
 /** Pull `value` to within `maxDistance` of `target`, in place. */
 const lagScratch = new THREE.Vector3();
@@ -161,6 +167,47 @@ function clampLag(value: THREE.Vector3, target: THREE.Vector3, maxDistance: numb
 
 /** Last frame's camera framing, read by headless captures. */
 const cameraProbe: Record<string, unknown> = {};
+
+/**
+ * Outro camera keyframes, against seconds along the drift. Each is a list
+ * of [time, value] read with `keyed`, which eases between them.
+ */
+const CAMERA_AZIMUTH: Array<[number, number]> = [
+  [0, -45],
+  [1.3, 112],
+  [2.9, 315],
+  [4.4, 400],
+  [6.3, 450],
+];
+const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
+  [0, 4.6],
+  [2.9, 5.2],
+  [4.4, 6.4],
+  [6.3, 8.6],
+];
+const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
+  [0, 1.15],
+  [2.9, 1.35],
+  [6.3, 3.0],
+];
+const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
+  [0, 0],
+  [4.4, 0.4],
+  [6.3, 1.8],
+];
+
+/** Smoothstep between [time, value] keys. */
+function keyed(keys: Array<[number, number]>, at: number) {
+  if (at <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i += 1) {
+    if (at > keys[i][0]) continue;
+    const [t0, v0] = keys[i - 1];
+    const [t1, v1] = keys[i];
+    const x = THREE.MathUtils.clamp((at - t0) / Math.max(t1 - t0, 1e-6), 0, 1);
+    return v0 + (v1 - v0) * x * x * (3 - 2 * x);
+  }
+  return keys[keys.length - 1][1];
+}
 
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
@@ -242,7 +289,7 @@ function useThinkerScrollProgress({
         end: () => timing().statueEnd,
         invalidateOnRefresh: true,
         onRefresh: readBreakStart,
-        scrub: 0.9,
+        scrub: 1.6,
         start: () => timing().start,
       },
       value: 1,
@@ -253,7 +300,7 @@ function useThinkerScrollProgress({
       scrollTrigger: {
         end: () => timing().end,
         invalidateOnRefresh: true,
-        scrub: 0.9,
+        scrub: 1.6,
         start: () => timing().statueEnd,
       },
     });
@@ -311,10 +358,13 @@ function dampSpring(
 }
 
 function CameraRig({
+  openAim,
   progressRef,
   reducedMotion,
   robotState,
 }: {
+  /** Where the shot opens: the blow, lifted clear of the floor. */
+  openAim: THREE.Vector3;
   progressRef: ProgressRef;
   reducedMotion: boolean;
   robotState: RobotCameraState;
@@ -370,19 +420,19 @@ function CameraRig({
       ? 1
       : breakup * breakup * (3 - 2 * breakup);
     const distance = compact
-      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_HAND_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, open)
-      : THREE.MathUtils.lerp(CAMERA_DISTANCE_HAND, CAMERA_DISTANCE_BROKEN, open);
+      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, open)
+      : THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE, CAMERA_DISTANCE_BROKEN, open);
     // Aim: quadratic Bezier hand -> chest -> middle.
     const u = 1 - open;
     lookAt
-      .copy(HAND_LOOK_AT)
+      .copy(openAim)
       .multiplyScalar(u * u)
       .addScaledVector(LOOK_AT_MID, 2 * u * open)
       .addScaledVector(LOOK_AT_END, open * open);
     // The eye swings from nearly head-on and below the hand round to the
     // high three-quarter view, and keeps orbiting left after the zoom has
     // settled.
-    scratch.offset.copy(CAMERA_OFFSET_HAND).lerp(CAMERA_OFFSET, open).normalize();
+    scratch.offset.copy(CAMERA_OFFSET_CLOSE).lerp(CAMERA_OFFSET, open).normalize();
     target
       .copy(scratch.offset)
       .applyAxisAngle(UP, (compact ? ORBIT_LEFT_COMPACT : ORBIT_LEFT) * breakup)
@@ -447,55 +497,57 @@ function CameraRig({
       chase.roll = 0;
     }
 
-    const speed = robotState.speed;
-    const moving = speed > 0.4;
-    // Chase along the travel direction; at rest, along the robot's nose.
-    scratch.forward.copy(robotState.velocity);
-    if (moving) scratch.forward.normalize();
-    else
-      scratch.forward.set(
-        Math.sin(robotState.heading),
-        0,
-        Math.cos(robotState.heading),
-      );
+    // ------------------------------------------------------------------
+    // The outro camera is CHOREOGRAPHED, not reactive. It orbits the robot
+    // in the robot's own frame, so the framing is described relative to the
+    // robot however the robot happens to be pointing:
+    //
+    //   azimuth 0 = dead in front of the nose, +90 = off its LEFT side,
+    //   180 = behind it, -90 = off its RIGHT side. The angle only ever
+    //   increases, so the camera pans one way (leftwards) the whole run
+    //   instead of doubling back.
+    //
+    //   -45  it opens on the robot's FRONT RIGHT while the robot is
+    //        travelling backwards
+    //   +112 through the drift, about midway between its left and its
+    //        back left, watching the tail hang out
+    //   +315 by the end of the drift, back round to the front right
+    //        (-45 plus a full turn) — that is the leftward pan
+    //   +450 at rest, exactly off the robot's LEFT (+90 plus a turn),
+    //        which puts the goal, sitting off the robot's rear, on the
+    //        RIGHT of frame. It also backs away here so the goal and the
+    //        scored balls fit in the shot.
+    // ------------------------------------------------------------------
+    const runAt = robotState.runTime;
+    const azimuth = keyed(CAMERA_AZIMUTH, runAt) * (Math.PI / 180);
+    const orbit = keyed(CAMERA_DISTANCE_KEYS, runAt);
+    const lift = keyed(CAMERA_HEIGHT_KEYS, runAt);
+    // Offset direction in the robot's frame. ADDING the azimuth is what
+    // swings a positive angle to the robot's LEFT: with +Y up, a body's
+    // right is cross(forward, up), which for a robot facing -z is +x — so
+    // subtracting put the camera on the wrong side of it.
+    const side = robotState.heading + azimuth;
+    scratch.positionTarget.set(
+      robotState.position.x + Math.sin(side) * orbit,
+      ROBOT_GROUND_Y + lift,
+      robotState.position.z + Math.cos(side) * orbit,
+    );
+    // Aim at the robot, easing back toward its tail once it is parked so
+    // the goal it has just filled shares the frame.
+    const behind = keyed(CAMERA_AIM_BEHIND_KEYS, runAt);
+    scratch.lookTarget.set(
+      robotState.position.x - Math.sin(robotState.heading) * behind,
+      ROBOT_GROUND_Y + 0.85,
+      robotState.position.z - Math.cos(robotState.heading) * behind,
+    );
 
-    if (robotState.resting) {
-      // The run is over: settle into a three-quarter hero shot of the
-      // robot in its 10-o'clock pose, softer springs so it eases in.
-      const fx = Math.sin(robotState.heading);
-      const fz = Math.cos(robotState.heading);
-      // Wide enough to hold the robot AND the goal it has just backed into,
-      // with the scored balls sitting in the trough. The old 3.6-unit
-      // standoff framed the robot alone so tightly that the point of the
-      // ending — nine balls in the goal — was off screen entirely.
-      scratch.positionTarget.set(
-        robotState.position.x + fx * 6.4 + Math.cos(robotState.heading) * 4.6,
-        ROBOT_GROUND_Y + 3.1,
-        robotState.position.z + fz * 6.4 - Math.sin(robotState.heading) * 4.6,
-      );
-      // Aim past the robot into the goal, so the trough and what is in it
-      // share the frame instead of sitting off the edge behind it.
-      scratch.lookTarget.set(
-        robotState.position.x - Math.sin(robotState.heading) * 1.8,
-        ROBOT_GROUND_Y + 0.9,
-        robotState.position.z - Math.cos(robotState.heading) * 1.8,
-      );
-    } else {
-      // Low, behind-left of the motion, ~2.5 robot lengths back, looking
-      // ahead of the robot along its velocity.
-      scratch.positionTarget
-        .copy(robotState.position)
-        .addScaledVector(scratch.forward, -4.0);
-      scratch.positionTarget.x += scratch.forward.z * 1.1;
-      scratch.positionTarget.z += -scratch.forward.x * 1.1;
-      scratch.positionTarget.y = ROBOT_GROUND_Y + 0.9;
-      // Aimed well ahead of the robot along its travel, so it sits back
-      // from the centre of frame rather than pinned to it.
-      scratch.lookTarget
-        .copy(robotState.position)
-        .addScaledVector(scratch.forward, Math.min(speed * 0.7, 3.4));
-      scratch.lookTarget.y = ROBOT_GROUND_Y + 0.35;
+    if (seeding) {
+      chase.seeded = true;
+      chase.velocity.set(0, 0, 0);
+      chase.lookVelocity.set(0, 0, 0);
+      chase.roll = 0;
     }
+
     if (seeding) {
       chase.position.copy(scratch.positionTarget);
       chase.lookPosition.copy(scratch.lookTarget);
@@ -526,19 +578,15 @@ function CameraRig({
     clampLag(chase.position, scratch.positionTarget, 2.0);
     clampLag(chase.lookPosition, scratch.lookTarget, 2.0);
 
-    // A small roll out of the lateral acceleration, FOV widening with
-    // speed, and a light two-sine handheld wobble.
-    const rollTarget = moving
-      ? THREE.MathUtils.clamp(
-          -0.006 * robotState.aLat,
-          -CAMERA_ROLL_MAX,
-          CAMERA_ROLL_MAX,
-        )
-      : 0;
-    chase.roll += (rollTarget - chase.roll) * Math.min(1, 5 * dt);
+    // No roll at all — banking the camera tips the horizon, and on screen
+    // that is indistinguishable from the robot leaning. The focal length
+    // widens a little
+    // with how fast the robot is actually moving, easing back to a settled
+    // value once it has parked.
+    chase.roll += (0 - chase.roll) * Math.min(1, 5 * dt);
     const fovTarget = robotState.resting
       ? 36
-      : STATUE_FOV + 8 * THREE.MathUtils.clamp(speed / 6, 0, 1);
+      : STATUE_FOV + 8 * THREE.MathUtils.clamp(robotState.speed / 6, 0, 1);
     // Snapped on the cut frame, eased after it, so the outro opens at its
     // own focal length instead of zooming out of the statue's.
     if (seeding) chase.fov = fovTarget;
@@ -781,7 +829,7 @@ function ChunkedThinker({
   });
 
   return (
-    <group ref={stageRef} rotation={[-0.08, THINKER_BASE_YAW, 0.012]}>
+    <group ref={stageRef} rotation={STAGE_ROTATION}>
       <DebugMarkers />
       {chunks.map((chunk, index) => (
         <group
@@ -893,6 +941,19 @@ function ThinkerCanvas({
   const build = useThinkerChunks();
   // Written by RobotOutro every frame, read by CameraRig for the chase.
   const robotState = useMemo(createRobotCameraState, []);
+  // Where the blow landed, in world space: the build reports it in the
+  // figure's own coordinates, so it has to go through the stage group's
+  // rotation before the camera can aim at it.
+  const openAim = useMemo(() => {
+    const point = build
+      ? new THREE.Vector3(...build.breakOrigin)
+      : IMPACT_FALLBACK.clone();
+
+    point.applyEuler(new THREE.Euler(...STAGE_ROTATION));
+    point.y += IMPACT_AIM_LIFT;
+
+    return point;
+  }, [build]);
   // Warm the pipeline as soon as the chunks are in. One frame compiles the
   // materials and uploads the geometry; the shadow map needs its own pass,
   // so draw a few across consecutive frames rather than all in one tick.
@@ -945,6 +1006,7 @@ function ThinkerCanvas({
       <color args={[STAGE_BLACK]} attach="background" />
       <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
       <CameraRig
+        openAim={openAim}
         progressRef={progressRef}
         reducedMotion={reducedMotion}
         robotState={robotState}
