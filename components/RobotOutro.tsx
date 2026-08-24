@@ -165,7 +165,13 @@ const RUN_START = 0.15;
  * reverse entry covers that gap. Parking the robot short of the goal
  * instead left the scored balls strung across the gap in mid-air.
  */
-const GOAL_GAP = -0.34;
+/**
+ * The goal's mouth, in stage units on the floor, and the direction it faces
+ * — the way a robot backing into it would be travelling. Fixed, so the goal
+ * stays put on the far side of the ball run whatever the drift does.
+ */
+const GOAL_MOUTH: [number, number] = [-3.6, -3.4];
+const GOAL_FACING = Math.PI;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -192,7 +198,7 @@ const UPPER_STAGE_Y = 1.15;
  * rather than sliding the whole assembly upward, which is not how the
  * mechanism works.
  */
-const INDEXER_OPEN = 0.85;
+const INDEXER_OPEN = 0.36;
 const INDEXER_OPEN_TIME = 0.35;
 
 type RobotRig = {
@@ -705,6 +711,19 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
+  // The indexer component is bolted to the channels, so it has to hang off
+  // one of them rather than swinging on its own hinge. `attach` keeps its
+  // world placement while changing whose rotation it inherits.
+  const channels = spinners.filter(
+    (s) => s.category === "indexer" && !s.object.name.includes("component"),
+  );
+  if (channels.length > 0) {
+    for (const spinner of spinners) {
+      if (spinner.category !== "indexer") continue;
+      if (!spinner.object.name.includes("component")) continue;
+      channels[0].object.attach(spinner.object);
+    }
+  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -727,31 +746,37 @@ function assembleRig(model: RobotModel | null): RobotRig {
  * the aligner down the trough's axis and into the opening. Returns that
  * mouth's world position, which is where scored balls end up.
  */
-function placeGoal(goal: GoalModel, finish: DriftFinish): THREE.Vector3 {
-  // The robot faces along (sin h, cos h), so its rear points the other way.
-  const rearX = -Math.sin(finish.heading);
-  const rearZ = -Math.cos(finish.heading);
+/**
+ * Puts the goal at a FIXED spot on the floor and points it back up the
+ * field, rather than hanging it off wherever the drift happens to stop.
+ *
+ * It used to be placed off the robot's rear at the finish, which guaranteed
+ * the aligner lined up but meant the goal followed the robot: a sustained
+ * left-hand drift is a circle, so the robot swings out left and comes back
+ * round to the RIGHT of the balls, and the goal came with it — landing on
+ * the wrong side of them every time. Fixing the position is what breaks
+ * that, and it leaves the drift free to be as strong as it likes.
+ *
+ * Returns the mouth in world space so the caller can report how squarely
+ * the robot actually arrives.
+ */
+function placeGoal(goal: GoalModel): THREE.Vector3 {
   const opening = goal.openings[0] ?? {
     inward: [0, 0, -1] as [number, number, number],
     position: [0, goal.troughHeight, goal.length / 2] as [number, number, number],
   };
-  // Turn the goal until "into this mouth" and "the way the robot is backing"
-  // are the same direction. Both angles are measured the same way headings
-  // are, atan2(x, z), so the difference is the yaw to apply.
+  // Turn the goal so its mouth faces GOAL_FACING — the direction a robot
+  // scoring into it would be backing.
   const yaw =
-    Math.atan2(rearX, rearZ) - Math.atan2(opening.inward[0], opening.inward[2]);
+    GOAL_FACING - Math.atan2(opening.inward[0], opening.inward[2]);
   goal.object.rotation.set(0, yaw, 0);
-  // The mouth sits half a robot behind the finish, plus a hair of daylight.
-  const standoff = ROBOT_LENGTH * 0.5 + GOAL_GAP;
-  const mouth = new THREE.Vector3(
-    finish.position[0] * ROBOT_LENGTH + rearX * standoff,
-    ROBOT_GROUND_Y + opening.position[1],
-    finish.position[1] * ROBOT_LENGTH + rearZ * standoff,
-  );
-  // Back the goal's own origin out from the mouth: the opening's offset,
-  // turned by the same yaw. The base rides on the floor.
   const cos = Math.cos(yaw);
   const sin = Math.sin(yaw);
+  const mouth = new THREE.Vector3(
+    GOAL_MOUTH[0],
+    ROBOT_GROUND_Y + opening.position[1],
+    GOAL_MOUTH[1],
+  );
   goal.object.position.set(
     mouth.x - (opening.position[0] * cos + opening.position[2] * sin),
     ROBOT_GROUND_Y - GOAL_DROP,
@@ -893,7 +918,7 @@ export default function RobotOutro({
       // smaller than that default, and wheels turning too slowly for the
       // ground read as the whole run sliding.
       const wheel = model?.wheels[0];
-      const { finish, frames } = await loadDrift(
+      const { frames } = await loadDrift(
         model && wheel && model.length > 0
           ? wheel.radius / model.length
           : undefined,
@@ -905,7 +930,7 @@ export default function RobotOutro({
       // missing falls back to a placeholder, so the scene never waits.
       const { ball, goal } = await loadProps();
       if (!live) return;
-      const mouth = placeGoal(goal, finish);
+      const mouth = placeGoal(goal);
       const physics =
         (await loadBallPhysics()) ??
         buildPlaceholderBallPhysics(frames, ball.radius, mouth);
@@ -1109,17 +1134,17 @@ export default function RobotOutro({
     for (const spinner of rig.spinners) {
       if (spinner.category === "indexer") {
         // The indexer holds the balls in the tower until it is time to
-        // score, then swings OPEN to let them past. The two plates and the
-        // component behind them turn opposite ways, so the gap opens
-        // between them rather than the whole assembly rolling one way.
-        // Driven off the playhead, so it closes again on scroll-back.
+        // score, then swings OPEN to let them past. The whole assembly
+        // moves as one: the component is parented to a channel in
+        // assembleRig, so it rides the same hinge instead of turning on its
+        // own and coming away from the metal it is bolted to. Driven off
+        // the playhead, so it closes again on scroll-back.
         const opening = THREE.MathUtils.smoothstep(
           run.time,
           scoringStartRef.current - INDEXER_OPEN_TIME,
           scoringStartRef.current,
         );
-        const away = spinner.object.name.includes("component") ? -1 : 1;
-        spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening * away;
+        spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening;
         continue;
       }
       let omega = 0;
