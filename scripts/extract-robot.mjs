@@ -1,3 +1,7 @@
+// SUPERSEDED by scripts/robot-from-fbx.mjs, which builds robot.glb from the
+// Fusion 360 FBX export instead of reverse-engineering the .f3z archive. Kept
+// for reference: the f3z format notes below took a while to work out.
+//
 // Extract the VEX robot from the Fusion 360 archive "sexy s bot only.f3z" and
 // write public/model/robot/robot.glb plus robot-meta.json.
 //
