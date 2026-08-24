@@ -196,28 +196,21 @@ const U_INNER = 0.4;
 const U_YAW = 2.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // On backwards from the start, down the LEFT-hand side of the goal: the
-  // robot is already rolling when it comes into frame, nose pointing back
-  // the way it came, and it passes the goal well clear before turning.
-  // Both sides driven in reverse to hold that.
-  { duration: 0.7, left: -4.2, right: -4.2 },
-  // Reverse entry into the U. One side thrown against the other breaks the
-  // rear loose and swings the nose round, and the turn is then HELD at a
-  // steady yaw rate against a steady forward speed, which is what makes a
-  // clean constant-radius arc rather than a flick. Tuned for about 24
-  // inches of radius (see U_YAW).
-  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
+  // Straight in, forwards, already alongside the run of balls. There is no
+  // reverse entry any more: the robot arrives driving and goes to work.
+  { duration: 0.5, left: 4.4, right: 4.4 },
+  // Break the rear loose and settle straight into the turn.
+  { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
+  // The drift. Held at a steady yaw against a steady speed so it carves one
+  // clean arc, tail out, collecting the balls as it comes round.
   { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
-  // The 180, spun the OTHER way: it continues the direction the U was
-  // already turning rather than snapping back against it, so the whole run
-  // keeps rotating one way from first frame to last.
+  // The flip into the goal: a hard, short counter-rotation that brings the
+  // tail round to face the mouth.
   { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.0 },
-  // A second reverse entry, this time into the goal. Both sides are driven
-  // backwards hard while the nose is trimmed onto the finish heading, so
-  // the robot slides tail-first toward the mouth with the body still
-  // sideways to its travel — the same move it opened with, arriving.
+  // Reverse entry into the goal - the robot slides tail-first at the mouth
+  // with the body still sideways to its travel.
   { duration: 1.1, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.2, right: -4.2, yawGain: 2.4 },
-  // Ease the reverse off and let it run back the last of the way.
+  // Ease the reverse off over the last of the way in.
   { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.6, right: -1.6, yawGain: 2.6 },
   // Stop dead.
   { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
@@ -252,13 +245,13 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
 
 const START_HEADING = 0;
 /**
- * Chosen so the run finishes near the middle of the floor. Driving in on
- * heading 0 sends the robot along -z, and the whole run covers about
- * (+2, -10.6) robot lengths, so it has to start well upstage of centre or
- * it ends up at the edge of the 46 x 32 ground plane.
+ * Chosen so the run finishes near the middle of the floor. The robot drives
+ * in FORWARDS on heading 0, which carries it along +z, and the run covers
+ * about (-0.3, +6.7) robot lengths, so it starts downstage and works back
+ * toward the middle of the 46 x 32 ground plane.
  */
-const START_POSITION: [number, number] = [-2.0, 7.5];
-const START_SPEED = -4.0;
+const START_POSITION: [number, number] = [-2.0, -6.7];
+const START_SPEED = 4.0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -441,7 +434,7 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 // the last two pickups where the robot had slowed almost to a stop, so the
 // balls they call for ended up 0.39 robot lengths apart on the floor — less
 // than a ball diameter, and they intersected.
-const PICKUP_WINDOW: [number, number] = [1.6, 4.0];
+const PICKUP_WINDOW: [number, number] = [0.9, 3.2];
 const PICKUP_COUNT = 5;
 
 // One simulation at module load, shared by the two exports below. Neither
