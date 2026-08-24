@@ -106,6 +106,8 @@ const FINISH_HEADING = Math.PI;
 const AXLE_OFFSET = 0.35;
 /** Scaled-down gravity, robot lengths per s^2 (see the header comment). */
 const GRAVITY = 5;
+/** Distance at which a driveTo phase starts easing off, robot lengths. */
+const DRIVE_SLOW_RADIUS = 2.2;
 /** Minimum internal integration rate, Hz. */
 const INTERNAL_RATE = 480;
 /** Motor slew: wheel surface speed can change at most this fast, rl/s^2. */
@@ -142,6 +144,17 @@ type DriverPhase = {
   headingGain?: number;
   /** Park the nose here: trim toward this absolute heading, radians. */
   headingTarget?: number;
+  /**
+   * Steer toward this point on the floor, robot lengths, instead of a fixed
+   * heading. The nose is trimmed onto the bearing to it, recomputed every
+   * step, so the phase closes distance to a place rather than settling on a
+   * direction — which is what lets the run finish at a goal whose position
+   * is fixed rather than wherever the drift happened to end.
+   *
+   * `driveToBackwards` steers the TAIL at the point instead, for backing in.
+   */
+  driveTo?: [number, number];
+  driveToBackwards?: boolean;
   /** Base stick input: commanded left-side wheel surface speed, rl/s. */
   left: number;
   /** Base stick input: commanded right-side wheel surface speed, rl/s. */
@@ -180,6 +193,14 @@ type DriverPhase = {
  * what makes the arc wide — radius is roughly speed over yaw rate.
  */
 
+/**
+ * The goal's mouth and a staging point in front of it, in ROBOT LENGTHS.
+ * These mirror GOAL_MOUTH in components/RobotOutro.tsx, which is in stage
+ * units — one robot length is 1.6 of those. Keep the two in step.
+ */
+const GOAL_MOUTH_RL: [number, number] = [-3.6 / 1.6, -3.4 / 1.6];
+const GOAL_STAGING: [number, number] = [-3.6 / 1.6, -1.1 / 1.6];
+
 const SCHEDULE: DriverPhase[] = [
   // In forwards, alongside the run of balls. This is the flat part of the
   // curve — the top of the parabola, where it has barely started to bend.
@@ -192,18 +213,21 @@ const SCHEDULE: DriverPhase[] = [
   { duration: 0.7, left: 4.5, right: 1.0, yawGain: 1.8, yawTarget: 1.9 },
   // Steepest: the aggressive part, tail well out.
   { duration: 1.2, left: 4.5, right: -1.0, yawGain: 2.0, yawTarget: 3.2 },
-  // The flip into the goal, turning the SAME way the drift was already
-  // going. Spinning back against it would carry the robot across to the
-  // other side of the ball line, and the goal is placed off its rear, so
-  // the goal would end up on the wrong side of the balls.
+  // Out of the drift and across to the goal. From here the run is no longer
+  // about the slide: the goal has a FIXED place on the floor now, so the
+  // robot has to actually get to it. These phases steer at a point rather
+  // than a heading — the nose is trimmed onto the bearing to the target,
+  // recomputed every step, so the robot closes on it from wherever the
+  // drift left it. That is what lets the drift be as strong as it likes.
   { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 5.0 },
-  // Reverse entry into the goal: driven backwards with the nose trimmed on
-  // the finish heading, so it arrives tail-first and still sideways.
-  { duration: 1.1, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.2, right: -4.2, yawGain: 2.4 },
-  // Ease the reverse off over the last of the way in.
-  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.6, right: -1.6, yawGain: 2.6 },
+  // Run over to a staging point a little way out in front of the mouth.
+  { duration: 2.6, driveTo: GOAL_STAGING, headingGain: 2.6, left: 4.2, right: 4.2, yawGain: 2.2 },
+  // Swing the tail toward the mouth.
+  { duration: 0.8, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: 0.8, right: 0.8, yawGain: 2.4 },
+  // Reverse entry into the goal, tail-first at the mouth.
+  { duration: 1.4, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: -3.0, right: -3.0, yawGain: 2.4 },
   // Stop dead.
-  { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
+  { duration: 1.0, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
 /**
@@ -339,7 +363,21 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
     const phase = SCHEDULE[phaseIndex];
 
     let yawTarget = phase.yawTarget;
-    if (phase.headingTarget !== undefined) {
+    // Sticks are scaled down as a driveTo target is approached. Without it
+    // the robot cannot arrive: it holds full speed, its turn radius is
+    // wider than its distance to the point, and it just orbits.
+    let drivePace = 1;
+    if (phase.driveTo !== undefined) {
+      const toX = phase.driveTo[0] - x;
+      const toZ = phase.driveTo[1] - z;
+      drivePace = clamp(Math.hypot(toX, toZ) / DRIVE_SLOW_RADIUS, 0.12, 1);
+      // Heading convention: forward is (sin h, cos h), so the bearing to a
+      // point is atan2 of its offset the same way round.
+      let bearing = Math.atan2(toX, toZ);
+      if (phase.driveToBackwards) bearing += Math.PI;
+      const noseError = wrapAngle(bearing - heading);
+      yawTarget = clamp((phase.headingGain ?? 2) * noseError, -2.5, 2.5);
+    } else if (phase.headingTarget !== undefined) {
       const noseError = wrapAngle(phase.headingTarget - heading);
       // Close enough: stop chasing the target and just kill the rotation,
       // so the robot actually comes to rest instead of creeping forever on
@@ -352,8 +390,8 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
     }
     // Positive trim asks for more counter-clockwise yaw: right side up,
     // left side down, exactly like pushing a tank-drive stick pair apart.
-    const commandLeft = clamp(phase.left - trim, -MAX_WHEEL_SPEED, MAX_WHEEL_SPEED);
-    const commandRight = clamp(phase.right + trim, -MAX_WHEEL_SPEED, MAX_WHEEL_SPEED);
+    const commandLeft = clamp(phase.left * drivePace - trim, -MAX_WHEEL_SPEED, MAX_WHEEL_SPEED);
+    const commandRight = clamp(phase.right * drivePace + trim, -MAX_WHEEL_SPEED, MAX_WHEEL_SPEED);
     const slewLimit = MAX_WHEEL_ACCEL * dt;
     wheelLeft += clamp(commandLeft - wheelLeft, -slewLimit, slewLimit);
     wheelRight += clamp(commandRight - wheelRight, -slewLimit, slewLimit);
