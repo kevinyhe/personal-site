@@ -171,7 +171,7 @@ const RUN_START = 0.15;
  * stays put on the far side of the ball run whatever the drift does.
  */
 const GOAL_MOUTH: [number, number] = [-3.6, -3.4];
-const GOAL_FACING = Math.PI;
+const GOAL_FACING = 0;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -711,19 +711,6 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
-  // The indexer component is bolted to the channels, so it has to hang off
-  // one of them rather than swinging on its own hinge. `attach` keeps its
-  // world placement while changing whose rotation it inherits.
-  const channels = spinners.filter(
-    (s) => s.category === "indexer" && !s.object.name.includes("component"),
-  );
-  if (channels.length > 0) {
-    for (const spinner of spinners) {
-      if (spinner.category !== "indexer") continue;
-      if (!spinner.object.name.includes("component")) continue;
-      channels[0].object.attach(spinner.object);
-    }
-  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -1134,17 +1121,20 @@ export default function RobotOutro({
     for (const spinner of rig.spinners) {
       if (spinner.category === "indexer") {
         // The indexer holds the balls in the tower until it is time to
-        // score, then swings OPEN to let them past. The whole assembly
-        // moves as one: the component is parented to a channel in
-        // assembleRig, so it rides the same hinge instead of turning on its
-        // own and coming away from the metal it is bolted to. Driven off
-        // the playhead, so it closes again on scroll-back.
+        // score, then swings OPEN to let them past. Driven off the
+        // playhead, so it closes again on scroll-back.
         const opening = THREE.MathUtils.smoothstep(
           run.time,
           scoringStartRef.current - INDEXER_OPEN_TIME,
           scoringStartRef.current,
         );
-        spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening;
+        // Only the channels move. The component behind them is fixed to the
+        // frame, so it stays exactly where it is while they swing past it —
+        // parenting it to a channel or turning it on its own axis both made
+        // it move, and neither is what the mechanism does.
+        if (!spinner.object.name.includes("component")) {
+          spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening;
+        }
         continue;
       }
       let omega = 0;
