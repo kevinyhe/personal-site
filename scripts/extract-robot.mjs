@@ -1,37 +1,54 @@
-// Extract the VEX robot model from the Fusion 360 archive "sexy s bot.f3z" and
+// Extract the VEX robot from the Fusion 360 archive "sexy s bot only.f3z" and
 // write public/model/robot/robot.glb plus robot-meta.json.
 //
 // Run manually from the repo root (the f3z is untracked and must be present):
-//   node scripts/extract-robot.mjs ["path/to/sexy s bot.f3z"]
+//   node scripts/extract-robot.mjs ["path/to/sexy s bot only.f3z"]
 //
-// What it does and why:
+// How it works:
 // The f3z is a zip of .f3d files (each itself a zip; entries are Zstandard-
-// compressed, which node's zlib handles). The main .f3d carries an Autodesk OGS
-// scene dump: a 79 MB "world" stream plus a 37 MB vertex/index blob
-// (Fusion_mesh_000). The world stream stores each COMPONENT's tessellation in
-// the component's own local frame; the assembled placement lives in an override
-// table that references nodes by ids which, for cross-file (XRef) parts, are not
-// resolvable from this archive alone. The design's saved state is also not an
-// assembled robot (the embedded thumbnail shows a collapsed pile of channels
-// plus VEX Push Back field elements). So instead of reproducing the saved
-// scene, this script extracts the cleanly-tessellated PART meshes (C-channels,
-// 2.75" flex wheels, plates, a sprocket - the user's own modeled geometry) and
-// assembles a canonical four-wheel VEX drive base from them with explicit
-// matrices.
+// compressed, which node's zlib handles). The root .f3d carries an Autodesk
+// OGS scene dump: a "world" stream (length-prefixed UTF-16 record soup) plus a
+// vertex/index blob (Fusion_mesh_000). Component tessellation lives in
+// per-component worlds in local frames; the CURRENT placement of every moved
+// occurrence lives in a table of PersistentPassiveNodePath records at the end
+// of the world stream, each carrying an absolute world matrix
+// (OverrideTransformAttribute). This script rebuilds the saved assembly:
+//   1. parse the scope tree (ARenderList / SingleNodeWorld ... EndMark);
+//   2. parse Face records (full + bbox-only reference forms, references
+//      resolved by exact bbox match) and bucket them by scope;
+//   3. parse Instance/Component records; map each to its component world
+//      directly (adjacent SingleNodeWorld), through the world's root GroupNode
+//      hexid (shared components serialize once), or through the prototype
+//      hexid named just before the record;
+//   4. apply the override table: each path's leaf subtree is drawn with its
+//      absolute matrix; children with their own override are drawn separately;
+//   5. detect wheels: instances of round part worlds (two near-equal large
+//      dims, thin third) reached during the walk - on this design that finds
+//      the four 8T sprockets the bot rolls on (three collinear right-side ones
+//      near the ground plus one elevated left one) and several decorative
+//      flex/omni wheels which stay baked into the chassis;
+//   6. weld, meshopt-simplify, and write a GLB: one chassis mesh plus wheel
+//      nodes sharing one sprocket mesh, pre-pivoted so node.rotation.x spins
+//      them about their axle.
 //
-// Output frame: +Z forward, +Y up, ground plane at y = 0, uniform scale such
-// that the robot's forward extent (length) is exactly 1.6 units. Wheels are
-// separate GLB nodes sharing one mesh, pre-pivoted so that node.rotation.x
-// spins them about their axle.
+// Output frame: +Z forward, +Y up, ground at y = 0 (the design's own floor
+// plane - one kickstand leg of the sculpture pokes below it, faithfully to the
+// file), uniform scale such that the forward extent (length) is exactly 1.6.
+//
+// Not tessellated in this archive (so absent from the GLB): the V5 motor,
+// brain, and battery bodies, plus ~17k instanced faces whose source
+// tessellation was never baked by Fusion (about a fifth of the face records;
+// mostly repeated fastener/spacer copies).
 
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { MeshoptSimplifier } from "meshoptimizer/meshopt_simplifier.module.js";
 
-const SRC = process.argv[2] ?? path.resolve("sexy s bot.f3z");
+const SRC = process.argv[2] ?? path.resolve("sexy s bot only.f3z");
 const OUT_DIR = path.resolve("public/model/robot");
 const t0 = Date.now();
+const I4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 // ---------------------------------------------------------------------------
 // Minimal zip reading (store, deflate, and zstd method 93).
@@ -69,8 +86,7 @@ function zipRead(buf, e) {
 }
 
 // ---------------------------------------------------------------------------
-// World stream parsing. Strings are length-prefixed UTF-16LE. We only need a
-// few record types; everything is located by byte-pattern search.
+// World stream helpers.
 // ---------------------------------------------------------------------------
 function namePat(name) {
   const b = Buffer.alloc(4 + name.length * 2);
@@ -90,9 +106,22 @@ function findAll(hay, pat, from = 0, to = Infinity) {
   return out;
 }
 
-function buildScene(world, blobLen) {
-  // Scope tree. ARenderList and SingleNodeWorld open a scope; each is closed by
-  // one WorldSerializerEndMark.
+function mul4(a, b) {
+  const r = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) {
+    for (let ro = 0; ro < 4; ro++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k * 4 + ro] * b[c * 4 + k];
+      r[c * 4 + ro] = s;
+    }
+  }
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Scene parsing.
+// ---------------------------------------------------------------------------
+function buildScene(world, blobLen, geomEnd) {
   const opens = [];
   for (const n of ["ARenderList", "SingleNodeWorld"]) {
     for (const at of findAll(world, namePat(n))) opens.push({ at, kind: n });
@@ -133,16 +162,24 @@ function buildScene(world, blobLen) {
     return { at, m };
   });
 
-  // Instance / Component records: a u64 big-endian id sits 17 bytes before the
-  // type string. The nearest preceding TransformAttribute is the node's local
-  // placement inside its parent world.
+  const gnPat = namePat("GroupNode");
+  const gnPositions = findAll(world, gnPat);
+  const hexidAt = (o) =>
+    o >= 0 && world.readUInt32LE(o) === 16 && /^[0-9A-F]{16}$/.test(world.toString("utf16le", o + 4, o + 36))
+      ? world.toString("utf16le", o + 4, o + 36)
+      : null;
+
+  // Instance / Component records. A u64 big-endian id sits 17 bytes before the
+  // type string; the prototype node's hexid (when the record has no world of
+  // its own) sits 65 bytes before; the nearest preceding TransformAttribute is
+  // the node's base placement inside its parent world.
   const instRecs = [];
   for (const n of ["Instance", "Component"]) {
     for (const at of findAll(world, namePat(n))) {
-      if (at < 17) continue;
+      if (at < 65) continue;
       const hi = world.readUInt32BE(at - 17);
       const lo = world.readUInt32BE(at - 13);
-      instRecs.push({ at, id: hi === 0 ? lo : null, type: n });
+      instRecs.push({ at, id: hi === 0 ? lo : null, protoHexid: hexidAt(at - 65), type: n });
     }
   }
   instRecs.sort((a, b) => a.at - b.at);
@@ -155,13 +192,7 @@ function buildScene(world, blobLen) {
     }
   }
 
-  // GroupNode hexid strings; a component's world is serialized once, at the
-  // first instance. Later instances carry a stub SingleNodeWorld whose root
-  // GroupNode hexid points back to the definition. Map hexid -> largest scope
-  // that starts right after any occurrence of that hexid.
-  const gnPat = namePat("GroupNode");
-  const gnPositions = findAll(world, gnPat);
-  const hexidAt = (o) => (world.readUInt32LE(o) === 16 ? world.toString("utf16le", o + 4, o + 36) : null);
+  // hexid -> largest scope starting right after any occurrence of that hexid.
   const hexScope = new Map();
   for (const g of gnPositions) {
     const id = hexidAt(g + gnPat.length);
@@ -176,9 +207,14 @@ function buildScene(world, blobLen) {
     const cur = hexScope.get(id);
     if (!cur || sc.end - sc.at > cur.end - cur.at) hexScope.set(id, sc);
   }
+
+  // Component world per instance record.
   const snwSorted = scopes.filter((s) => s.kind === "SingleNodeWorld").sort((a, b) => a.at - b.at);
   const ownedScopes = new Set();
+  const targetByOwnHex = new Map();
   for (const r of instRecs) {
+    const og = gnPositions.find((x) => x > r.at && x < r.at + 200);
+    r.ownHexid = og !== undefined ? hexidAt(og + gnPat.length) : null;
     const s = snwSorted.find((x) => x.at > r.at && x.at < r.at + 600);
     if (!s) { r.target = null; continue; }
     ownedScopes.add(s);
@@ -187,20 +223,34 @@ function buildScene(world, blobLen) {
     let t = rootHex ? hexScope.get(rootHex) : null;
     if (!t || t.end - t.at <= s.end - s.at) t = s;
     r.target = t;
+    if (r.ownHexid) targetByOwnHex.set(r.ownHexid, t);
+  }
+  // Records without their own world resolve through their prototype's node;
+  // iterate so chains of shared prototypes settle.
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const r of instRecs) {
+      if (r.target) continue;
+      const t = r.protoHexid ? targetByOwnHex.get(r.protoHexid) : null;
+      if (t) {
+        r.target = t;
+        changed = true;
+        if (r.ownHexid && !targetByOwnHex.has(r.ownHexid)) targetByOwnHex.set(r.ownHexid, t);
+      }
+    }
+    if (!changed) break;
   }
 
   // Face records. Full form: fixed 57-byte prefix after the name, then
   // [vbOffset][posFloats][nrmFloats][uvFloats][idxCount][edgeCount][edges...]
-  // [6 x f64 bbox]. The vertex data at vbOffset is interleaved
-  // pos3+nrm3(+uv2) f32; the u32 index buffer follows the vertex data.
-  // Reference form: no counts, just the bbox — the geometry was already
-  // serialized for an identical face elsewhere and is recovered by exact bbox
-  // match (identical faces share identical local-frame bounds).
+  // [6 x f64 bbox]; vertex data at vbOffset is interleaved pos3+nrm3(+uv2)
+  // f32 with the u32 index buffer following it. Reference form: bbox only;
+  // resolved by exact bbox match (identical copies share identical bounds).
   const facePat = namePat("Face");
   const fullFaces = [];
   const refFaces = [];
   const bboxKey = (b) => b.map((x) => x.toFixed(6)).join(",");
-  for (const at of findAll(world, facePat)) {
+  for (const at of findAll(world, facePat, 0, geomEnd)) {
     const b = at + facePat.length + 57;
     if (b + 24 + 48 > world.length) continue;
     const off = world.readUInt32LE(b);
@@ -233,7 +283,6 @@ function buildScene(world, blobLen) {
       }
     }
     if (!handled) {
-      // reference form: the bbox starts a few bytes earlier (no count fields)
       for (const rel of [49, 53, 57, 61]) {
         const bbox = readBbox(at + facePat.length + rel);
         if (bbox && !bbox.every((x) => x === 0)) {
@@ -262,88 +311,71 @@ function buildScene(world, blobLen) {
     const s = smallestScope(r.at);
     if (s) (s.insts ??= []).push(r);
   }
-  return { instRecs, ownedScopes, scopes };
+  return { hexScope, instRecs, ownedScopes, scopes, targetByOwnHex };
 }
 
 // ---------------------------------------------------------------------------
-// Geometry collection: expand a component world into a triangle soup
-// (positions + per-vertex normals), composing nested instance base transforms.
+// Override table: PersistentPassiveNodePath records, each a chain of numeric
+// node ids plus the leaf node's hexid, followed by an absolute 4x4
+// (OverrideTransformAttribute). Records may instead carry visibility or
+// material overrides; those are skipped.
 // ---------------------------------------------------------------------------
-function mul4(a, b) {
-  const r = new Array(16).fill(0);
-  for (let c = 0; c < 4; c++) {
-    for (let ro = 0; ro < 4; ro++) {
-      let s = 0;
-      for (let k = 0; k < 4; k++) s += a[k * 4 + ro] * b[c * 4 + k];
-      r[c * 4 + ro] = s;
+function parseOverrides(world) {
+  const pPath = namePat("PersistentPassiveNodePath");
+  const pXf = namePat("OverrideTransformAttribute");
+  const starts = findAll(world, pPath);
+  const out = [];
+  for (let k = 0; k < starts.length; k++) {
+    const at = starts[k];
+    const lim = k + 1 < starts.length ? starts[k + 1] : world.length;
+    let o = at + pPath.length;
+    if (world.readUInt32LE(o) === 16) o += 36; // the attribute's own id string
+    const count = world.readUInt32LE(o);
+    o += 4;
+    if (count < 1 || count > 32) continue;
+    const entries = [];
+    let ok = true;
+    for (let e = 0; e < count; e++) {
+      const flag = world.readUInt32LE(o);
+      const hi = world.readUInt32BE(o + 4);
+      if (flag !== 1 || hi !== 0) { ok = false; break; }
+      entries.push(world.readUInt32BE(o + 8));
+      o += 12;
     }
-  }
-  return r;
-}
-const I4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-
-function collectWorld(blob, scene, scope, out, m = I4, depth = 0) {
-  if (depth > 16) return;
-  for (const f of scope.faces || []) {
-    const ibOff = f.off + (f.nv * 6 + f.uv * 2) * 4;
-    const stride = f.uv ? 32 : 24;
-    for (let i = 0; i < f.idx; i++) {
-      const ix = blob.readUInt32LE(ibOff + 4 * i);
-      if (ix >= f.nv) continue;
-      const b = f.off + ix * stride;
-      const x = blob.readFloatLE(b), y = blob.readFloatLE(b + 4), z = blob.readFloatLE(b + 8);
-      const nx = blob.readFloatLE(b + 12), ny = blob.readFloatLE(b + 16), nz = blob.readFloatLE(b + 20);
-      out.pos.push(
-        m[0] * x + m[4] * y + m[8] * z + m[12],
-        m[1] * x + m[5] * y + m[9] * z + m[13],
-        m[2] * x + m[6] * y + m[10] * z + m[14],
-      );
-      out.nrm.push(
-        m[0] * nx + m[4] * ny + m[8] * nz,
-        m[1] * nx + m[5] * ny + m[9] * nz,
-        m[2] * nx + m[6] * ny + m[10] * nz,
-      );
+    if (!ok) continue;
+    // leaf hexid between the entries and the override record
+    let leafHex = null;
+    for (let q = o; q < Math.min(o + 200, lim - 36); q++) {
+      if (world.readUInt32LE(q) === 16) {
+        const t = world.toString("utf16le", q + 4, q + 36);
+        if (/^[0-9A-F]{16}$/.test(t)) { leafHex = t; q += 35; }
+      }
     }
+    const xfAt = world.indexOf(pXf, o);
+    if (xfAt < 0 || xfAt >= lim) continue;
+    const base = xfAt + pXf.length + 5;
+    const m = [];
+    for (let j = 0; j < 16; j++) m.push(world.readFloatLE(base + 4 * j));
+    out.push({ entries, leafHex, m });
   }
-  for (const r of scope.insts || []) {
-    if (r.type !== "Instance" || !r.target || r.target === scope) continue;
-    collectWorld(blob, scene, r.target, out, r.base ? mul4(m, r.base) : m, depth + 1);
+  // duplicate chains: keep the first table entry (later ones are stale)
+  const byChain = new Map();
+  for (const p of out) {
+    const k = p.entries.join(">");
+    if (!byChain.has(k)) byChain.set(k, p);
   }
-  for (const c of scope.children) {
-    if (scene.ownedScopes.has(c)) continue;
-    collectWorld(blob, scene, c, out, m, depth + 1);
-  }
+  return [...byChain.values()];
 }
 
 // ---------------------------------------------------------------------------
-// Part selection by geometric signature (dimensions in cm, sorted ascending).
-// ---------------------------------------------------------------------------
-function worldDims(soup) {
-  const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9];
-  for (let i = 0; i < soup.pos.length; i += 3) {
-    for (let k = 0; k < 3; k++) {
-      if (soup.pos[i + k] < min[k]) min[k] = soup.pos[i + k];
-      if (soup.pos[i + k] > max[k]) max[k] = soup.pos[i + k];
-    }
-  }
-  return { max, min, size: [0, 1, 2].map((k) => max[k] - min[k]) };
-}
-function dimsMatch(size, want, tol) {
-  const s = size.slice().sort((a, b) => a - b);
-  return want.every((v, i) => Math.abs(s[i] - v) <= tol);
-}
-
-// ---------------------------------------------------------------------------
-// Welding and simplification.
+// Welding, simplification, normals.
 // ---------------------------------------------------------------------------
 function weld(soup) {
-  // Weld by position only, so the simplifier sees closed topology instead of
-  // locked seams. Normals are recomputed after simplification.
   const key = new Map();
   const pos = [], idx = [];
-  const np = soup.pos.length / 3;
+  const np = soup.length / 3;
   for (let i = 0; i < np; i++) {
-    const px = soup.pos[i * 3], py = soup.pos[i * 3 + 1], pz = soup.pos[i * 3 + 2];
+    const px = soup[i * 3], py = soup[i * 3 + 1], pz = soup[i * 3 + 2];
     const k = `${px.toFixed(4)},${py.toFixed(4)},${pz.toFixed(4)}`;
     let v = key.get(k);
     if (v === undefined) {
@@ -353,7 +385,33 @@ function weld(soup) {
     }
     idx.push(v);
   }
-  return { idx: new Uint32Array(idx), nrm: new Float32Array(pos.length), pos: new Float32Array(pos) };
+  return { idx: new Uint32Array(idx), pos: new Float32Array(pos) };
+}
+function dropDegenerate(mesh) {
+  const out = [];
+  for (let t = 0; t < mesh.idx.length; t += 3) {
+    const a = mesh.idx[t], b = mesh.idx[t + 1], c = mesh.idx[t + 2];
+    if (a !== b && b !== c && a !== c) out.push(a, b, c);
+  }
+  mesh.idx = new Uint32Array(out);
+  return mesh;
+}
+function simplify(mesh, targetTris, maxError) {
+  const target = Math.max(3, targetTris * 3 - (targetTris * 3) % 3);
+  const [res] = MeshoptSimplifier.simplify(mesh.idx, mesh.pos, 3, target, maxError, []);
+  return { idx: new Uint32Array(res), pos: mesh.pos };
+}
+function compact(mesh) {
+  const remap = new Int32Array(mesh.pos.length / 3).fill(-1);
+  const pos = [], idx = [];
+  for (const i of mesh.idx) {
+    if (remap[i] < 0) {
+      remap[i] = pos.length / 3;
+      pos.push(mesh.pos[i * 3], mesh.pos[i * 3 + 1], mesh.pos[i * 3 + 2]);
+    }
+    idx.push(remap[i]);
+  }
+  return { idx: new Uint32Array(idx), pos: new Float32Array(pos) };
 }
 function computeNormals(mesh) {
   // Area-weighted vertex normals; planar regions stay flat, fillets smooth.
@@ -378,100 +436,11 @@ function computeNormals(mesh) {
   mesh.nrm = nrm;
   return mesh;
 }
-function dropDegenerate(mesh) {
-  const out = [];
-  for (let t = 0; t < mesh.idx.length; t += 3) {
-    const a = mesh.idx[t], b = mesh.idx[t + 1], c = mesh.idx[t + 2];
-    if (a !== b && b !== c && a !== c) out.push(a, b, c);
-  }
-  mesh.idx = new Uint32Array(out);
-  return mesh;
-}
-function simplify(mesh, targetTris, maxError) {
-  const target = Math.max(3, targetTris * 3 - (targetTris * 3) % 3);
-  const [res] = MeshoptSimplifier.simplify(mesh.idx, mesh.pos, 3, target, maxError, []);
-  return { idx: new Uint32Array(res), nrm: mesh.nrm, pos: mesh.pos };
-}
-function compact(mesh) {
-  // Drop vertices that are no longer referenced after simplification.
-  const remap = new Int32Array(mesh.pos.length / 3).fill(-1);
-  const pos = [], nrm = [], idx = [];
-  for (const i of mesh.idx) {
-    if (remap[i] < 0) {
-      remap[i] = pos.length / 3;
-      pos.push(mesh.pos[i * 3], mesh.pos[i * 3 + 1], mesh.pos[i * 3 + 2]);
-      nrm.push(mesh.nrm[i * 3], mesh.nrm[i * 3 + 1], mesh.nrm[i * 3 + 2]);
-    }
-    idx.push(remap[i]);
-  }
-  return { idx: new Uint32Array(idx), nrm: new Float32Array(nrm), pos: new Float32Array(pos) };
-}
-function transformMesh(mesh, m) {
-  const pos = new Float32Array(mesh.pos.length);
-  const nrm = new Float32Array(mesh.nrm.length);
-  for (let i = 0; i < mesh.pos.length; i += 3) {
-    const x = mesh.pos[i], y = mesh.pos[i + 1], z = mesh.pos[i + 2];
-    pos[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
-    pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
-    pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
-    const nx = mesh.nrm[i], ny = mesh.nrm[i + 1], nz = mesh.nrm[i + 2];
-    nrm[i] = m[0] * nx + m[4] * ny + m[8] * nz;
-    nrm[i + 1] = m[1] * nx + m[5] * ny + m[9] * nz;
-    nrm[i + 2] = m[2] * nx + m[6] * ny + m[10] * nz;
-  }
-  return { idx: mesh.idx, nrm, pos };
-}
-function mergeMeshes(meshes) {
-  let nv = 0, ni = 0;
-  for (const m of meshes) { nv += m.pos.length; ni += m.idx.length; }
-  const pos = new Float32Array(nv), nrm = new Float32Array(nv);
-  const idx = new Uint32Array(ni);
-  let vo = 0, io = 0;
-  for (const m of meshes) {
-    pos.set(m.pos, vo * 3);
-    nrm.set(m.nrm, vo * 3);
-    for (let i = 0; i < m.idx.length; i++) idx[io + i] = m.idx[i] + vo;
-    vo += m.pos.length / 3;
-    io += m.idx.length;
-  }
-  return { idx, nrm, pos };
-}
-function clipToLocalRange(mesh, axis, lo, hi) {
-  // Keep triangles fully inside [lo, hi] on the given axis. Channel parts are
-  // extrusions, so the ragged cut reads as an open channel end.
-  const keep = [];
-  for (let t = 0; t < mesh.idx.length; t += 3) {
-    let ok = true;
-    for (let k = 0; k < 3; k++) {
-      const v = mesh.pos[mesh.idx[t + k] * 3 + axis];
-      if (v < lo || v > hi) { ok = false; break; }
-    }
-    if (ok) keep.push(mesh.idx[t], mesh.idx[t + 1], mesh.idx[t + 2]);
-  }
-  return compact({ idx: new Uint32Array(keep), nrm: mesh.nrm, pos: mesh.pos });
-}
-function centerMesh(mesh) {
-  const d = worldDims({ pos: mesh.pos });
-  const c = [0, 1, 2].map((k) => (d.min[k] + d.max[k]) / 2);
-  const pos = new Float32Array(mesh.pos.length);
-  for (let i = 0; i < mesh.pos.length; i += 3) {
-    pos[i] = mesh.pos[i] - c[0];
-    pos[i + 1] = mesh.pos[i + 1] - c[1];
-    pos[i + 2] = mesh.pos[i + 2] - c[2];
-  }
-  return { idx: mesh.idx, nrm: mesh.nrm, pos };
-}
-
-// Rotation helpers producing column-major 4x4s.
-function mat(rotCols, t = [0, 0, 0]) {
-  const [cx, cy, cz] = rotCols;
-  return [cx[0], cx[1], cx[2], 0, cy[0], cy[1], cy[2], 0, cz[0], cz[1], cz[2], 0, t[0], t[1], t[2], 1];
-}
 
 // ---------------------------------------------------------------------------
-// GLB writer (glTF 2.0, two meshes, three materials, embedded meta as extras).
+// GLB writer.
 // ---------------------------------------------------------------------------
-function writeGlb(filePath, chassis, wheel, wheelNodes, meta) {
+function writeGlb(filePath, chassisMesh, wheelMesh, wheelNodes, meta) {
   const buffers = [];
   let byteLength = 0;
   const accessors = [];
@@ -503,24 +472,23 @@ function writeGlb(filePath, chassis, wheel, wheelNodes, meta) {
     accessors.push(acc);
     return accessors.length - 1;
   }
-  function meshPrims(mesh, materialGroups) {
-    // materialGroups: [{material, idx}] sharing this mesh's vertex accessors
-    const posAcc = addAccessor(mesh.pos, "VEC3", 5126, 34962);
-    const nrmAcc = addAccessor(mesh.nrm, "VEC3", 5126, 34962);
-    return materialGroups.map((g) => ({
-      attributes: { NORMAL: nrmAcc, POSITION: posAcc },
-      indices: addAccessor(g.idx, "SCALAR", 5125, 34963),
-      material: g.material,
-    }));
+  function prim(mesh, material) {
+    return {
+      attributes: {
+        NORMAL: addAccessor(mesh.nrm, "VEC3", 5126, 34962),
+        POSITION: addAccessor(mesh.pos, "VEC3", 5126, 34962),
+      },
+      indices: addAccessor(mesh.idx, "SCALAR", 5125, 34963),
+      material,
+    };
   }
   const materials = [
     { name: "aluminum", pbrMetallicRoughness: { baseColorFactor: [0.79, 0.8, 0.82, 1], metallicFactor: 0.85, roughnessFactor: 0.4 } },
     { name: "rubber", pbrMetallicRoughness: { baseColorFactor: [0.082, 0.082, 0.082, 1], metallicFactor: 0, roughnessFactor: 0.95 } },
-    { name: "polycarb", pbrMetallicRoughness: { baseColorFactor: [0.125, 0.14, 0.165, 1], metallicFactor: 0.1, roughnessFactor: 0.5 } },
   ];
   const meshes = [
-    { name: "chassis", primitives: meshPrims(chassis.mesh, chassis.groups) },
-    { name: "wheel", primitives: meshPrims(wheel.mesh, wheel.groups) },
+    { name: "chassis", primitives: [prim(chassisMesh, 0)] },
+    { name: "wheel", primitives: [prim(wheelMesh, 1)] },
   ];
   const nodes = [
     { children: [1, ...wheelNodes.map((_, i) => 2 + i)], extras: meta, name: "robot" },
@@ -565,202 +533,437 @@ console.log("reading", SRC);
 const f3z = fs.readFileSync(SRC);
 const outer = zipEntries(f3z);
 const manifest = JSON.parse(zipRead(f3z, outer.find((e) => e.name === "Manifest.json")).toString("utf8"));
-const mainEntry = outer.find((e) => e.name === manifest.root);
-const f3d = zipRead(f3z, mainEntry);
+const f3d = zipRead(f3z, outer.find((e) => e.name === manifest.root));
 const inner = zipEntries(f3d);
 const world = zipRead(f3d, inner.find((e) => /DefaultScene\/world$/.test(e.name)));
 const blob = zipRead(f3d, inner.find((e) => /DefaultScene\/Fusion_mesh_000$/.test(e.name)));
 console.log("world", world.length, "bytes; mesh blob", blob.length, "bytes");
 
-const scene = buildScene(world, blob.length);
-console.log("scopes", scene.scopes.length, "instance records", scene.instRecs.length);
+// Geometry lives before the override/appearance tail of the stream; face and
+// scope records beyond this point are override bookkeeping, not scene content.
+const geomEnd = Math.min(
+  ...["PersistentPassiveNodePath", "OverrideTransformAttribute", "FOverrideProteinEffectAttribute"]
+    .map((n) => {
+      const i = world.indexOf(namePat(n));
+      return i < 0 ? world.length : i;
+    }),
+);
+const scene = buildScene(world, blob.length, geomEnd);
+const overrides = parseOverrides(world);
+console.log("scopes", scene.scopes.length, "instance records", scene.instRecs.length, "transform overrides", overrides.length);
 
-// Gather every distinct instance-target component world with its geometry.
-const targets = new Map();
-for (const r of scene.instRecs) {
-  if (r.target && !targets.has(r.target)) targets.set(r.target, r);
+const instById = new Map();
+for (const r of scene.instRecs) if (r.id !== null && !instById.has(r.id)) instById.set(r.id, r);
+const overriddenIds = new Set();
+for (const p of overrides) overriddenIds.add(p.entries[p.entries.length - 1]);
+const roots = [];
+let unresolvedOverrides = 0;
+for (const p of overrides) {
+  const leaf = p.entries[p.entries.length - 1];
+  const r = instById.get(leaf);
+  let target = r && r.target ? r.target : null;
+  if (!target && p.leafHex) {
+    target = scene.hexScope.get(p.leafHex) ?? scene.targetByOwnHex.get(p.leafHex) ?? null;
+  }
+  if (target && target.at >= geomEnd) target = null;
+  if (!target) { unresolvedOverrides++; continue; }
+  roots.push({ m: p.m, target });
 }
-const parts = [];
-for (const [scope] of targets) {
-  const soup = { nrm: [], pos: [] };
-  collectWorld(blob, scene, scope, soup);
-  if (soup.pos.length / 9 < 100) continue;
-  parts.push({ dims: worldDims(soup), scope, soup, tris: soup.pos.length / 9 });
-}
-console.log("candidate part worlds", parts.length);
+console.log("override roots", roots.length, "unresolved", unresolvedOverrides);
 
-// Pick parts by dimensional signature (cm). Among matches take the densest
-// tessellation (first serialization is the cleanest).
-function pick(label, want, tol) {
-  const hits = parts.filter((p) => dimsMatch(p.dims.size, want, tol));
-  if (!hits.length) throw new Error("no part world matches " + label);
-  hits.sort((a, b) => b.tris - a.tris);
-  const p = hits[0];
-  console.log(label, "-> world@" + p.scope.at, p.tris, "tris, dims", p.dims.size.map((x) => +x.toFixed(2)).join("x"));
+// ---------------------------------------------------------------------------
+// Wheel-world classification: local geometry of each component world.
+// ---------------------------------------------------------------------------
+function collectScope(scope, out, m, depth) {
+  if (depth > 16) return;
+  for (const f of scope.faces || []) {
+    const ibOff = f.off + (f.nv * 6 + f.uv * 2) * 4;
+    const stride = f.uv ? 32 : 24;
+    for (let i = 0; i < f.idx; i++) {
+      const ix = blob.readUInt32LE(ibOff + 4 * i);
+      if (ix >= f.nv) continue;
+      const b = f.off + ix * stride;
+      const x = blob.readFloatLE(b), y = blob.readFloatLE(b + 4), z = blob.readFloatLE(b + 8);
+      out.push(
+        m[0] * x + m[4] * y + m[8] * z + m[12],
+        m[1] * x + m[5] * y + m[9] * z + m[13],
+        m[2] * x + m[6] * y + m[10] * z + m[14],
+      );
+    }
+  }
+  for (const r of scope.insts || []) {
+    if (r.type !== "Instance" || !r.target || r.target === scope) continue;
+    // children moved by their own override are not part of this subtree
+    if (r.id !== null && overriddenIds.has(r.id)) continue;
+    collectScope(r.target, out, r.base ? mul4(m, r.base) : m, depth + 1);
+  }
+  for (const c of scope.children) {
+    if (scene.ownedScopes.has(c)) continue;
+    collectScope(c, out, m, depth + 1);
+  }
+}
+const scopeInfoCache = new Map();
+function scopeInfo(scope) {
+  if (scopeInfoCache.has(scope)) return scopeInfoCache.get(scope);
+  const out = [];
+  collectScope(scope, out, I4, 0);
+  const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9];
+  for (let i = 0; i < out.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      if (out[i + k] < min[k]) min[k] = out[i + k];
+      if (out[i + k] > max[k]) max[k] = out[i + k];
+    }
+  }
+  const info = {
+    center: [0, 1, 2].map((k) => (min[k] + max[k]) / 2),
+    size: [0, 1, 2].map((k) => max[k] - min[k]),
+    tris: out.length / 9,
+  };
+  scopeInfoCache.set(scope, info);
+  return info;
+}
+function isWheelWorld(scope) {
+  const { size, tris } = scopeInfo(scope);
+  if (tris < 300) return false;
+  const s = size.slice().sort((a, b) => a - b);
+  return s[2] > 3.4 && s[2] < 11 && Math.abs(s[2] - s[1]) < 0.5 && s[0] < s[2] * 0.45;
+}
+
+// ---------------------------------------------------------------------------
+// Assembly walk: collect the chassis soup; record wheel-world draws.
+// ---------------------------------------------------------------------------
+// The walk records one draw per (world, matrix): shared part worlds are
+// simplified once and instanced. Scopes with loose faces along the way get
+// their own pseudo-world keyed by the scope.
+const chassisDraws = [];
+const wheelDraws = [];
+function drawScope(scope, m, depth) {
+  if (depth > 16) return;
+  if (isWheelWorld(scope)) {
+    wheelDraws.push({ m, scope });
+    return;
+  }
+  if ((scope.faces || []).length) chassisDraws.push({ m, scope, shallow: true });
+  for (const r of scope.insts || []) {
+    if (r.type !== "Instance" || !r.target) continue;
+    // subtrees with their own (or an unresolvable) override are not drawn here
+    if (r.id !== null && overriddenIds.has(r.id)) continue;
+    drawScope(r.target, r.base ? mul4(m, r.base) : m, depth + 1);
+  }
+  for (const c of scope.children) {
+    if (scene.ownedScopes.has(c)) continue;
+    drawScope(c, m, depth + 1);
+  }
+}
+let droppedFloaters = 0;
+for (const root of roots) {
+  const drawMark = chassisDraws.length;
+  const wheelMark = wheelDraws.length;
+  drawScope(root.target, root.m, 0);
+  // parts parked in space fully below the design's floor plane are spares the
+  // user dragged aside, not part of the robot
+  let maxZ = -1e9;
+  for (let d = drawMark; d < chassisDraws.length; d++) {
+    const { m, scope } = chassisDraws[d];
+    for (const f of scope.faces || []) {
+      const ibOff = f.off + (f.nv * 6 + f.uv * 2) * 4;
+      const stride = f.uv ? 32 : 24;
+      for (let i = 0; i < f.idx; i += 7) {
+        const ix = blob.readUInt32LE(ibOff + 4 * i);
+        if (ix >= f.nv) continue;
+        const b = f.off + ix * stride;
+        const x = blob.readFloatLE(b), y = blob.readFloatLE(b + 4), z = blob.readFloatLE(b + 8);
+        const wz = m[2] * x + m[6] * y + m[10] * z + m[14];
+        if (wz > maxZ) maxZ = wz;
+      }
+    }
+  }
+  if (chassisDraws.length > drawMark && maxZ < 0) {
+    chassisDraws.length = drawMark;
+    wheelDraws.length = wheelMark;
+    droppedFloaters++;
+  }
+}
+console.log("chassis draws", chassisDraws.length, "wheel-world draws", wheelDraws.length, "dropped floaters", droppedFloaters);
+
+// Ground wheels: the collinear near-ground run plus its partner side. On this
+// design that is the four 8T sprockets (radius ~2 cm); the decorative
+// flex/omni wheels sit high on the sculpture and are baked into the chassis.
+const wheelInfos = wheelDraws.map((d) => {
+  const info = scopeInfo(d.scope);
+  const s = info.size.slice().sort((a, b) => a - b);
+  const axleLocal = info.size.indexOf(s[0]);
+  const ax = [d.m[axleLocal * 4], d.m[axleLocal * 4 + 1], d.m[axleLocal * 4 + 2]];
+  const al = Math.hypot(...ax) || 1;
+  const c = info.center;
+  return {
+    axle: ax.map((v) => v / al),
+    center: [
+      d.m[0] * c[0] + d.m[4] * c[1] + d.m[8] * c[2] + d.m[12],
+      d.m[1] * c[0] + d.m[5] * c[1] + d.m[9] * c[2] + d.m[13],
+      d.m[2] * c[0] + d.m[6] * c[1] + d.m[10] * c[2] + d.m[14],
+    ],
+    draw: d,
+    radius: s[2] / 2,
+  };
+});
+// up axis in model space is +Z; a ground wheel has a horizontal axle and its
+// rim near the lowest wheel rim of the model
+const horizontal = wheelInfos.filter((w) => Math.abs(w.axle[2]) < 0.3);
+if (horizontal.length === 0) throw new Error("no horizontal-axle wheels found");
+const lowestRim = Math.min(...horizontal.map((w) => w.center[2] - w.radius));
+const groundWheels = horizontal.filter((w) => w.center[2] - w.radius < lowestRim + 1.5);
+// include the partner-side wheel(s) of the same kind even if elevated, so both
+// sides are represented for the drift animation
+const groundRadius = groundWheels[0].radius;
+const wheels = wheelInfos.filter(
+  (w) => Math.abs(w.radius - groundRadius) / groundRadius < 0.05 && Math.abs(w.axle[2]) < 0.3,
+);
+console.log("wheels picked", wheels.length, "of", wheelInfos.length, "wheel-world draws;",
+  "radius", wheels[0] && +wheels[0].radius.toFixed(2));
+for (const w of wheels) {
+  console.log("  wheel", "c", w.center.map((v) => +v.toFixed(1)).join(","), "axle", w.axle.map((v) => +v.toFixed(2)).join(","), "r", +w.radius.toFixed(2));
+}
+// the decorative round parts stay chassis geometry (drawn as their own scopes)
+for (const w of wheelInfos) {
+  if (wheels.includes(w)) continue;
+  function reAdd(scope, m, depth) {
+    if (depth > 16) return;
+    if ((scope.faces || []).length) chassisDraws.push({ m, scope });
+    for (const r of scope.insts || []) {
+      if (r.type !== "Instance" || !r.target || r.target === scope) continue;
+      if (r.id !== null && overriddenIds.has(r.id)) continue;
+      reAdd(r.target, r.base ? mul4(m, r.base) : m, depth + 1);
+    }
+    for (const c of scope.children) {
+      if (scene.ownedScopes.has(c)) continue;
+      reAdd(c, m, depth + 1);
+    }
+  }
+  reAdd(w.draw.scope, w.draw.m, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Frame change: model +Z up, wheels roll along model Y. GLB frame: +Y up,
+// +Z forward = model +Y (the bulk of the sculpture leans that way), so
+// glb = (-x, z, y) in model coordinates - a proper rotation.
+// Ground: the design's own z=0 floor plane.
+// ---------------------------------------------------------------------------
+const F2G = [-1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1]; // column-major
+const mapPoint = (p) => [-p[0], p[2], p[1]];
+const mapDir = mapPoint;
+
+// ---------------------------------------------------------------------------
+// Meshing: weld + simplify each scope's direct-face geometry ONCE in its local
+// frame, then emit every instance through its (frame-changed) matrix. Error
+// bounds are kept below sheet-metal wall thickness so channels stay channels;
+// fastener-sized parts may collapse to blobs, which is invisible at the
+// robot's on-screen size.
+// ---------------------------------------------------------------------------
+function scopeLocalMesh(scope) {
+  const soup = [];
+  for (const f of scope.faces || []) {
+    const ibOff = f.off + (f.nv * 6 + f.uv * 2) * 4;
+    const stride = f.uv ? 32 : 24;
+    for (let i = 0; i < f.idx; i++) {
+      const ix = blob.readUInt32LE(ibOff + 4 * i);
+      if (ix >= f.nv) continue;
+      const b = f.off + ix * stride;
+      soup.push(blob.readFloatLE(b), blob.readFloatLE(b + 4), blob.readFloatLE(b + 8));
+    }
+  }
+  const welded = dropDegenerate(weld(soup));
+  let maxDim = 0;
+  {
+    const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < welded.pos.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        if (welded.pos[i + k] < min[k]) min[k] = welded.pos[i + k];
+        if (welded.pos[i + k] > max[k]) max[k] = welded.pos[i + k];
+      }
+    }
+    for (let k = 0; k < 3; k++) maxDim = Math.max(maxDim, max[k] - min[k]);
+  }
+  const raw = welded.idx.length / 3;
+  return { maxDim, raw, welded };
+}
+function budgetedMesh(part, scale2) {
+  const { maxDim, raw, welded } = part;
+  let mesh;
+  if (maxDim < 2.2) {
+    mesh = simplify(welded, Math.max(60, Math.round(Math.min(raw, 150) * scale2)), 0.04);
+  } else if (part.round) {
+    // decorative wheels: keep the silhouette, drop the roller/tread detail
+    mesh = simplify(welded, Math.max(800, Math.round(3600 * scale2)), 0.02);
+  } else {
+    // the error bound stays below sheet-metal wall thickness no matter how
+    // tight the budget gets: collapsed channel walls look far worse than a
+    // slightly higher triangle count
+    const err = Math.min(0.03, 0.18 / maxDim);
+    mesh = simplify(welded, Math.max(300, Math.round(Math.max(400, raw / 8) * scale2)), err);
+  }
+  return compact(mesh);
+}
+const partCache = new Map();
+function partFor(scope) {
+  let p = partCache.get(scope);
+  if (!p) {
+    p = scopeLocalMesh(scope);
+    const info = scopeInfo(scope);
+    const sz = info.size.slice().sort((a, b) => a - b);
+    p.round = sz[2] > 3 && Math.abs(sz[2] - sz[1]) < sz[2] * 0.06 && sz[0] < sz[2] * 0.45;
+    partCache.set(scope, p);
+  }
   return p;
 }
-const partChannel = pick("C-channel 17.5\"", [1.4, 2.54, 44.7], 0.35); // 1x2x1 C-channel
-const partWheel = pick("2.75\" flex wheel", [1.27, 6.82, 6.82], 0.3);
-const partPlate = pick("flat plate", [0.61, 6.32, 11.4], 0.3);
-const partSprocket = pick("sprocket", [1.33, 9.83, 9.88], 0.3);
-
-// Weld + simplify each part once; instances share the result.
-const chanFull = dropDegenerate(weld(partChannel.soup));
-const wheelFull = dropDegenerate(weld(partWheel.soup));
-const plateFull = dropDegenerate(weld(partPlate.soup));
-const sprocketFull = dropDegenerate(weld(partSprocket.soup));
-console.log("welded tris: channel", chanFull.idx.length / 3, "wheel", wheelFull.idx.length / 3, "plate", plateFull.idx.length / 3, "sprocket", sprocketFull.idx.length / 3);
-const chan = computeNormals(compact(simplify(chanFull, 9000, 0.05)));
-// Wheels keep a tighter error bound so the tread stays round.
-const wheelMesh0 = computeNormals(compact(simplify(wheelFull, 20000, 0.012)));
-const plate = computeNormals(compact(simplify(plateFull, 1500, 0.05)));
-const sprocket = computeNormals(compact(simplify(sprocketFull, 9000, 0.02)));
-console.log("simplified tris: channel", chan.idx.length / 3, "wheel", wheelMesh0.idx.length / 3, "plate", plate.idx.length / 3, "sprocket", sprocket.idx.length / 3);
-
-// ---------------------------------------------------------------------------
-// Assembly (cm; +Z forward, +Y up, ground at y=0; scaled at the end).
-// Channel local frame: x = 2.54 across the web, y = length, z = 1.4 flange
-// depth. Wheel local frame: x = axle, y/z = radial.
-// ---------------------------------------------------------------------------
-const chanC = centerMesh(chan);
-const plateC = centerMesh(plate);
-// Wheel: rotate so the axle (the thinnest local axis) lies along +X, making
-// node.rotation.x the spin axis, then center on the axle.
-let wheelC = centerMesh(wheelMesh0);
-{
-  const size = worldDims({ pos: wheelC.pos }).size;
-  const axle = size.indexOf(Math.min(...size));
-  if (axle === 2) wheelC = transformMesh(wheelC, mat([[0, 0, -1], [0, 1, 0], [1, 0, 0]]));
-  else if (axle === 1) wheelC = transformMesh(wheelC, mat([[0, -1, 0], [1, 0, 0], [0, 0, 1]]));
-  wheelC = centerMesh(wheelC);
+// Two-pass budget: measure at scale 1, then shrink per-part targets so the
+// instanced total fits under the triangle cap.
+const drawCount = new Map();
+for (const d of chassisDraws) drawCount.set(d.scope, (drawCount.get(d.scope) || 0) + 1);
+const CAP = 168000;
+let budgetScale = 1;
+const meshCache = new Map();
+for (let pass = 0; pass < 6; pass++) {
+  meshCache.clear();
+  let total = 0;
+  for (const [scope, n] of drawCount) {
+    const mesh = budgetedMesh(partFor(scope), budgetScale);
+    meshCache.set(scope, mesh);
+    total += (mesh.idx.length / 3) * n;
+  }
+  console.log("budget pass", pass, "scale", +budgetScale.toFixed(3), "instanced tris", total);
+  if (total <= CAP) break;
+  budgetScale *= (CAP / total) * 0.97;
 }
-const wheelRadius = worldDims({ pos: wheelC.pos }).size[1] / 2;
-const axleY = wheelRadius; // wheels touch the ground at y=0
+function meshFor(scope) {
+  return meshCache.get(scope);
+}
+const chassisPos = [];
+const chassisIdx = [];
+for (const d of chassisDraws) {
+  const mesh = meshFor(d.scope);
+  if (!mesh.idx.length) continue;
+  const m = mul4(F2G, d.m);
+  const base = chassisPos.length / 3;
+  for (let i = 0; i < mesh.pos.length; i += 3) {
+    const x = mesh.pos[i], y = mesh.pos[i + 1], z = mesh.pos[i + 2];
+    chassisPos.push(
+      m[0] * x + m[4] * y + m[8] * z + m[12],
+      m[1] * x + m[5] * y + m[9] * z + m[13],
+      m[2] * x + m[6] * y + m[10] * z + m[14],
+    );
+  }
+  for (const i of mesh.idx) chassisIdx.push(base + i);
+}
+let chassisMesh = { idx: new Uint32Array(chassisIdx), pos: new Float32Array(chassisPos) };
+// a light global pass welds coincident vertices across part instances and
+// shaves what that frees up, at ~1 mm error
+{
+  const rewelded = dropDegenerate(weld(Array.from(expandSoup(chassisMesh))));
+  chassisMesh = compact(simplify(rewelded, Math.ceil(rewelded.idx.length / 3 * 0.92), 0.0008));
+}
+console.log("instanced chassis tris", chassisMesh.idx.length / 3, "from", meshCache.size, "unique part meshes");
+function expandSoup(mesh) {
+  const out = new Float32Array(mesh.idx.length * 3);
+  for (let i = 0; i < mesh.idx.length; i++) {
+    const v = mesh.idx[i] * 3;
+    out[i * 3] = mesh.pos[v];
+    out[i * 3 + 1] = mesh.pos[v + 1];
+    out[i * 3 + 2] = mesh.pos[v + 2];
+  }
+  return out;
+}
 
-// Side rails: length along Z, web vertical (local x -> world y).
-const railX = 12.5;
-const railMid = axleY + 0.2;
-const sideL = mat([[0, 1, 0], [0, 0, 1], [1, 0, 0]], [-railX, railMid, 0]);
-const sideR = mat([[0, 1, 0], [0, 0, 1], [1, 0, 0]], [railX, railMid, 0]);
-// Cross rails: same channel clipped so the ends land on the side rails, on
-// edge like the rails, sitting on top of them.
-const crossHalf = 12.55;
-const chanClipped = clipToLocalRange(chanC, 1, -crossHalf, crossHalf);
-const crossY = railMid + 2.54 / 2 + 2.54 / 2;
-const crossF = mat([[0, 1, 0], [1, 0, 0], [0, 0, 1]], [0, crossY, 10]);
-const crossB = mat([[0, 1, 0], [1, 0, 0], [0, 0, 1]], [0, crossY, -10]);
-const crossM = mat([[0, 1, 0], [1, 0, 0], [0, 0, 1]], [0, crossY, 0]);
-// Top plate: flat on the middle cross rail.
-const plateM = mat([[0, 1, 0], [0, 0, 1], [1, 0, 0]], [0, crossY + 2.54 / 2 + 0.05, 0]);
-// Upper structure: two vertical channel stubs at the rear carrying a second
-// plate and the drivetrain sprocket mounted between them like a flywheel.
-const towerHalf = 8;
-const chanStub = clipToLocalRange(chanC, 1, -towerHalf, towerHalf);
-const towerZ = -10;
-const towerCenterY = crossY + towerHalf - 1; // bottom sits on the cross rail
-const towerTopY = towerCenterY + towerHalf;
-const towerL = mat([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], [-6.5, towerCenterY, towerZ]);
-const towerR = mat([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], [6.5, towerCenterY, towerZ]);
-const plateTopM = mat([[0, 1, 0], [0, 0, 1], [1, 0, 0]], [0, towerTopY + 0.4, towerZ]);
-// Sprocket: disc in the YZ plane (axle along X) between the towers.
-const sprocketC = (() => {
-  let m = centerMesh(sprocket);
-  const size = worldDims({ pos: m.pos }).size;
-  const axle = size.indexOf(Math.min(...size));
-  if (axle === 2) m = transformMesh(m, mat([[0, 0, -1], [0, 1, 0], [1, 0, 0]]));
-  else if (axle === 1) m = transformMesh(m, mat([[0, -1, 0], [1, 0, 0], [0, 0, 1]]));
-  return centerMesh(m);
-})();
-const sprocketM = mat([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, towerCenterY + 2, towerZ + 4.5]);
-
-const chassisMesh = mergeMeshes([
-  transformMesh(chanC, sideL),
-  transformMesh(chanC, sideR),
-  transformMesh(chanClipped, crossF),
-  transformMesh(chanClipped, crossB),
-  transformMesh(chanClipped, crossM),
-  transformMesh(chanStub, towerL),
-  transformMesh(chanStub, towerR),
-  transformMesh(sprocketC, sprocketM),
-  transformMesh(plateC, plateM),
-  transformMesh(plateC, plateTopM),
-]);
-// index ranges: everything up to the sprocket is aluminum, the sprocket and
-// the two plates are polycarb
-const plateIdxLen = plateC.idx.length * 2;
-const polyIdxLen = plateIdxLen + sprocketC.idx.length;
-const chassisAluIdx = chassisMesh.idx.subarray(0, chassisMesh.idx.length - polyIdxLen);
-const chassisPlateIdx = chassisMesh.idx.subarray(chassisMesh.idx.length - polyIdxLen);
-
-const wheelZ = 17;
-const wheelX = railX + 1.4 / 2 + 1.33 / 2 + 0.1;
-const wheelPositions = [
-  { name: "wheel_left_front", side: "left", x: -wheelX, z: wheelZ },
-  { name: "wheel_right_front", side: "right", x: wheelX, z: wheelZ },
-  { name: "wheel_left_back", side: "left", x: -wheelX, z: -wheelZ },
-  { name: "wheel_right_back", side: "right", x: wheelX, z: -wheelZ },
-];
-
-// Overall bounds before scaling (chassis + wheel extents).
-const chassisDims = worldDims({ pos: chassisMesh.pos });
-const wheelHalf = worldDims({ pos: wheelC.pos }).size.map((v) => v / 2);
-let minB = chassisDims.min.slice(), maxB = chassisDims.max.slice();
-for (const wp of wheelPositions) {
-  const wMin = [wp.x - wheelHalf[0], axleY - wheelRadius, wp.z - wheelHalf[2]];
-  const wMax = [wp.x + wheelHalf[0], axleY + wheelRadius, wp.z + wheelHalf[2]];
+// bounds (chassis + wheels) in the new frame, before scaling
+let minB = [1e9, 1e9, 1e9], maxB = [-1e9, -1e9, -1e9];
+for (let i = 0; i < chassisMesh.pos.length; i += 3) {
   for (let k = 0; k < 3; k++) {
-    if (wMin[k] < minB[k]) minB[k] = wMin[k];
-    if (wMax[k] > maxB[k]) maxB[k] = wMax[k];
+    if (chassisMesh.pos[i + k] < minB[k]) minB[k] = chassisMesh.pos[i + k];
+    if (chassisMesh.pos[i + k] > maxB[k]) maxB[k] = chassisMesh.pos[i + k];
+  }
+}
+for (const w of wheels) {
+  const c = mapPoint(w.center);
+  for (let k = 0; k < 3; k++) {
+    minB[k] = Math.min(minB[k], c[k] - w.radius);
+    maxB[k] = Math.max(maxB[k], c[k] + w.radius);
   }
 }
 const lengthCm = maxB[2] - minB[2];
 const scale = 1.6 / lengthCm;
-console.log("assembled bounds (cm)", minB.map((x) => +x.toFixed(1)), maxB.map((x) => +x.toFixed(1)), "scale", scale.toFixed(5));
+const zMid = (minB[2] + maxB[2]) / 2; // center the robot along its length
+console.log("bounds (cm)", minB.map((v) => +v.toFixed(1)), maxB.map((v) => +v.toFixed(1)), "scale", +scale.toFixed(5));
 
-// Bake scale (and ground shift: minB.y -> 0) into the chassis; wheels are baked
-// with scale only and positioned via node translations.
-function bake(mesh, s, dy) {
-  const pos = new Float32Array(mesh.pos.length);
-  for (let i = 0; i < mesh.pos.length; i += 3) {
-    pos[i] = mesh.pos[i] * s;
-    pos[i + 1] = (mesh.pos[i + 1] - dy) * s;
-    pos[i + 2] = mesh.pos[i + 2] * s;
+// wheel mesh from the ground-wheel component world, pre-pivoted: axle through
+// the origin along +X (in the GLB frame)
+const wheelScope = wheels[0].draw.scope;
+const wheelSoupLocal = [];
+collectScope(wheelScope, wheelSoupLocal, I4, 0);
+const wInfo = scopeInfo(wheelScope);
+{
+  const sizes = wInfo.size.slice().sort((a, b) => a - b);
+  const axleLocal = wInfo.size.indexOf(sizes[0]);
+  const c = wInfo.center;
+  for (let i = 0; i < wheelSoupLocal.length; i += 3) {
+    let x = wheelSoupLocal[i] - c[0], y = wheelSoupLocal[i + 1] - c[1], z = wheelSoupLocal[i + 2] - c[2];
+    if (axleLocal === 1) [x, y] = [y, -x];
+    else if (axleLocal === 2) [x, z] = [z, -x];
+    wheelSoupLocal[i] = x;
+    wheelSoupLocal[i + 1] = y;
+    wheelSoupLocal[i + 2] = z;
   }
-  return { idx: mesh.idx, nrm: mesh.nrm, pos };
 }
-const groundY = 0; // wheels already rest on y=0 by construction
-const chassisFinal = bake(chassisMesh, scale, groundY);
-const wheelFinal = bake(wheelC, scale, 0);
-const wheelNodes = wheelPositions.map((wp) => ({
-  name: wp.name,
-  translation: [wp.x * scale, axleY * scale, wp.z * scale],
-}));
+const wheelMesh = computeNormals(compact(simplify(dropDegenerate(weld(wheelSoupLocal)), 2600, 0.012)));
+chassisMesh = computeNormals(chassisMesh);
+console.log("simplified tris: chassis", chassisMesh.idx.length / 3, "wheel", wheelMesh.idx.length / 3);
 
+// bake scale + centering into the meshes
+function bake(mesh, s2) {
+  for (let i = 0; i < mesh.pos.length; i += 3) {
+    mesh.pos[i] *= s2;
+    mesh.pos[i + 1] *= s2;
+    mesh.pos[i + 2] = (mesh.pos[i + 2] - zMid) * s2;
+  }
+  return mesh;
+}
+bake(chassisMesh, scale);
+for (let i = 0; i < wheelMesh.pos.length; i += 3) {
+  wheelMesh.pos[i] *= scale;
+  wheelMesh.pos[i + 1] *= scale;
+  wheelMesh.pos[i + 2] *= scale;
+}
+
+const wheelNodes = wheels.map((w, i) => {
+  const c = mapPoint(w.center);
+  return {
+    name: `wheel_${c[0] < 0 ? "left" : "right"}_${i}`,
+    side: c[0] < 0 ? "left" : "right",
+    translation: [c[0] * scale, c[1] * scale, (c[2] - zMid) * scale],
+    wheel: w,
+  };
+});
 const meta = {
-  boundsSize: [(maxB[0] - minB[0]) * scale, (maxB[1] - minB[1]) * scale, lengthCm * scale],
+  boundsSize: [maxB[0] - minB[0], maxB[1] - minB[1], lengthCm].map((v) => v * scale),
   length: 1.6,
-  wheels: wheelPositions.map((wp) => ({
-    axleDirection: [1, 0, 0],
-    axlePosition: [wp.x * scale, axleY * scale, wp.z * scale],
-    radius: wheelRadius * scale,
-    side: wp.side,
-  })),
+  wheels: wheelNodes.map((wn) => {
+    const d = mapDir(wn.wheel.axle);
+    return {
+      axleDirection: d[0] < 0 ? d.map((v) => -v) : d,
+      axlePosition: wn.translation,
+      radius: wn.wheel.radius * scale,
+      side: wn.side,
+    };
+  }),
 };
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
-writeGlb(
-  path.join(OUT_DIR, "robot.glb"),
-  { groups: [{ idx: new Uint32Array(chassisAluIdx), material: 0 }, { idx: new Uint32Array(chassisPlateIdx), material: 2 }], mesh: chassisFinal },
-  { groups: [{ idx: wheelFinal.idx, material: 1 }], mesh: wheelFinal },
-  wheelNodes,
-  meta,
-);
+writeGlb(path.join(OUT_DIR, "robot.glb"), chassisMesh, wheelMesh, wheelNodes, meta);
 fs.writeFileSync(path.join(OUT_DIR, "robot-meta.json"), JSON.stringify(meta, null, 2) + "\n");
 
 const glbSize = fs.statSync(path.join(OUT_DIR, "robot.glb")).size;
-const renderedTris = chassisFinal.idx.length / 3 + (wheelFinal.idx.length / 3) * 4;
+const renderedTris = chassisMesh.idx.length / 3 + (wheelMesh.idx.length / 3) * wheelNodes.length;
 console.log("---");
-console.log("vertices in (raw soup):", (partChannel.soup.pos.length + partWheel.soup.pos.length + partPlate.soup.pos.length) / 3);
+console.log("chassis draws:", chassisDraws.length, "unique part meshes:", meshCache.size);
 console.log("triangles out (rendered):", renderedTris);
 console.log("wheels:", meta.wheels.length, "radius", +meta.wheels[0].radius.toFixed(4));
 console.log("robot.glb:", (glbSize / 1e6).toFixed(2), "MB");
