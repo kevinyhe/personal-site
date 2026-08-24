@@ -196,7 +196,7 @@ const U_INNER = 0.4;
 const U_YAW = 2.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // On backwards from the start, down the RIGHT-hand side of the goal: the
+  // On backwards from the start, down the LEFT-hand side of the goal: the
   // robot is already rolling when it comes into frame, nose pointing back
   // the way it came, and it passes the goal well clear before turning.
   // Both sides driven in reverse to hold that.
@@ -206,12 +206,12 @@ const SCHEDULE: DriverPhase[] = [
   // steady yaw rate against a steady forward speed, which is what makes a
   // clean constant-radius arc rather than a flick. Tuned for about 24
   // inches of radius (see U_YAW).
-  { duration: 0.5, left: 4.5, right: -4.5, yawGain: 1.6, yawTarget: -U_YAW },
-  { duration: U_DURATION, left: U_INNER, right: U_OUTER, yawGain: 2.6, yawTarget: -U_YAW },
+  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
+  { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
   // The 180, spun the OTHER way: it continues the direction the U was
   // already turning rather than snapping back against it, so the whole run
   // keeps rotating one way from first frame to last.
-  { duration: 0.4, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
+  { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.0 },
   // A second reverse entry, this time into the goal. Both sides are driven
   // backwards hard while the nose is trimmed onto the finish heading, so
   // the robot slides tail-first toward the mouth with the body still
@@ -222,6 +222,33 @@ const SCHEDULE: DriverPhase[] = [
   // Stop dead.
   { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
+
+/**
+ * Times at which each ball is taken, chosen so the robot has covered the
+ * same distance between one and the next.
+ */
+function pickupTimes(frames: RobotDriftFrame[]): number[] {
+  const inWindow = frames.filter(
+    (f) => f.time >= PICKUP_WINDOW[0] && f.time <= PICKUP_WINDOW[1],
+  );
+  if (inWindow.length < 2) return [];
+  const arc = [0];
+  for (let i = 1; i < inWindow.length; i += 1) {
+    arc.push(arc[i - 1] + Math.hypot(
+      inWindow[i].position[0] - inWindow[i - 1].position[0],
+      inWindow[i].position[1] - inWindow[i - 1].position[1],
+    ));
+  }
+  const total = arc[arc.length - 1];
+  const times: number[] = [];
+  for (let k = 0; k < PICKUP_COUNT; k += 1) {
+    const want = (total * (k + 0.5)) / PICKUP_COUNT;
+    let i = 1;
+    while (i < arc.length - 1 && arc[i] < want) i += 1;
+    times.push(inWindow[i].time);
+  }
+  return times;
+}
 
 const START_HEADING = 0;
 /**
@@ -406,11 +433,16 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
  * would read as a glitch.
  */
 // The balls are collected on the DRIFT CURVE, not on the way in. The robot
-// enters backwards, so its intake is pointing the wrong way until the whip
-// brings the nose round at about t = 2.1; from there to the flip it is
-// driving forwards and the mouth leads. Each of these must also leave the
-// ball time to climb the tower (CARRY_DURATION) before the first throw.
-const PICKUP_TIMES = [2.25, 2.6, 2.95, 3.3, 3.65];
+// enters backwards, so its intake points the wrong way until the whip brings
+// the nose round; from there to the flip it is driving forwards and the
+// mouth leads.
+//
+// The times are spaced by GROUND COVERED, not by the clock. Fixed times put
+// the last two pickups where the robot had slowed almost to a stop, so the
+// balls they call for ended up 0.39 robot lengths apart on the floor — less
+// than a ball diameter, and they intersected.
+const PICKUP_WINDOW: [number, number] = [1.6, 4.0];
+const PICKUP_COUNT = 5;
 
 // One simulation at module load, shared by the two exports below. Neither
 // depends on the options: wheelRadius only scales the reported wheel speeds,
@@ -430,7 +462,7 @@ const RUN = (() => {
     // Where the front bumper is at each pickup time. Read off the simulated
     // path rather than guessed, so a ball sitting here is exactly where the
     // intake sweeps through.
-    pickups: PICKUP_TIMES.map((time) => {
+    pickups: pickupTimes(frames).map((time) => {
       const frame = frameAt(time);
       const position: [number, number] = [
         frame.position[0] + NOSE_OFFSET * Math.sin(frame.heading),

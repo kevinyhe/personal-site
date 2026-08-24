@@ -78,7 +78,7 @@ const MOUTH_Z = ROBOT_LENGTH / 2;
  * of the goal at that height, so they rest slightly lower. The throw arc therefore climbs into the mouth,
  * which is what a real robot does — it shoots slightly upward into the goal.
  */
-const TROUGH_Y = 1.49;
+const TROUGH_Y = 1.52;
 
 /**
  * How many balls the robot drives on already holding. They occupy the front
@@ -100,6 +100,12 @@ const CARRY_DURATION = 0.85;
  * on the curves.
  */
 const BALL_GAP = 0.36;
+/**
+ * How far back from the very end of the carry path the front of the queue
+ * sits, stage units. Without it the leading ball sat right on the exit,
+ * poking out over the front of the indexer.
+ */
+const QUEUE_LEAD = 0.14;
 /**
  * How much of a true roll the ball shows, 0..1. A ball being dragged up a
  * tower by flex wheels is gripped, not free-rolling on the floor, so
@@ -145,10 +151,11 @@ const TROUGH_Z = -1.2;
 const TROUGH_SPACING = 0.34;
 /**
  * Small fixed lateral offsets so the row in the trough does not look drawn
- * with a ruler. Fixed literals, not random, because the run must replay
+ * with a ruler. Kept tight — the channel is narrow and a wider spread put
+ * the balls through its side walls. Fixed literals, not random, because the run must replay
  * identically every time.
  */
-const TROUGH_JITTER = [0.03, -0.04, 0.02, 0.05, -0.02];
+const TROUGH_JITTER = [0.02, -0.02, 0.01, 0.03, -0.01];
 
 /** Samples per second in the drift path this module reads. */
 const DRIFT_SAMPLE_RATE = 60;
@@ -549,7 +556,7 @@ function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean
     const total = plan.arc[plan.arc.length - 1];
     const climbed = smoothstep((time - plan.pickupTime) / CARRY_DURATION) * total;
     const place = Math.max(0, index - queueAdvance(time));
-    const held = total - queueBackset(place);
+    const held = total - QUEUE_LEAD - queueBackset(place);
     const model = pathPoint(plan, Math.min(climbed, held) / Math.max(total, 1e-9));
     return { carried: true, position: modelToWorld(model, robotPoseAt(time)) };
   }
@@ -693,6 +700,11 @@ export function ballCount(): number {
 }
 
 /** Last moment anything moves, seconds. */
+export function scoringStart(): number {
+  const list = ballPlans();
+  return list.length ? list[0].ejectTime : 0;
+}
+
 export function ballTimelineEnd(): number {
   ballPlans();
   return timelineEnd;
