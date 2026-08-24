@@ -208,13 +208,17 @@ const SCHEDULE: DriverPhase[] = [
   // inches of radius (see U_YAW).
   { duration: 0.5, left: 4.5, right: -4.5, yawGain: 1.6, yawTarget: -U_YAW },
   { duration: U_DURATION, left: U_INNER, right: U_OUTER, yawGain: 2.6, yawTarget: -U_YAW },
-  // The 180: a hard, short counter-rotation once the U is done, bringing
-  // the tail round to face the goal.
-  { duration: 0.55, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.0 },
-  // Line up on the mouth as the slide dies.
-  { duration: 0.8, headingGain: 3.2, headingTarget: FINISH_HEADING, left: 0.6, right: 0.6, yawGain: 2.4 },
-  // Back it in: reversed gently so the aligner seats.
-  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.4, right: -1.4, yawGain: 2.6 },
+  // The 180, spun the OTHER way: it continues the direction the U was
+  // already turning rather than snapping back against it, so the whole run
+  // keeps rotating one way from first frame to last.
+  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
+  // A second reverse entry, this time into the goal. Both sides are driven
+  // backwards hard while the nose is trimmed onto the finish heading, so
+  // the robot slides tail-first toward the mouth with the body still
+  // sideways to its travel — the same move it opened with, arriving.
+  { duration: 1.1, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.2, right: -4.2, yawGain: 2.4 },
+  // Ease the reverse off and let it run back the last of the way.
+  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.6, right: -1.6, yawGain: 2.6 },
   // Stop dead.
   { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
