@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, invalidate, useFrame, useThree } from "@react-three/fiber";
 import {
   useEffect,
   useMemo,
@@ -380,6 +380,13 @@ function CameraRig({
     // First frame of the outro: the springs are snapped onto their targets
     // below rather than started from the statue camera, so the scene opens
     // already framed on the robot instead of sliding into place.
+    // The springs advance by whichever is larger, real time or the run time
+    // the scroll just covered. Without this a fast scroll moves the robot
+    // several units between frames while the camera gets one frame of catch-up
+    // and falls hopelessly behind; with it the chase keeps station however
+    // quickly the page is scrubbed.
+    const camDt = Math.min(0.1, Math.max(dt, robotState.playheadDelta));
+
     const seeding = !chase.seeded;
     if (seeding) {
       chase.seeded = true;
@@ -443,23 +450,23 @@ function CameraRig({
       chase.position,
       chase.velocity,
       scratch.positionTarget,
-      robotState.resting ? 1.6 : 2.4,
-      dt,
+      robotState.resting ? 2.0 : 5.5,
+      camDt,
     );
     dampSpring(
       chase.lookPosition,
       chase.lookVelocity,
       scratch.lookTarget,
-      robotState.resting ? 2.2 : 2.0,
-      dt,
+      robotState.resting ? 2.6 : 5.0,
+      camDt,
     );
     // The run is scrubbed by the scroll now, so a flick of the wheel can
     // move the robot faster than these springs will ever follow. Generous
     // bounds: they do not engage while the page is scrolled at any normal
     // rate — the framing is exactly as it was — but they stop the robot
     // being left behind entirely and the shot becoming an empty floor.
-    clampLag(chase.position, scratch.positionTarget, 3.5);
-    clampLag(chase.lookPosition, scratch.lookTarget, 3.5);
+    clampLag(chase.position, scratch.positionTarget, 2.0);
+    clampLag(chase.lookPosition, scratch.lookTarget, 2.0);
 
     // A small roll out of the lateral acceleration, FOV widening with
     // speed, and a light two-sine handheld wobble.
@@ -828,6 +835,20 @@ function ThinkerCanvas({
   const build = useThinkerChunks();
   // Written by RobotOutro every frame, read by CameraRig for the chase.
   const robotState = useMemo(createRobotCameraState, []);
+  // Warm the pipeline as soon as the chunks are in. One frame compiles the
+  // materials and uploads the geometry; the shadow map needs its own pass,
+  // so draw a few across consecutive frames rather than all in one tick.
+  useEffect(() => {
+    if (!build) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const warm = () => {
+      invalidate();
+      if (++frames < 4) raf = requestAnimationFrame(warm);
+    };
+    raf = requestAnimationFrame(warm);
+    return () => cancelAnimationFrame(raf);
+  }, [build]);
   return (
     <Canvas
       camera={{
@@ -841,8 +862,14 @@ function ThinkerCanvas({
         ],
       }}
       dpr={[1, 1.75]}
-      // Frozen while the panel is closed: no point drawing behind the tree.
-      frameloop={active ? "always" : "never"}
+      // Live while the panel is open. While it is closed this is "demand",
+      // NOT "never": "never" draws literally nothing, so every shader
+      // compile, geometry upload and shadow-map pass landed on the first
+      // frame after the panel opened and the statue arrived late over a
+      // box that had already started growing. On demand the stage still
+      // draws once when it mounts and again whenever the scene graph
+      // changes (the chunks arriving), which is the warm-up.
+      frameloop={active ? "always" : "demand"}
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
