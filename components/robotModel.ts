@@ -1,5 +1,5 @@
 /**
- * Loads the VEX robot model produced by scripts/extract-robot.mjs.
+ * Loads the VEX robot model produced by scripts/robot-from-fbx.mjs.
  *
  * The GLB at /model/robot/robot.glb holds a chassis node plus four wheel
  * nodes that share one wheel mesh. Each wheel's geometry is pre-pivoted: the

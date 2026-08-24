@@ -117,12 +117,16 @@ type RunState = { armed: boolean; playing: boolean; time: number };
 type DriftModule = { buildDriftPath: (options?: unknown) => RobotDriftFrame[] };
 type ModelModule = { loadRobotModel: () => Promise<RobotModel> };
 
-async function loadDriftFrames(): Promise<RobotDriftFrame[]> {
+async function loadDriftFrames(
+  wheelRadius?: number,
+): Promise<RobotDriftFrame[]> {
   const name = "robotDrift";
   const driftModule = (await import(`@/components/${name}`).catch(
     () => null,
   )) as DriftModule | null;
-  if (driftModule?.buildDriftPath) return driftModule.buildDriftPath();
+  if (driftModule?.buildDriftPath) {
+    return driftModule.buildDriftPath(wheelRadius ? { wheelRadius } : undefined);
+  }
   return buildPlaceholderDriftPath();
 }
 
@@ -441,12 +445,24 @@ export default function RobotOutro({
 
   useEffect(() => {
     let live = true;
-    void loadDriftFrames().then((next) => {
-      if (live) setFrames(next);
-    });
-    void loadModel().then((model) => {
-      if (live) setRig(assembleRig(model));
-    });
+    void (async () => {
+      const model = await loadModel();
+      if (!live) return;
+      setRig(assembleRig(model));
+      // The trajectory's wheel speeds are computed from a wheel radius, and
+      // the wheels have to spin at the speed they actually cover ground —
+      // so the radius comes from THIS model rather than the drift module's
+      // default. The Fusion robot rolls on 3.25 in omnis, appreciably
+      // smaller than that default, and wheels turning too slowly for the
+      // ground read as the whole run sliding.
+      const wheel = model?.wheels[0];
+      const frames = await loadDriftFrames(
+        model && wheel && model.length > 0
+          ? wheel.radius / model.length
+          : undefined,
+      );
+      if (live) setFrames(frames);
+    })();
     return () => {
       live = false;
     };
