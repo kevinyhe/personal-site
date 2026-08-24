@@ -14,10 +14,12 @@
 //      Z-up with the floor at z ~ 0 and measures in inches (the robot spans
 //      ~18in, the VEX size limit). 504 mesh nodes share 140 geometries;
 //      5.4M source triangles.
-//   2. The four drive wheels are named in the tree: the groups starting with
-//      "325_AS_Omni" are the four 3.25in omni wheels, one per corner of the
-//      drivetrain. Every other round part (flex wheels, sprockets, gears) is
-//      decoration and stays part of the chassis.
+//   2. Every part that has to turn on screen is named in the tree and is
+//      pulled out of the chassis into its own node: the four "325_AS_Omni"
+//      drive wheels, the gears bolted to those wheels ("drive"), and the
+//      intake rollers and sprockets that carry a ball up to the indexer
+//      ("intake"). See PART_TYPES below. Everything else is welded into one
+//      chassis mesh, which is why it cannot move.
 //   3. Simplify each unique (geometry, color) part once in its local frame
 //      with meshoptimizer, with error bounds kept below sheet-metal wall
 //      thickness, then instance through the world matrices. A few budget
@@ -26,9 +28,10 @@
 //      choice as the old pipeline), +Y up, ground plane at y = 0 (the plane
 //      the wheels touch), length scaled to exactly 1.6 units.
 //   5. Write a GLB: a "robot" root (meta in extras), a "chassis" mesh with
-//      one primitive per Fusion appearance color, and four wheel nodes
-//      sharing one wheel mesh, pre-pivoted so node.rotation.x spins them
-//      about their axle. Materials are MeshStandardMaterial-compatible:
+//      one primitive per Fusion appearance color, four wheel nodes sharing
+//      one wheel mesh, and one node per extracted gear/roller. Every one of
+//      those is pre-pivoted, so node.rotation.x spins it about its axle.
+//      Materials are MeshStandardMaterial-compatible:
 //      baseColorFactor straight from the Fusion appearance color,
 //      metallic/roughness guessed from the appearance name.
 
@@ -51,6 +54,13 @@ const t0 = Date.now();
 // file.
 const CAP_CHASSIS = 800000;
 const CAP_WHEEL = 40000;
+// Gears and rollers used to be welded into the chassis, where they were
+// decoration and got the low "round part" target. They now move on screen, so
+// they get a higher target (DETAIL_SPIN multiplies the target inside
+// budgetedMesh) and a per-mesh ceiling of their own. Instances that share
+// geometry AND orientation share one mesh, so the ceiling is on unique data.
+const CAP_SPIN = 22000;
+const DETAIL_SPIN = 2.5;
 
 await MeshoptSimplifier.ready;
 
@@ -63,31 +73,82 @@ const root = new FBXLoader().parse(ab, "");
 root.updateMatrixWorld(true);
 
 // ---------------------------------------------------------------------------
-// Find the four omni-wheel assemblies by their Fusion component names.
-// traverse() visits parents before children, so skipping nodes with a
-// matching ancestor leaves exactly the outermost wrapper of each occurrence.
+// Find every part that has to turn, by its Fusion component name.
+//
+// The names are three's PropertyBinding.sanitizeNodeName of the Fusion browser
+// names, so spaces became underscores, and Fusion appends an occurrence number
+// on top of that ("LS_36T_Gear_(Drilled)_v1" becomes "..._v11" ... "..._v110").
+// Hence prefix matching. Several of these prefixes name an assembly that holds
+// more named parts inside it: "48T_HS_Gear_(v2)" contains the 276-7573-001
+// overmold ring, "half_flex_wheel" contains the half-flex tyre and its hex
+// adapter, "30T_Sprocket_-_9P" contains the HS-bore sprocket. Only the outer
+// prefix is listed; the whole subtree comes along.
+//
+// `count` is what the current FBX has. It is asserted so that a Fusion re-export
+// that renames or drops a part fails the build instead of silently shipping a
+// gear that no longer spins.
 // ---------------------------------------------------------------------------
-const isWheelName = (n) => n.startsWith("325_AS_Omni");
-const wheelGroups = [];
-root.traverse((o) => {
-  if (!isWheelName(o.name)) return;
-  for (let p = o.parent; p; p = p.parent) if (isWheelName(p.name)) return;
-  wheelGroups.push(o);
-});
-if (wheelGroups.length !== 4) {
-  throw new Error(`expected 4 "325_AS_Omni" wheel assemblies, found ${wheelGroups.length}`);
+const PART_TYPES = [
+  // The four 3.25in omni drive wheels, one per corner.
+  { cap: CAP_WHEEL, category: "wheel", count: 4, detail: 1, prefix: "325_AS_Omni" },
+  // Bolted to the drive wheels or geared to them: these turn with the drive.
+  { cap: CAP_SPIN, category: "drive", count: 10, detail: DETAIL_SPIN, prefix: "LS_36T_Gear_(Drilled)" },
+  { cap: CAP_SPIN, category: "drive", count: 4, detail: DETAIL_SPIN, prefix: "48T_HS_Gear_(v2)" },
+  // Front lip rollers that pick a ball off the floor.
+  { cap: CAP_SPIN, category: "intake", count: 8, detail: DETAIL_SPIN, prefix: "half_flex_wheel" },
+  // Top indexer rollers that push the ball out.
+  { cap: CAP_SPIN, category: "intake", count: 2, detail: DETAIL_SPIN, prefix: "2_Flex_Wheel_-_30A_v1" },
+  { cap: CAP_SPIN, category: "intake", count: 2, detail: DETAIL_SPIN, prefix: "1625_Flex_Wheel_-_30A_v1" },
+  { cap: CAP_SPIN, category: "intake", count: 1, detail: DETAIL_SPIN, prefix: "8T_Sprocket_-_6P" },
+  // The tower run that carries the ball from the lip up to the indexer.
+  { cap: CAP_SPIN, category: "intake", count: 3, detail: DETAIL_SPIN, prefix: "16T_Sprocket_-_6P" },
+  { cap: CAP_SPIN, category: "intake", count: 2, detail: DETAIL_SPIN, prefix: "30T_Sprocket_-_9P" },
+  { cap: CAP_SPIN, category: "intake", count: 2, detail: DETAIL_SPIN, prefix: "32T_Sprocket_-_6P" },
+  // Motor-side gears driving that run. Fusion gave these two a GUID suffix and
+  // a leading underscore, which is why they do not match the drive prefixes.
+  { cap: CAP_SPIN, category: "intake", count: 1, detail: DETAIL_SPIN, prefix: "_24T_HS_Gear" },
+  { cap: CAP_SPIN, category: "intake", count: 1, detail: DETAIL_SPIN, prefix: "_LS_36T_Gear4" },
+];
+
+// Longest match wins, so a prefix that is itself the start of a longer one
+// cannot steal that type's occurrences.
+function typeOf(name) {
+  let best = null;
+  for (const t of PART_TYPES) {
+    if (!name.startsWith(t.prefix)) continue;
+    if (!best || t.prefix.length > best.prefix.length) best = t;
+  }
+  return best;
 }
-const wheelMeshSet = new Set();
-const wheelMeshesOf = wheelGroups.map((g) => {
-  const list = [];
-  g.traverse((o) => {
-    if (o.isMesh) {
-      list.push(o);
-      wheelMeshSet.add(o);
-    }
+// traverse() visits parents before children, so skipping nodes that have any
+// matching ancestor leaves exactly the outermost wrapper of each occurrence.
+const occurrencesOf = new Map(PART_TYPES.map((t) => [t, []]));
+const extractedMeshSet = new Set();
+root.traverse((o) => {
+  const t = typeOf(o.name);
+  if (!t) return;
+  for (let p = o.parent; p; p = p.parent) if (typeOf(p.name)) return;
+  const meshes = [];
+  o.traverse((c) => {
+    if (!c.isMesh) return;
+    meshes.push(c);
+    extractedMeshSet.add(c);
   });
-  return list;
+  occurrencesOf.get(t).push({ group: o, meshes });
 });
+const countMismatch = PART_TYPES.filter((t) => occurrencesOf.get(t).length !== t.count);
+for (const t of PART_TYPES) {
+  const got = occurrencesOf.get(t).length;
+  console.log(`${t.category} "${t.prefix}": ${got} occurrence(s)${got === t.count ? "" : ` -- expected ${t.count}`}`);
+}
+if (countMismatch.length) {
+  throw new Error(
+    "part occurrence counts changed: " +
+      countMismatch.map((t) => `"${t.prefix}" expected ${t.count}, found ${occurrencesOf.get(t).length}`).join("; "),
+  );
+}
+const wheelType = PART_TYPES[0];
+const wheelMeshesOf = occurrencesOf.get(wheelType).map((o) => o.meshes);
 
 // ---------------------------------------------------------------------------
 // Measure the wheels from the raw (unsimplified) vertices in world space:
@@ -101,6 +162,22 @@ function worldBox(meshes) {
     for (let i = 0; i < p.count; i++) box.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld));
   }
   return box;
+}
+// Outer radius about an axle through `center` running along model X. Taken
+// from the vertices rather than the bounding box because a gear's box depends
+// on how its teeth happen to be clocked, and two copies of the same gear at
+// different clockings must come out with the same radius.
+function worldRadius(meshes, center) {
+  let r2 = 0;
+  for (const m of meshes) {
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      const d = (v.y - center.y) ** 2 + (v.z - center.z) ** 2;
+      if (d > r2) r2 = d;
+    }
+  }
+  return Math.sqrt(r2);
 }
 const wheelBoxes = wheelMeshesOf.map(worldBox);
 const wheelCenters = wheelBoxes.map((b) => b.getCenter(new THREE.Vector3()));
@@ -294,17 +371,20 @@ function partFor(slot, worldScale) {
 // extent) stay below sheet-metal wall thickness (~0.07in) so channels keep
 // their walls; fastener-sized parts may collapse to blobs, invisible at the
 // robot's on-screen size.
-function budgetedMesh(part, scale2) {
+// `detail` multiplies the target for callers whose parts are not decoration.
+// A gear welded into the chassis only has to read as a toothed disc; the same
+// gear on its own node is watched turning, so it gets more teeth.
+function budgetedMesh(part, scale2, detail) {
   const { maxDimIn, raw, welded } = part;
   let mesh;
   if (maxDimIn < 1.0) {
-    mesh = simplify(welded, Math.max(48, Math.round(Math.min(raw, 320) * scale2)), 0.025);
+    mesh = simplify(welded, Math.max(48, Math.round(Math.min(raw, 320 * detail) * scale2)), 0.025);
   } else if (part.round) {
-    // decorative round parts: keep the silhouette, drop tread/tooth detail
-    mesh = simplify(welded, Math.max(700, Math.round(6400 * scale2)), 0.01);
+    // round parts: keep the silhouette, drop tread/tooth detail
+    mesh = simplify(welded, Math.max(700, Math.round(6400 * detail * scale2)), 0.01);
   } else {
     const err = Math.min(0.015, 0.035 / maxDimIn);
-    mesh = simplify(welded, Math.max(260, Math.round(Math.max(360, raw / 4) * scale2)), err);
+    mesh = simplify(welded, Math.max(260, Math.round(Math.max(360, raw / 4) * detail * scale2)), err);
   }
   return compact(mesh);
 }
@@ -316,13 +396,13 @@ function budgetedMesh(part, scale2) {
 // ---------------------------------------------------------------------------
 const chassisInstances = []; // { slot, part, matrixWorld }
 root.traverse((o) => {
-  if (!o.isMesh || wheelMeshSet.has(o)) return;
+  if (!o.isMesh || extractedMeshSet.has(o)) return;
   const worldScale = o.matrixWorld.getMaxScaleOnAxis();
   for (const slot of slotsOf(o)) {
     chassisInstances.push({ matrixWorld: o.matrixWorld, part: partFor(slot, worldScale), slot });
   }
 });
-function budgetLoop(instances, cap, label) {
+function budgetLoop(instances, cap, label, detail = 1) {
   const meshCache = new Map(); // part -> simplified mesh
   let scale2 = 1;
   for (let pass = 0; pass < 7; pass++) {
@@ -331,7 +411,7 @@ function budgetLoop(instances, cap, label) {
     for (const inst of instances) {
       let mesh = meshCache.get(inst.part);
       if (!mesh) {
-        mesh = budgetedMesh(inst.part, scale2);
+        mesh = budgetedMesh(inst.part, scale2, detail);
         meshCache.set(inst.part, mesh);
       }
       total += mesh.idx.length / 3;
@@ -345,12 +425,68 @@ function budgetLoop(instances, cap, label) {
 const chassisMeshCache = budgetLoop(chassisInstances, CAP_CHASSIS, "chassis");
 
 // ---------------------------------------------------------------------------
+// One pre-pivoted mesh for a part that turns (a wheel, a gear, a roller).
+// Vertices come out relative to `centerWorld` instead of the world origin, so
+// the axle passes through the node origin along local +X and node.rotation.x
+// spins it. Same rotation as mapPoint, applied to the offset from the centre:
+// (-dx, dz, dy). Returns one primitive per Fusion appearance colour, in the
+// unscaled inch frame -- the caller scales it with the rest of the robot.
+// ---------------------------------------------------------------------------
+function buildPartMesh(meshes, centerWorld, cap, detail, label) {
+  const instances = [];
+  for (const m of meshes) {
+    const worldScale = m.matrixWorld.getMaxScaleOnAxis();
+    for (const slot of slotsOf(m)) {
+      instances.push({ matrixWorld: m.matrixWorld, part: partFor(slot, worldScale), slot });
+    }
+  }
+  const meshCache = budgetLoop(instances, cap, label, detail);
+  const vtx = new THREE.Vector3();
+  const acc = new Map(); // colorKey -> { idx: [], pos: [] }
+  for (const inst of instances) {
+    const mesh = meshCache.get(inst.part);
+    if (!mesh.idx.length) continue;
+    let a = acc.get(inst.slot.colorKey);
+    if (!a) {
+      a = { idx: [], pos: [] };
+      acc.set(inst.slot.colorKey, a);
+    }
+    const base = a.pos.length / 3;
+    for (let i = 0; i < mesh.pos.length; i += 3) {
+      vtx.set(mesh.pos[i], mesh.pos[i + 1], mesh.pos[i + 2]).applyMatrix4(inst.matrixWorld);
+      a.pos.push(-(vtx.x - centerWorld.x), vtx.z - centerWorld.z, vtx.y - centerWorld.y);
+    }
+    for (const i of mesh.idx) a.idx.push(base + i);
+  }
+  const prims = [];
+  for (const [colorKey, a] of acc) {
+    const soup = new Float32Array(a.idx.length * 3);
+    for (let i = 0; i < a.idx.length; i++) {
+      const vi = a.idx[i] * 3;
+      soup[i * 3] = a.pos[vi];
+      soup[i * 3 + 1] = a.pos[vi + 1];
+      soup[i * 3 + 2] = a.pos[vi + 2];
+    }
+    prims.push({ colorKey, mesh: compact(dropDegenerate(weld(soup, 0.01))) });
+  }
+  return prims;
+}
+
+
+// ---------------------------------------------------------------------------
 // Frame change. Model: +Z up (floor at z = floorZ), wheels roll along +Y,
 // axles along X. Output: +Y up, +Z forward = model +Y (same forward choice
 // as the old pipeline), ground at y = 0. glb = (-x, z - floorZ, y), a proper
 // rotation, so triangle winding is preserved.
 // ---------------------------------------------------------------------------
 const mapPoint = (x, y, z) => [-x, z - floorZ, y];
+// mapPoint is a rotation plus a translation, so dropping the translation gives
+// the same map for directions. Every axle here runs along model X (asserted
+// above and again per part below), and which end of an axle you call "the
+// direction" is arbitrary, so the sign is normalised to point along glb +X.
+const mapDirection = (x, y, z) => [-x, z, y];
+const mappedAxle = mapDirection(1, 0, 0);
+const wheelAxleDirection = mappedAxle.map((n) => n * (mappedAxle[0] < 0 ? -1 : 1) + 0);
 
 // emit chassis, one position/index pair per color
 const byColor = new Map(); // colorKey -> { pos: [], idx: [] }
@@ -390,50 +526,89 @@ console.log("chassis tris after reweld:", chassisTris, "in", chassisPrims.length
 
 // ---------------------------------------------------------------------------
 // Wheel mesh: built once from the first wheel assembly, shared by all four
-// nodes. Pre-pivoted: vertices are relative to the wheel's bounding-box
-// center, so the axle passes through the node origin along local +X and
-// node.rotation.x spins it.
+// nodes, because the four omnis are the same part in the same orientation.
 // ---------------------------------------------------------------------------
-const wheelInstances = [];
-for (const m of wheelMeshesOf[0]) {
-  const worldScale = m.matrixWorld.getMaxScaleOnAxis();
-  for (const slot of slotsOf(m)) {
-    wheelInstances.push({ matrixWorld: m.matrixWorld, part: partFor(slot, worldScale), slot });
-  }
-}
-const wheelMeshCache = budgetLoop(wheelInstances, CAP_WHEEL, "wheel");
-const wheelByColor = new Map();
-const c0 = wheelCenters[0];
-for (const inst of wheelInstances) {
-  const mesh = wheelMeshCache.get(inst.part);
-  if (!mesh.idx.length) continue;
-  let acc = wheelByColor.get(inst.slot.colorKey);
-  if (!acc) {
-    acc = { idx: [], pos: [] };
-    wheelByColor.set(inst.slot.colorKey, acc);
-  }
-  const base = acc.pos.length / 3;
-  for (let i = 0; i < mesh.pos.length; i += 3) {
-    e0.set(mesh.pos[i], mesh.pos[i + 1], mesh.pos[i + 2]).applyMatrix4(inst.matrixWorld);
-    // same rotation as mapPoint, but about the wheel center instead of the
-    // world origin: (-dx, dz, dy)
-    acc.pos.push(-(e0.x - c0.x), e0.z - c0.z, e0.y - c0.y);
-  }
-  for (const i of mesh.idx) acc.idx.push(base + i);
-}
-const wheelPrims = [];
-for (const [colorKey, acc] of wheelByColor) {
-  const soup = new Float32Array(acc.idx.length * 3);
-  for (let i = 0; i < acc.idx.length; i++) {
-    const vi = acc.idx[i] * 3;
-    soup[i * 3] = acc.pos[vi];
-    soup[i * 3 + 1] = acc.pos[vi + 1];
-    soup[i * 3 + 2] = acc.pos[vi + 2];
-  }
-  wheelPrims.push({ colorKey, mesh: compact(dropDegenerate(weld(soup, 0.01))) });
-}
+const wheelPrims = buildPartMesh(wheelMeshesOf[0], wheelCenters[0], wheelType.cap, wheelType.detail, "wheel");
 const wheelTris = wheelPrims.reduce((s, p) => s + p.mesh.idx.length / 3, 0);
 console.log("wheel tris:", wheelTris, "in", wheelPrims.length, "color primitives");
+
+// ---------------------------------------------------------------------------
+// The other spinning parts. Two occurrences may share a mesh only when their
+// baked geometry is identical, which means the same source slots AND the same
+// rotation and the same offset from the occurrence centre -- a mirrored or
+// re-clocked copy has to get its own mesh, otherwise its teeth would point the
+// wrong way. `signature` is exactly that: the slot ids plus each mesh's world
+// rotation/scale and its position relative to the centre, rounded to 1e-4 in.
+// ---------------------------------------------------------------------------
+function signature(occ, center) {
+  const rows = occ.meshes.map((m) => {
+    const e = m.matrixWorld.elements;
+    const r = [e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10]].map((n) => n.toFixed(4));
+    const t = [e[12] - center.x, e[13] - center.y, e[14] - center.z].map((n) => n.toFixed(4));
+    const slots = slotsOf(m).map((sl) => `${sl.geometry.uuid}:${sl.start}:${sl.count}:${sl.colorKey}`);
+    return `${slots.join(",")}|${r.join(",")}|${t.join(",")}`;
+  });
+  rows.sort();
+  return rows.join(";");
+}
+// Node names double as the key the runtime matches meta.parts on, so they have
+// to be stable and unique: type slug plus the occurrence's index in the type.
+const slugOf = (prefix) => prefix.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+const spinMeshes = []; // { prims, tris }
+const spinNodes = []; // { axleDirection, axis, category, meshIndex, name, radius, side, centerWorld, halfWidth }
+const meshBySignature = new Map();
+for (const type of PART_TYPES) {
+  if (type.category === "wheel") continue;
+  const slug = slugOf(type.prefix);
+  occurrencesOf.get(type).forEach((occ, i) => {
+    const box = worldBox(occ.meshes);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    // Every one of these turns on an axle along model X, the same as the drive
+    // wheels. The bounding box of a disc on that axle is thinnest along X and
+    // square across it, so check both. The square test is what actually pins
+    // the axis down: an 8T sprocket is only 0.50in thick on a 0.74in circle,
+    // so "much thinner along X" would not hold. Fail loudly rather than emit a
+    // part that spins about the wrong axis.
+    const across = Math.max(size.y, size.z);
+    const flat = Math.min(size.y, size.z);
+    if (!(size.x < flat && across - flat < across * 0.12)) {
+      throw new Error(`${type.prefix}[${i}] axle is not along model X: size ${size.toArray().map((n) => n.toFixed(2))}`);
+    }
+    const sig = `${type.prefix}|${signature(occ, center)}`;
+    let meshIndex = meshBySignature.get(sig);
+    if (meshIndex === undefined) {
+      const prims = buildPartMesh(occ.meshes, center, type.cap, type.detail, `${slug}#${spinMeshes.length}`);
+      meshIndex = spinMeshes.length;
+      spinMeshes.push({ name: `${slug}_${meshIndex}`, prims, tris: prims.reduce((s, p) => s + p.mesh.idx.length / 3, 0) });
+      meshBySignature.set(sig, meshIndex);
+    }
+    const [x, y, z] = mapPoint(center.x, center.y, center.z);
+    spinNodes.push({
+      // Pre-pivoted about the axle by buildPartMesh, so rotation.x is the spin.
+      axis: "x",
+      category: type.category,
+      centerGlb: [x, y, z],
+      meshIndex,
+      name: `part_${type.category}_${slug}_${i}`,
+      radiusIn: worldRadius(occ.meshes, center),
+      side: Math.abs(x) < 1e-3 ? "center" : x < 0 ? "left" : "right",
+    });
+  });
+}
+const spinTris = spinNodes.reduce((s, n) => s + spinMeshes[n.meshIndex].tris, 0);
+console.log(
+  "spinning parts:",
+  spinNodes.length,
+  "nodes over",
+  spinMeshes.length,
+  "meshes;",
+  spinMeshes.reduce((s, m) => s + m.tris, 0),
+  "unique tris,",
+  spinTris,
+  "rendered",
+);
 
 // ---------------------------------------------------------------------------
 // Normalize: forward extent (glb z) becomes exactly 1.6, centered along z;
@@ -454,6 +629,21 @@ for (let w = 0; w < 4; w++) {
   minB = [Math.min(minB[0], cx - r), Math.min(minB[1], cy - r), Math.min(minB[2], cz - r)];
   maxB = [Math.max(maxB[0], cx + r), Math.max(maxB[1], cy + r), Math.max(maxB[2], cz + r)];
 }
+// The extracted parts are no longer inside chassisPrims, so they have to be
+// added back here. Without this the robot's bounds -- and with them the 1.6
+// length scale -- would shift the moment a front-lip roller left the chassis.
+for (const n of spinNodes) {
+  for (const prim of spinMeshes[n.meshIndex].prims) {
+    const pos = prim.mesh.pos;
+    for (let i = 0; i < pos.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const c = n.centerGlb[k] + pos[i + k];
+        if (c < minB[k]) minB[k] = c;
+        if (c > maxB[k]) maxB[k] = c;
+      }
+    }
+  }
+}
 const lengthIn = maxB[2] - minB[2];
 const scale = 1.6 / lengthIn;
 const zMid = (minB[2] + maxB[2]) / 2;
@@ -467,6 +657,8 @@ for (const p of chassisPrims) {
   }
   computeNormals(p.mesh);
 }
+// Wheel and part meshes are already centred on their own pivot, so all three
+// axes just scale -- no zMid shift, which would take the pivot off the axle.
 for (const p of wheelPrims) {
   for (let i = 0; i < p.mesh.pos.length; i += 3) {
     p.mesh.pos[i] *= scale;
@@ -474,6 +666,20 @@ for (const p of wheelPrims) {
     p.mesh.pos[i + 2] *= scale;
   }
   computeNormals(p.mesh);
+}
+for (const m of spinMeshes) {
+  for (const p of m.prims) {
+    for (let i = 0; i < p.mesh.pos.length; i += 3) {
+      p.mesh.pos[i] *= scale;
+      p.mesh.pos[i + 1] *= scale;
+      p.mesh.pos[i + 2] *= scale;
+    }
+    computeNormals(p.mesh);
+  }
+}
+for (const n of spinNodes) {
+  n.radius = n.radiusIn * scale;
+  n.translation = [n.centerGlb[0] * scale, n.centerGlb[1] * scale, (n.centerGlb[2] - zMid) * scale];
 }
 
 const wheelNodes = wheelCenters.map((c, i) => {
@@ -489,8 +695,19 @@ const wheelNodes = wheelCenters.map((c, i) => {
 const meta = {
   boundsSize: [maxB[0] - minB[0], maxB[1] - minB[1], lengthIn].map((n) => n * scale),
   length: 1.6,
+  // One entry per extracted gear/roller node, in node order. `axis` is the
+  // node-local axis to rotate about to spin the part; the geometry is
+  // pre-pivoted so that is always "x", the same as the wheels.
+  parts: spinNodes.map((n) => ({
+    axis: n.axis,
+    axlePosition: n.translation,
+    category: n.category,
+    name: n.name,
+    radius: n.radius,
+    side: n.side,
+  })),
   wheels: wheelNodes.map((wn) => ({
-    axleDirection: [1, 0, 0],
+    axleDirection: wheelAxleDirection,
     axlePosition: wn.translation,
     radius: wn.radius,
     side: wn.side,
@@ -643,25 +860,45 @@ function writeGlb(filePath) {
   }
   const chassisQ = quantizePositions(chassisPrims, false);
   const wheelQ = quantizePositions(wheelPrims, true);
+  // Every spinning mesh is quantized centred for the same reason the wheel is:
+  // a non-zero decode offset lives on the node, so rotation.x would swing the
+  // mesh around a point off its axle.
+  const spinQ = spinMeshes.map((m) => quantizePositions(m.prims, true));
   const meshes = [
     { name: "chassis", primitives: prims(chassisPrims, chassisQ) },
     { name: "wheel", primitives: prims(wheelPrims, wheelQ) },
+    ...spinMeshes.map((m, i) => ({ name: m.name, primitives: prims(m.prims, spinQ[i]) })),
   ];
+  const chassisMesh = 0;
+  const wheelMesh = 1;
+  const spinMeshBase = 2;
   const nodes = [
-    { children: [1, 2, 3, 4, 5], extras: meta, name: "robot" },
+    { children: [], extras: meta, name: "robot" },
     {
-      mesh: 0,
+      mesh: chassisMesh,
       name: "chassis",
       scale: [chassisQ.scale, chassisQ.scale, chassisQ.scale],
       translation: chassisQ.offset,
     },
     ...wheelNodes.map((wn) => ({
-      mesh: 1,
+      mesh: wheelMesh,
       name: wn.name,
       scale: [wheelQ.scale, wheelQ.scale, wheelQ.scale],
       translation: wn.translation,
     })),
+    ...spinNodes.map((n) => {
+      const q = spinQ[n.meshIndex];
+      return {
+        mesh: spinMeshBase + n.meshIndex,
+        name: n.name,
+        scale: [q.scale, q.scale, q.scale],
+        translation: n.translation,
+      };
+    }),
   ];
+  // Everything below the root is a direct child of it: the chassis, the four
+  // wheels, and one node per spinning part.
+  nodes[0].children = nodes.map((_, i) => i).slice(1);
   const json = {
     accessors,
     asset: { generator: "robot-from-fbx.mjs", version: "2.0" },
@@ -699,10 +936,19 @@ writeGlb(path.join(OUT_DIR, "robot.glb"));
 fs.writeFileSync(path.join(OUT_DIR, "robot-meta.json"), JSON.stringify(meta, null, 2) + "\n");
 
 const glbSize = fs.statSync(path.join(OUT_DIR, "robot.glb")).size;
-const renderedTris = chassisTris + wheelTris * 4;
+const renderedTris = chassisTris + wheelTris * 4 + spinTris;
+const driveTris = spinNodes.filter((n) => n.category === "drive").reduce((s, n) => s + spinMeshes[n.meshIndex].tris, 0);
 console.log("---");
-console.log("triangles out (rendered):", renderedTris, `(chassis ${chassisTris} + 4 x wheel ${wheelTris})`);
+console.log(
+  "triangles out (rendered):",
+  renderedTris,
+  `(chassis ${chassisTris} + 4 x wheel ${wheelTris} + drive ${driveTris} + intake ${spinTris - driveTris})`,
+);
 console.log("wheels:", meta.wheels.length, "radius", +meta.wheels[0].radius.toFixed(4), "sides", meta.wheels.map((w) => w.side).join(","));
+for (const category of ["drive", "intake"]) {
+  const list = meta.parts.filter((pt) => pt.category === category);
+  console.log(`${category} parts:`, list.length, "radii", [...new Set(list.map((pt) => +pt.radius.toFixed(4)))].sort((a, b) => a - b).join(","));
+}
 console.log("boundsSize:", meta.boundsSize.map((n) => +n.toFixed(3)));
 console.log("robot.glb:", (glbSize / 1e6).toFixed(2), "MB");
 console.log("done in", ((Date.now() - t0) / 1000).toFixed(1), "s");
