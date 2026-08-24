@@ -105,6 +105,17 @@ export type RobotCameraState = {
   /** Lateral acceleration (stage units/s^2), positive toward the robot's left. */
   aLat: number;
   /**
+   * The robot's pose a fixed slice of the RUN ago — see CAMERA_ANCHOR_LAG.
+   * The outro camera orbits this rather than the live pose, which is what
+   * lets the robot swing across the frame while it is moving and settle
+   * back to centre when it stops. Because the lag is in playhead seconds
+   * and not wall-clock seconds, the framing is a pure function of the
+   * scroll position: it cannot fall behind on a fast flick, cannot
+   * overshoot, and scrolling back retraces it exactly.
+   */
+  anchorHeading: number;
+  anchorPosition: THREE.Vector3;
+  /**
    * Seconds of the run the scroll moved through this frame. The run is
    * scrubbed, so the robot can cover ground far faster than wall-clock; a
    * camera that integrates only real time is left behind. Sign is dropped —
@@ -129,6 +140,8 @@ export type RobotCameraState = {
 export function createRobotCameraState(): RobotCameraState {
   return {
     aLat: 0,
+    anchorHeading: -Math.PI / 2,
+    anchorPosition: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
     heading: -Math.PI / 2,
     playheadDelta: 0,
     position: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
@@ -171,6 +184,13 @@ const RUN_START = 0.15;
  * stays put on the far side of the ball run whatever the drift does.
  */
 const GOAL_MOUTH: [number, number] = [-3.6, -3.4];
+/**
+ * How far behind the live robot the camera's orbit centre sits, in seconds
+ * of the RUN. At the drift's peak the robot covers about 7 stage units a
+ * second, so this puts it roughly one unit ahead of frame centre at full
+ * chat and back in the middle at rest.
+ */
+const CAMERA_ANCHOR_LAG = 0.15;
 const GOAL_FACING = 0;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
@@ -1090,6 +1110,7 @@ export default function RobotOutro({
     const dTime = run.time - previousTime;
 
     const sample = sampleDrift(frames, run.time);
+    const anchor = sampleDrift(frames, run.time - CAMERA_ANCHOR_LAG);
     rig.pose.position.set(
       sample.position[0] * ROBOT_LENGTH,
       ROBOT_GROUND_Y,
@@ -1202,6 +1223,12 @@ export default function RobotOutro({
       sample.velocity[1] * ROBOT_LENGTH,
     );
     robotState.speed = robotState.velocity.length();
+    robotState.anchorHeading = anchor.heading;
+    robotState.anchorPosition.set(
+      anchor.position[0] * ROBOT_LENGTH,
+      ROBOT_GROUND_Y,
+      anchor.position[1] * ROBOT_LENGTH,
+    );
     robotState.heading = sample.heading;
     robotState.aLat = sample.aLat * ROBOT_LENGTH;
     robotState.playheadDelta = Math.abs(dTime);

@@ -145,15 +145,6 @@ const STAGE_BLACK = "#0a0a0a";
 const statueOn = (robotPhase: number) => (robotPhase > 0 ? 0 : 1);
 const STATUE_FOV = 34;
 
-/** Pull `value` to within `maxDistance` of `target`, in place. */
-const lagScratch = new THREE.Vector3();
-function clampLag(value: THREE.Vector3, target: THREE.Vector3, maxDistance: number) {
-  lagScratch.subVectors(value, target);
-  const distance = lagScratch.length();
-  if (distance <= maxDistance) return;
-  value.copy(target).addScaledVector(lagScratch, maxDistance / distance);
-}
-
 /** Last frame's camera framing, read by headless captures. */
 const cameraProbe: Record<string, unknown> = {};
 
@@ -162,41 +153,46 @@ const cameraProbe: Record<string, unknown> = {};
  * of [time, value] read with `keyed`, which eases between them.
  */
 const CAMERA_AZIMUTH: Array<[number, number]> = [
-  // Held while the robot makes its entry, so the shot opens on the move
-  // rather than swinging during it...
+  // Held while the robot comes down the field collecting balls, so the
+  // shot opens on the move rather than swinging during it...
   [0, -45],
-  [1.0, -45],
+  [1.5, -45],
   // ...and from there it only ever INCREASES — counter-clockwise seen from
-  // above — so the camera sweeps one way from the first frame of the action
-  // to the last and never doubles back. It lands on +90, off the robot's
-  // left, which puts the goal (off its rear) on the right of frame.
-  [2.4, 0],
-  [3.8, 40],
-  [5.2, 70],
-  [6.4, 90],
+  // above — so the camera sweeps one way from the first frame of the drift
+  // to the last and never doubles back. The robot itself turns a full
+  // circle over the same stretch and this angle is measured against its
+  // nose, so the two rotations compound instead of cancelling.
+  [2.6, -10],
+  [4.0, 30],
+  [5.6, 65],
+  // Lands on +90, off the robot's left, which puts the goal (off its rear)
+  // on the right of frame. It holds there for the rest of the playhead —
+  // the run parks at about 7.5 s but the balls take until 11.3 s to finish
+  // going in, and `keyed` clamps past its last key.
+  [7.4, 90],
 ];
 
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [0, 4.6],
-  [3.4, 5.2],
-  [4.6, 6.4],
-  [6.4, 8.6],
+  [3.6, 5.2],
+  [5.2, 6.4],
+  [7.4, 8.6],
 ];
 const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   // Down at the level of the drivetrain, looking up at the robot — the
   // angle a trackside racing camera sits at, where the car fills the frame
   // against the sky rather than being looked down on.
   [0, 0.28],
-  [3.4, 0.42],
+  [3.6, 0.42],
   // Only at the very end does it climb, for the wide shot that has to hold
   // the goal and the scored balls as well.
-  [6.4, 3.0],
+  [7.4, 3.0],
 ];
 
 const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
   [0, 0],
-  [4.6, 0.4],
-  [6.4, 1.8],
+  [5.2, 0.4],
+  [7.4, 1.8],
 ];
 
 /**
@@ -205,8 +201,8 @@ const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
  */
 const CAMERA_AIM_HEIGHT: Array<[number, number]> = [
   [0, 0.62],
-  [3.4, 0.7],
-  [6.4, 0.9],
+  [3.6, 0.7],
+  [7.4, 0.9],
 ];
 
 /** Smoothstep between [time, value] keys. */
@@ -357,25 +353,6 @@ function useThinkerChunks() {
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-// Critically damped spring: velocity decays at exactly the rate that kills
-// overshoot for the given stiffness. Semi-implicit Euler; dt is clamped by
-// the caller so 2*omega*dt stays under 1.
-const SPRING_SCRATCH = new THREE.Vector3();
-function dampSpring(
-  position: THREE.Vector3,
-  velocity: THREE.Vector3,
-  target: THREE.Vector3,
-  omega: number,
-  dt: number,
-) {
-  velocity.multiplyScalar(Math.max(1 - 2 * omega * dt, 0));
-  velocity.addScaledVector(
-    SPRING_SCRATCH.subVectors(target, position),
-    omega * omega * dt,
-  );
-  position.addScaledVector(velocity, dt);
-}
-
 function CameraRig({
   openAim,
   progressRef,
@@ -391,19 +368,18 @@ function CameraRig({
   const { camera, scene, size } = useThree();
   const lookAt = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const target = useMemo(() => new THREE.Vector3(), []);
-  // The rally chase: position and look-target on their own critically
-  // damped springs (different stiffness), blended over the statue camera
-  // by wall time while the robot phase is open.
+  // The rally shot: where the camera sits and what it looks at during the
+  // outro. Both are written outright each frame from the run time — no
+  // springs, no state carried between frames — and blended over the statue
+  // camera by `blend`, which snaps rather than eases.
   const chase = useMemo(
     () => ({
       blend: 0,
       fov: STATUE_FOV,
       lookPosition: new THREE.Vector3(),
-      lookVelocity: new THREE.Vector3(),
       position: new THREE.Vector3(),
       roll: 0,
       seeded: false,
-      velocity: new THREE.Vector3(),
     }),
     [],
   );
@@ -411,9 +387,7 @@ function CameraRig({
     () => ({
       forward: new THREE.Vector3(),
       look: new THREE.Vector3(),
-      lookTarget: new THREE.Vector3(),
       offset: new THREE.Vector3(),
-      positionTarget: new THREE.Vector3(),
     }),
     [],
   );
@@ -423,7 +397,7 @@ function CameraRig({
   // shot over a second instead of opening on it.
   const opened = useRef(false);
 
-  useFrame(({ clock }, delta) => {
+  useFrame(({ clock }) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const compact = size.width < 720;
@@ -459,7 +433,6 @@ function CameraRig({
       .add(lookAt);
 
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
-    const dt = Math.min(delta, 0.05);
     // A cut, not a pan. Easing the lens from the statue's framing into the
     // chase swept it across an empty stage for a second before the robot
     // had even arrived; the chase camera now owns the frame outright from
@@ -498,21 +471,23 @@ function CameraRig({
       return;
     }
 
-    // First frame of the outro: the springs are snapped onto their targets
-    // below rather than started from the statue camera, so the scene opens
-    // already framed on the robot instead of sliding into place.
-    // The springs advance by whichever is larger, real time or the run time
-    // the scroll just covered. Without this a fast scroll moves the robot
-    // several units between frames while the camera gets one frame of catch-up
-    // and falls hopelessly behind; with it the chase keeps station however
-    // quickly the page is scrubbed.
-    const camDt = Math.min(0.1, Math.max(dt, robotState.playheadDelta));
-
+    // There is no chase spring here any more, and that is the point. The
+    // run is scrubbed by the scroll, so a flick of the wheel can move the
+    // robot ten units in one frame; a spring integrating real time gets a
+    // single frame of catch-up and is left standing, then lunges after it
+    // over the following second. Feeding it the playhead delta instead
+    // (which is what this did) makes the stiffness change frame to frame,
+    // which is what the shot was juddering on.
+    //
+    // The framing is now a pure function of the playhead: every term below
+    // comes from the run time and the robot's pose, so the same scroll
+    // position always gives the same shot, and scrolling back retraces it
+    // exactly. The lag that made the robot swing across frame is still
+    // there — it just lives in the RUN's clock instead of the wall's, as
+    // RobotOutro's anchor pose.
     const seeding = !chase.seeded;
     if (seeding) {
       chase.seeded = true;
-      chase.velocity.set(0, 0, 0);
-      chase.lookVelocity.set(0, 0, 0);
       chase.roll = 0;
     }
 
@@ -545,71 +520,41 @@ function CameraRig({
     // swings a positive angle to the robot's LEFT: with +Y up, a body's
     // right is cross(forward, up), which for a robot facing -z is +x — so
     // subtracting put the camera on the wrong side of it.
-    const side = robotState.heading + azimuth;
-    scratch.positionTarget.set(
-      robotState.position.x + Math.sin(side) * orbit,
+    // Both the orbit centre and the aim point hang off the ANCHOR pose —
+    // where the robot was CAMERA_ANCHOR_LAG seconds of run time ago — not
+    // the live one. While the robot is sliding it runs out ahead of the
+    // frame; as it slows the anchor catches up and it settles back to the
+    // middle, which is the swing the old loose springs were there for,
+    // without any of their catch-up behaviour.
+    const side = robotState.anchorHeading + azimuth;
+    chase.position.set(
+      robotState.anchorPosition.x + Math.sin(side) * orbit,
       ROBOT_GROUND_Y + lift,
-      robotState.position.z + Math.cos(side) * orbit,
+      robotState.anchorPosition.z + Math.cos(side) * orbit,
     );
     // Aim at the robot, easing back toward its tail once it is parked so
     // the goal it has just filled shares the frame.
     const behind = keyed(CAMERA_AIM_BEHIND_KEYS, runAt);
-    scratch.lookTarget.set(
-      robotState.position.x - Math.sin(robotState.heading) * behind,
+    chase.lookPosition.set(
+      robotState.anchorPosition.x - Math.sin(robotState.anchorHeading) * behind,
       ROBOT_GROUND_Y + keyed(CAMERA_AIM_HEIGHT, runAt),
-      robotState.position.z - Math.cos(robotState.heading) * behind,
+      robotState.anchorPosition.z - Math.cos(robotState.anchorHeading) * behind,
     );
-
-    if (seeding) {
-      chase.seeded = true;
-      chase.velocity.set(0, 0, 0);
-      chase.lookVelocity.set(0, 0, 0);
-      chase.roll = 0;
-    }
-
-    if (seeding) {
-      chase.position.copy(scratch.positionTarget);
-      chase.lookPosition.copy(scratch.lookTarget);
-    }
-    // Loose springs on purpose. Tracking the robot tightly held it dead
-    // centre for the whole run, which read as the robot standing still
-    // while the ground moved; lagging the rig lets the robot swing across
-    // the frame as it slides and settle back as it slows.
-    dampSpring(
-      chase.position,
-      chase.velocity,
-      scratch.positionTarget,
-      robotState.resting ? 2.0 : 5.5,
-      camDt,
-    );
-    dampSpring(
-      chase.lookPosition,
-      chase.lookVelocity,
-      scratch.lookTarget,
-      robotState.resting ? 2.6 : 5.0,
-      camDt,
-    );
-    // The run is scrubbed by the scroll now, so a flick of the wheel can
-    // move the robot faster than these springs will ever follow. Generous
-    // bounds: they do not engage while the page is scrolled at any normal
-    // rate — the framing is exactly as it was — but they stop the robot
-    // being left behind entirely and the shot becoming an empty floor.
-    clampLag(chase.position, scratch.positionTarget, 2.0);
-    clampLag(chase.lookPosition, scratch.lookTarget, 2.0);
 
     // No roll at all — banking the camera tips the horizon, and on screen
     // that is indistinguishable from the robot leaning. The focal length
     // widens a little
     // with how fast the robot is actually moving, easing back to a settled
     // value once it has parked.
-    chase.roll += (0 - chase.roll) * Math.min(1, 5 * dt);
-    const fovTarget = robotState.resting
-      ? 36
-      : STATUE_FOV + 8 * THREE.MathUtils.clamp(robotState.speed / 6, 0, 1);
-    // Snapped on the cut frame, eased after it, so the outro opens at its
-    // own focal length instead of zooming out of the statue's.
-    if (seeding) chase.fov = fovTarget;
-    else chase.fov += (fovTarget - chase.fov) * Math.min(1, 3 * dt);
+    chase.roll = 0;
+    // The focal length widens with how fast the robot is actually going.
+    // `resting` is a threshold on that same speed, so it used to flip the
+    // target by 6 degrees in one frame and the old easing smeared the snap
+    // over the next second — a zoom nobody asked for, at a moment nobody
+    // was scrolling. Reading it straight off speed removes both the step
+    // and the easing, and like everything else here it is now a pure
+    // function of where the page is.
+    chase.fov = 36 + 6 * THREE.MathUtils.clamp(robotState.speed / 6, 0, 1);
     const time = clock.elapsedTime;
     const noiseX = (Math.sin(time * 1.31) + Math.sin(time * 2.17)) * 0.01;
     const noiseY = (Math.sin(time * 1.73) + Math.sin(time * 2.93)) * 0.01;
