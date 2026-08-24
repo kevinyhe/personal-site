@@ -100,7 +100,7 @@ export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
  * centre of the arc traced between t = 2.0 and 5.3, which is where the goal
  * belongs; recompute it if the U is retuned.
  */
-const FINISH_HEADING = 1.135;
+const FINISH_HEADING = Math.PI;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
@@ -216,8 +216,14 @@ const SCHEDULE: DriverPhase[] = [
   { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
-const START_HEADING = Math.PI / 2;
-const START_POSITION: [number, number] = [6.2, -3.4];
+const START_HEADING = 0;
+/**
+ * Chosen so the run finishes near the middle of the floor. Driving in on
+ * heading 0 sends the robot along -z, and the whole run covers about
+ * (+2, -10.6) robot lengths, so it has to start well upstage of centre or
+ * it ends up at the edge of the 46 x 32 ground plane.
+ */
+const START_POSITION: [number, number] = [-2.0, 7.5];
 const START_SPEED = -4.0;
 
 function clamp(value: number, min: number, max: number) {
