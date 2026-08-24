@@ -108,6 +108,11 @@ const PART_TYPES = [
   // a leading underscore, which is why they do not match the drive prefixes.
   { cap: CAP_SPIN, category: "intake", count: 1, detail: DETAIL_SPIN, prefix: "_24T_HS_Gear" },
   { cap: CAP_SPIN, category: "intake", count: 1, detail: DETAIL_SPIN, prefix: "_LS_36T_Gear4" },
+  // The indexer: the pieces that hold a ball back at the top of the tower
+  // until it is time to score. These do NOT turn — they lift out of the
+  // way — so the stage treats this category differently from "intake".
+  { cap: CAP_SPIN, category: "indexer", count: 2, detail: DETAIL_SPIN, prefix: "1x1_Thin_5x_Half-C_Alu_v1" },
+  { cap: CAP_SPIN, category: "indexer", count: 1, detail: DETAIL_SPIN, prefix: "Component222" },
 ];
 
 // Longest match wins, so a prefix that is itself the start of a longer one
@@ -565,16 +570,22 @@ for (const type of PART_TYPES) {
     const box = worldBox(occ.meshes);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    // Every one of these turns on an axle along model X, the same as the drive
-    // wheels. The bounding box of a disc on that axle is thinnest along X and
+    // Every one of these that SPINS turns on an axle along model X, the same
+    // as the drive wheels. The bounding box of a disc on that axle is thinnest along X and
     // square across it, so check both. The square test is what actually pins
     // the axis down: an 8T sprocket is only 0.50in thick on a 0.74in circle,
     // so "much thinner along X" would not hold. Fail loudly rather than emit a
     // part that spins about the wrong axis.
-    const across = Math.max(size.y, size.z);
-    const flat = Math.min(size.y, size.z);
-    if (!(size.x < flat && across - flat < across * 0.12)) {
-      throw new Error(`${type.prefix}[${i}] axle is not along model X: size ${size.toArray().map((n) => n.toFixed(2))}`);
+    // ...but only the ones that actually turn. The indexer pieces are
+    // plates, not discs: they lift out of the ball's way rather than
+    // spinning, so there is no axle to check and this test would reject
+    // them for being the wrong shape.
+    if (type.category !== "indexer") {
+      const across = Math.max(size.y, size.z);
+      const flat = Math.min(size.y, size.z);
+      if (!(size.x < flat && across - flat < across * 0.12)) {
+        throw new Error(`${type.prefix}[${i}] axle is not along model X: size ${size.toArray().map((n) => n.toFixed(2))}`);
+      }
     }
     const sig = `${type.prefix}|${signature(occ, center)}`;
     let meshIndex = meshBySignature.get(sig);

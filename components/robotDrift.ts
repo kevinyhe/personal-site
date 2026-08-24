@@ -180,36 +180,34 @@ type DriverPhase = {
  * what makes the arc wide — radius is roughly speed over yaw rate.
  */
 /**
- * The U-turn. Radius is speed over yaw rate, so the two are set together
- * and the sticks matter as much as the yaw target: driving the outside
- * hard makes a wide arc no matter what the trim asks for. Swept against the
- * measured curvature of the PATH (not heading over speed — in a drift the
- * nose is not tangent to the path, so that ratio says nothing about the arc
- * it traces), these hold 1.71 robot lengths, about 28 in against the 24
- * asked for. Tighter needs grip the tyres do not have: holding radius R at
- * speed v costs v²/R of lateral acceleration and only mu*g = 2.1 is
- * available, so a tighter arc has to be a slower one.
+ * The skid. It starts once the turn-in has brought the nose to about -160,
+ * which is only 20 degrees off the heading it drove in on, so almost all of
+ * the move is the slide itself. Held on a differential rather than a
+ * heading trim: trimming the nose onto a fixed heading let the tyres pull
+ * the travel back into line with it and the slip washed out to nothing, so
+ * it braked instead of sliding.
  */
-const U_DURATION = 3.8;
-const U_OUTER = 1.1;
-const U_INNER = 0.4;
-const U_YAW = 2.1;
+const SKID_DURATION = 1.9;
+const SKID_OUTER = 4.5;
+const SKID_INNER = -1.5;
+const SKID_YAW = 2.4;
 
 const SCHEDULE: DriverPhase[] = [
-  // Straight in, driving forwards, alongside the run of balls. No reverse
-  // entry at the start any more — the only one left is the arrival at the
-  // goal.
-  { duration: 0.5, left: 4.4, right: 4.4 },
-  // Break the rear loose and settle straight into the turn.
-  { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
-  // The drift. Held at a steady yaw against a steady speed so it carves one
-  // clean arc, tail out, collecting the balls as it comes round.
-  { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
-  // The flip into the goal: a hard, short counter-rotation that brings the
-  // tail round to face the mouth.
-  { duration: 0.4, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
-  // Reverse entry into the goal - the robot slides tail-first at the mouth
-  // with the body still sideways to its travel.
+  // In forwards, alongside the run of balls.
+  { duration: 0.6, left: 4.4, right: 4.4 },
+  // Turn in to the left. Short — it only has about 20 degrees to cover
+  // before the nose is where the slide wants it.
+  { duration: 0.35, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: 3.2 },
+  // THE SKID. The nose is held near -160 while the robot keeps carrying its
+  // momentum down the field, so it travels a long way sideways to where it
+  // is pointing. The sticks stay barely on: this is a slide, not a turn,
+  // and holding the heading rather than flicking again is what makes the
+  // move read as one continuous motion.
+  { duration: SKID_DURATION, left: SKID_OUTER, right: SKID_INNER, yawGain: 1.6, yawTarget: SKID_YAW },
+  // Out of the skid, bring the tail round toward the mouth.
+  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 5.0 },
+  // Reverse entry into the goal: driven backwards with the nose trimmed on
+  // the finish heading, so it arrives tail-first and still sideways.
   { duration: 1.1, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.2, right: -4.2, yawGain: 2.4 },
   // Ease the reverse off over the last of the way in.
   { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.6, right: -1.6, yawGain: 2.6 },
@@ -253,9 +251,9 @@ const START_HEADING = Math.PI;
 /**
  * The robot enters from the FAR end and drives toward the camera: heading PI
  * with forward drive carries it along -z, so it comes in upstage of the
- * balls and works down through them. Move this with U_DURATION — a longer
- * drift covers more ground and the start has to give it room, or the run
- * finishes off the 46 x 32 floor.
+ * balls and works down through them. Move this with SKID_DURATION — a
+ * longer slide covers more ground and the start has to give it room, or
+ * the run finishes off the 46 x 32 floor.
  */
 const START_POSITION: [number, number] = [-1.0, 8.4];
 const START_SPEED = 4.0;

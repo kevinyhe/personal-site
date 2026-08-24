@@ -78,7 +78,7 @@ const MOUTH_Z = ROBOT_LENGTH / 2;
  * of the goal at that height, so they rest slightly lower. The throw arc therefore climbs into the mouth,
  * which is what a real robot does — it shoots slightly upward into the goal.
  */
-const TROUGH_Y = 1.52;
+const TROUGH_Y = 1.47;
 
 /**
  * How many balls the robot drives on already holding. They occupy the front

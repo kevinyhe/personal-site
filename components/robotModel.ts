@@ -23,7 +23,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export type RobotSpinner = {
   object: THREE.Object3D;
-  category: "drive" | "intake";
+  category: "drive" | "intake" | "indexer";
   /** Local axis to rotate about. Always "x" today; read it, do not assume. */
   axis: "x" | "y" | "z";
   /** Outer radius in stage units, for gear-ratio maths. */
@@ -48,7 +48,7 @@ type WheelMeta = {
 type PartMeta = {
   axis: "x" | "y" | "z";
   axlePosition: [number, number, number];
-  category: "drive" | "intake";
+  category: "drive" | "intake" | "indexer";
   name: string;
   radius: number;
   side: "left" | "right" | "center";
