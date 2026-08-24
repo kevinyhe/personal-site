@@ -145,9 +145,15 @@ const FADE_IN_END = 0.13;
 // whole run, so the straight, the flick and the half-turn are all just
 // stretches of scroll.
 const RUN_START = 0.15;
-// Daylight between the robot's rear and the goal's mouth at the finish, in
-// stage units: enough that the aligner reads as seated, not intersecting.
-const GOAL_GAP = 0.12;
+/**
+ * Where the robot's rear sits relative to the goal's mouth at the finish,
+ * stage units. NEGATIVE means the robot finishes slightly INSIDE the mouth,
+ * which is what is wanted: the triangle aligner on its back should be up
+ * against the furthest point it can reach into the goal, not standing off
+ * it. A positive value would leave daylight and the alignment would not
+ * read as seated.
+ */
+const GOAL_GAP = -0.34;
 // How fast the intake's rollers pull a ball across their surface, stage
 // units/s. Faster than the robot drives, which is what makes a ball snap in
 // rather than get nudged along the floor.
