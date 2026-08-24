@@ -151,13 +151,14 @@ const ROBOT_FADE_START = 0;
 const RUN_START = 0.15;
 /**
  * Daylight between the robot's rear and the goal's mouth once it has come
- * to rest, stage units, on top of half a robot length. Small: the robot
- * finishes AT the mouth, having reversed into it. The "two robot lengths in
+ * to rest, stage units, on top of half a robot length. NEGATIVE: the robot
+ * finishes inside the mouth, far enough in that the tip of the triangle
+ * aligner on its back is up against the deepest point it can reach. The "two robot lengths in
  * front of the alignment position" is where the DRIFT ends — the closing
  * reverse entry covers that gap. Parking the robot short of the goal
  * instead left the scored balls strung across the gap in mid-air.
  */
-const GOAL_GAP = 0.06;
+const GOAL_GAP = -0.5;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model

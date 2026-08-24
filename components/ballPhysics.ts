@@ -75,10 +75,10 @@ const MOUTH_Z = ROBOT_LENGTH / 2;
  * Height a ball comes to rest at inside the goal, model y, stage units. This
  * is NOT the indexer height: the Long Goal's ball channel measures 1.527 off
  * the asset (see components/propModels.ts), but the balls sat visibly proud
- * of the goal at that height, so they rest a little lower. The throw arc therefore climbs into the mouth,
+ * of the goal at that height, so they rest slightly lower. The throw arc therefore climbs into the mouth,
  * which is what a real robot does — it shoots slightly upward into the goal.
  */
-const TROUGH_Y = 1.44;
+const TROUGH_Y = 1.49;
 
 /**
  * How many balls the robot drives on already holding. They occupy the front
