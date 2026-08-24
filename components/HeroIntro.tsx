@@ -25,11 +25,19 @@ type HeroIntroProps = {
 // other way round (counter-clockwise from above).
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
-// The panel starts growing when the name's exit (0..0.4 of the hero
-// timeline) is 60% done, and still finishes at the timeline's end. The
-// Thinker inside it starts breaking the moment the panel starts growing.
-const PANEL_GROW_AT = 0.24;
-const PANEL_GROW_DURATION = 0.76;
+// The panel starts growing when the name's exit is 60% done and finishes
+// at the timeline's end. The hero spacer is stretched (270vh originally,
+// now 432vh) so the growth takes 2.25x its original scroll length; the
+// other tween fractions below are rescaled by 170/332 so the name, tree
+// and orbit keep their old absolute pacing. The Thinker inside the panel
+// starts breaking the moment it starts growing.
+const PANEL_GROW_AT = 0.123;
+const PANEL_GROW_DURATION = 0.877;
+
+// The statue's stretch stays this many viewport-heights long no matter how
+// much scroll room follows it — the hero spacer growing must not slow the
+// break back down.
+const STATUE_STRETCH_VIEWPORTS = 1.64;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -404,7 +412,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [revealComplete]);
 
-  // The next page, on scroll: one scrubbed timeline over 270vh. The top
+  // The next page, on scroll: one scrubbed timeline over 432vh. The top
   // strip fades, the name sinks out of the bottom of the frame, and the
   // tree sinks out too while the camera orbits it counter-clockwise
   // through 60% of the intro's sweep; once the name has gone, a
@@ -444,13 +452,13 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           trigger: scrollSpace,
         },
       });
-      // Times are fractions of the whole 270vh scroll: the hero's exit in
-      // the first 0.4, the panel after the name is out.
+      // Times are fractions of the whole 432vh scroll: the hero's exit in
+      // the first 0.205, the panel from 0.123 (see PANEL_GROW_AT).
       gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
-      tl.to(strip, { autoAlpha: 0, duration: 0.2 }, 0)
-        .to(lockup, { y: exitOffset, duration: 0.4, ease: "power1.in" }, 0)
-        .to(sceneFx, { treeDrop: 1, duration: 0.57, ease: "power1.in" }, 0)
-        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.67 }, 0)
+      tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
+        .to(lockup, { y: exitOffset, duration: 0.205, ease: "power1.in" }, 0)
+        .to(sceneFx, { treeDrop: 1, duration: 0.292, ease: "power1.in" }, 0)
+        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.343 }, 0)
         .to(
           panel,
           { scale: 1, duration: PANEL_GROW_DURATION, ease: "power2.inOut" },
@@ -485,10 +493,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const heroStart = documentTop(scrollSpace);
     const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
     const growStart = heroStart + heroLength * PANEL_GROW_AT;
-    const growEnd = heroStart + heroLength * (PANEL_GROW_AT + PANEL_GROW_DURATION);
-    const end = statueSpace
+    const pageEnd = statueSpace
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
-      : growEnd;
+      : growStart;
+    // Pinned, not page-relative: the break keeps its pace however much
+    // scroll room the growing panel needs after it.
+    const end = Math.min(growStart + viewportHeight * STATUE_STRETCH_VIEWPORTS, pageEnd);
     return {
       breakAt: growStart,
       end,
@@ -553,7 +563,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           exit and the panel's growth, the second gives the statue's breakup
           (which begins with the growth) the rest of its run — kept short on
           purpose, so the break outpaces the box. */}
-      <div aria-hidden="true" className="h-[270vh]" ref={scrollSpaceRef} />
+      <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
       <div aria-hidden="true" className="h-[62vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it

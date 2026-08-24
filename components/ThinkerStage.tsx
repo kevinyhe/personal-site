@@ -84,9 +84,10 @@ const CAMERA_DISTANCE = 5.0;
 const CAMERA_DISTANCE_BROKEN = 4.65;
 const CAMERA_DISTANCE_COMPACT = 6.2;
 const CAMERA_DISTANCE_COMPACT_BROKEN = 5.85;
-// Where the camera aims (figure height, centre 0): the chest at rest, the
-// middle once broken.
-const LOOK_AT_Y = 0.55;
+// Where the camera aims (figure height, centre 0): above the chest at
+// rest — the frame sits high, with air over the figure's head — panning
+// to the middle once broken.
+const LOOK_AT_Y = 0.85;
 const LOOK_AT_Y_BROKEN = -0.05;
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
