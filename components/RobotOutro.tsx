@@ -139,25 +139,25 @@ export const ROBOT_LENGTH = 1.6;
 /** The robot scene's own floor: the statue is faded out, so a clean height. */
 export const ROBOT_GROUND_Y = -1.2;
 
-// The statue owns the screen until it has fully faded (ThinkerStage's
-// STATUE_FADE_END); only then does the robot scene begin to appear, so the
-// two are never on screen together. Nothing of the robot is drawn before
-// ROBOT_FADE_START, and its lights come up between there and FADE_IN_END.
-const ROBOT_FADE_START = 0.08;
-const FADE_IN_END = 0.13;
+// The hand-off is a CLIP, not a dissolve: the robot is fully there on the
+// same frame the statue vanishes (ThinkerStage's `statueOn`). Nothing eases
+// in — this used to be 0.08, with the lights ramping up to 0.13 behind the
+// statue's own fade-out.
+const ROBOT_FADE_START = 0;
 // Where in the robot phase the drift begins. Below this the robot is
 // still fading in; from here to the end of the page the scroll scrubs the
 // whole run, so the straight, the flick and the half-turn are all just
 // stretches of scroll.
 const RUN_START = 0.15;
 /**
- * Where the goal's mouth sits relative to the robot's rear at the finish,
- * stage units, on top of half a robot length. The robot parks about two
- * robot lengths clear of the mouth rather than seated inside it: backing
- * right in put the goal on top of the drift, so the tail end of the run
- * was passing under the goal body.
+ * Daylight between the robot's rear and the goal's mouth once it has come
+ * to rest, stage units, on top of half a robot length. Small: the robot
+ * finishes AT the mouth, having reversed into it. The "two robot lengths in
+ * front of the alignment position" is where the DRIFT ends — the closing
+ * reverse entry covers that gap. Parking the robot short of the goal
+ * instead left the scored balls strung across the gap in mid-air.
  */
-const GOAL_GAP = 2.4;
+const GOAL_GAP = 0.06;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -978,8 +978,9 @@ export default function RobotOutro({
 
   const memo = useMemo(
     () => ({
-      fadeIn: (phase: number) =>
-        THREE.MathUtils.smoothstep(phase, ROBOT_FADE_START, FADE_IN_END),
+      // A step, not a ramp. smoothstep with a zero-width window is a
+      // divide by zero, so the switch is explicit.
+      fadeIn: (phase: number) => (phase > ROBOT_FADE_START ? 1 : 0),
     }),
     [],
   );
