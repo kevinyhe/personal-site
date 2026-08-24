@@ -42,9 +42,15 @@ const SRC = process.argv[2] ?? path.resolve("sexy s bot.fbx");
 const OUT_DIR = path.resolve("public/model/robot");
 const t0 = Date.now();
 
-// rendered-triangle budget: chassis + 4 shared wheel instances <= 175k
-const CAP_CHASSIS = 149000;
-const CAP_WHEEL = 6200;
+// Rendered-triangle budget. These are ceilings that should NOT bind: the
+// per-part error bounds below are what decides quality, and the budget
+// only exists to catch a runaway. Squeezing the whole robot into 149k
+// (an earlier setting) meant a further 3.4x decimation on top of those
+// bounds, which bent flat channel walls and rounded off the square holes.
+// Vertex data is quantized on the way out, so ~600k triangles is a ~6 MB
+// file.
+const CAP_CHASSIS = 800000;
+const CAP_WHEEL = 40000;
 
 await MeshoptSimplifier.ready;
 
@@ -292,13 +298,13 @@ function budgetedMesh(part, scale2) {
   const { maxDimIn, raw, welded } = part;
   let mesh;
   if (maxDimIn < 1.0) {
-    mesh = simplify(welded, Math.max(48, Math.round(Math.min(raw, 160) * scale2)), 0.05);
+    mesh = simplify(welded, Math.max(48, Math.round(Math.min(raw, 320) * scale2)), 0.025);
   } else if (part.round) {
     // decorative round parts: keep the silhouette, drop tread/tooth detail
-    mesh = simplify(welded, Math.max(700, Math.round(3200 * scale2)), 0.02);
+    mesh = simplify(welded, Math.max(700, Math.round(6400 * scale2)), 0.01);
   } else {
-    const err = Math.min(0.03, 0.07 / maxDimIn);
-    mesh = simplify(welded, Math.max(260, Math.round(Math.max(360, raw / 8) * scale2)), err);
+    const err = Math.min(0.015, 0.035 / maxDimIn);
+    mesh = simplify(welded, Math.max(260, Math.round(Math.max(360, raw / 4) * scale2)), err);
   }
   return compact(mesh);
 }
@@ -545,30 +551,124 @@ function writeGlb(filePath) {
     accessors.push(acc);
     return accessors.length - 1;
   }
-  function prims(list) {
+  // Vertex data is quantized (KHR_mesh_quantization): positions to 16-bit
+  // integers over the mesh's own extent, normals to signed bytes. At this
+  // triangle count the float32 buffers were the bulk of a 12 MB file, and
+  // 16-bit positions still resolve about 0.0006 in on a robot this size —
+  // far finer than the tessellation itself. The integer-to-real transform
+  // has to live on the NODE, so each mesh gets one shared scale: the
+  // chassis also takes an offset, while the wheel is quantized about a
+  // range centred on its axle so its offset is zero and node translation
+  // stays the true axle position (a non-zero offset there would be spun
+  // around by rotation.x along with the wheel).
+  function quantizePositions(list, centred) {
+    let min = [1e30, 1e30, 1e30];
+    let max = [-1e30, -1e30, -1e30];
+    for (const p of list) {
+      for (let i = 0; i < p.mesh.pos.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          if (p.mesh.pos[i + k] < min[k]) min[k] = p.mesh.pos[i + k];
+          if (p.mesh.pos[i + k] > max[k]) max[k] = p.mesh.pos[i + k];
+        }
+      }
+    }
+    if (centred) {
+      // Symmetric about the origin, so the decode offset is zero.
+      const half = Math.max(...[0, 1, 2].map((k) => Math.max(-min[k], max[k])));
+      min = [-half, -half, -half];
+      max = [half, half, half];
+    }
+    // One uniform scale for all three axes keeps the decode a similarity
+    // transform, so the byte normals stay correct without rescaling.
+    const extent = Math.max(...[0, 1, 2].map((k) => max[k] - min[k]), 1e-9);
+    const scale = extent / 65534;
+    const offset = centred ? [0, 0, 0] : min.map((n) => n + extent / 2);
+    return { offset, scale };
+  }
+  function addQuantizedPositions(mesh, q) {
+    // Four components per vertex (the fourth unused) so each element is
+    // 8 bytes and every accessor stays 4-byte aligned.
+    const count = mesh.pos.length / 3;
+    const out = new Int16Array(count * 4);
+    const qmin = [32767, 32767, 32767];
+    const qmax = [-32768, -32768, -32768];
+    for (let i = 0; i < count; i++) {
+      for (let k = 0; k < 3; k++) {
+        const v = Math.round((mesh.pos[i * 3 + k] - q.offset[k]) / q.scale);
+        const c = Math.max(-32767, Math.min(32767, v));
+        out[i * 4 + k] = c;
+        if (c < qmin[k]) qmin[k] = c;
+        if (c > qmax[k]) qmax[k] = c;
+      }
+    }
+    const index = addAccessor(out, "VEC3", 5122, 34962);
+    accessors[index].count = count;
+    accessors[index].min = qmin;
+    accessors[index].max = qmax;
+    bufferViews[accessors[index].bufferView].byteStride = 8;
+    return index;
+  }
+  function addByteNormals(mesh) {
+    const count = mesh.nrm.length / 3;
+    const out = new Int8Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      for (let k = 0; k < 3; k++) {
+        const v = Math.round(mesh.nrm[i * 3 + k] * 127);
+        out[i * 4 + k] = Math.max(-127, Math.min(127, v));
+      }
+    }
+    const index = addAccessor(out, "VEC3", 5120, 34962);
+    accessors[index].count = count;
+    accessors[index].normalized = true;
+    bufferViews[accessors[index].bufferView].byteStride = 4;
+    return index;
+  }
+  function addIndices(idx, vertexCount) {
+    // 16-bit indices wherever the primitive has few enough vertices, which
+    // after the per-colour split is all but the largest.
+    if (vertexCount <= 65536) {
+      return addAccessor(Uint16Array.from(idx), "SCALAR", 5123, 34963);
+    }
+    return addAccessor(idx, "SCALAR", 5125, 34963);
+  }
+  function prims(list, q) {
     return list.map((p) => ({
       attributes: {
-        NORMAL: addAccessor(p.mesh.nrm, "VEC3", 5126, 34962),
-        POSITION: addAccessor(p.mesh.pos, "VEC3", 5126, 34962),
+        NORMAL: addByteNormals(p.mesh),
+        POSITION: addQuantizedPositions(p.mesh, q),
       },
-      indices: addAccessor(p.mesh.idx, "SCALAR", 5125, 34963),
+      indices: addIndices(p.mesh.idx, p.mesh.pos.length / 3),
       material: colorIndex.get(p.colorKey),
     }));
   }
+  const chassisQ = quantizePositions(chassisPrims, false);
+  const wheelQ = quantizePositions(wheelPrims, true);
   const meshes = [
-    { name: "chassis", primitives: prims(chassisPrims) },
-    { name: "wheel", primitives: prims(wheelPrims) },
+    { name: "chassis", primitives: prims(chassisPrims, chassisQ) },
+    { name: "wheel", primitives: prims(wheelPrims, wheelQ) },
   ];
   const nodes = [
     { children: [1, 2, 3, 4, 5], extras: meta, name: "robot" },
-    { mesh: 0, name: "chassis" },
-    ...wheelNodes.map((wn) => ({ mesh: 1, name: wn.name, translation: wn.translation })),
+    {
+      mesh: 0,
+      name: "chassis",
+      scale: [chassisQ.scale, chassisQ.scale, chassisQ.scale],
+      translation: chassisQ.offset,
+    },
+    ...wheelNodes.map((wn) => ({
+      mesh: 1,
+      name: wn.name,
+      scale: [wheelQ.scale, wheelQ.scale, wheelQ.scale],
+      translation: wn.translation,
+    })),
   ];
   const json = {
     accessors,
     asset: { generator: "robot-from-fbx.mjs", version: "2.0" },
     bufferViews,
     buffers: [{ byteLength }],
+    extensionsRequired: ["KHR_mesh_quantization"],
+    extensionsUsed: ["KHR_mesh_quantization"],
     materials,
     meshes,
     nodes,
