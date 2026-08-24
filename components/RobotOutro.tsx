@@ -84,11 +84,14 @@ export const ROBOT_LENGTH = 1.6;
 /** The robot scene's own floor: the statue is faded out, so a clean height. */
 export const ROBOT_GROUND_Y = -1.2;
 
-// The statue fades over the robot phase's first stretch; the robot scene's
-// lights fade in over the same stretch (ThinkerStage uses the mirror value).
-const FADE_IN_END = 0.3;
+// The statue owns the screen until it has fully faded (ThinkerStage's
+// STATUE_FADE_END); only then does the robot scene begin to appear, so the
+// two are never on screen together. Nothing of the robot is drawn before
+// ROBOT_FADE_START, and its lights come up between there and FADE_IN_END.
+const ROBOT_FADE_START = 0.2;
+const FADE_IN_END = 0.34;
 // Run control: crossing this upward starts the drift...
-const RUN_TRIGGER = 0.5;
+const RUN_TRIGGER = 0.38;
 // ...and dropping under this re-arms it for a replay.
 const RUN_REARM = 0.2;
 
@@ -451,7 +454,6 @@ export default function RobotOutro({
   }>({ active: false, previous: null, previousIntensity: 1, texture: null });
   const [frames, setFrames] = useState<RobotDriftFrame[] | null>(null);
   const [rig, setRig] = useState<RobotRig | null>(null);
-  const rollAngleRef = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -528,7 +530,10 @@ export default function RobotOutro({
   }, []);
 
   const memo = useMemo(
-    () => ({ fadeIn: (phase: number) => THREE.MathUtils.smoothstep(phase, 0, FADE_IN_END) }),
+    () => ({
+      fadeIn: (phase: number) =>
+        THREE.MathUtils.smoothstep(phase, ROBOT_FADE_START, FADE_IN_END),
+    }),
     [],
   );
 
@@ -536,7 +541,9 @@ export default function RobotOutro({
     const phase = progressRef.current.robot;
     const group = groupRef.current;
     if (!group) return;
-    const active = phase > 0.001;
+    // Nothing of the robot exists on screen while the statue is still
+    // fading out, so the two scenes never overlap.
+    const active = phase > ROBOT_FADE_START;
     group.visible = active;
 
     // The RoomEnvironment is set ONLY while the robot phase is live so the
@@ -596,16 +603,9 @@ export default function RobotOutro({
     );
     rig.pose.rotation.y = sample.heading;
 
-    // A touch of body roll: the chassis leans out of the lateral
-    // acceleration and into the slide, a few degrees at most.
-    const rollTarget = THREE.MathUtils.clamp(
-      -0.008 * sample.aLat - 0.02 * sample.slipAngle,
-      -0.09,
-      0.09,
-    );
-    rollAngleRef.current +=
-      (rollTarget - rollAngleRef.current) * Math.min(1, 8 * dt);
-    rig.roll.rotation.z = rollAngleRef.current;
+    // No body roll: the robot stays flat on its wheels through the whole
+    // slide. A leaning chassis read as the model itself being tilted.
+    rig.roll.rotation.z = 0;
 
     // Wheels integrate their angular speed (left samples on left wheels),
     // so the spin is real rotation, not a pose.

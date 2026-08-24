@@ -34,11 +34,13 @@ const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 const PANEL_GROW_AT = 0.123;
 const PANEL_GROW_DURATION = 0.877;
 
-// The statue's stretch stays this many viewport-heights long no matter how
-// much scroll room follows it — the hero spacer growing must not slow the
-// break back down. Whatever scroll remains past that stretch belongs to
-// the robot outro.
-const STATUE_STRETCH_VIEWPORTS = 1.64;
+// The statue owns the screen until the panel has finished growing AND held
+// at full screen for this much further scroll; only then does the page cut
+// to the robot. Pinning the stretch to a fixed length instead (it was 1.64
+// viewport-heights) ended the statue at 205vh when the panel does not fill
+// the screen until 332vh — the figure had long since flown apart and the
+// stage sat empty waiting for the cut.
+const STATUE_HOLD_VIEWPORTS = 0.5;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -69,10 +71,10 @@ const HERO_POSE = {
 
 // Minimum time the television is on screen before the reveal may start:
 // the lamp and tube coming on together (0.3 s), the name
-// warming in by ~1.4 s, plus 3.4 s with the name up. The tree builds
+// warming in by ~1.4 s, plus ~2.3 s with the name up. The tree builds
 // behind it; on a slow machine it simply holds the name a little longer —
 // the tree is never shown loading.
-const TV_DWELL_MS = 4800;
+const TV_DWELL_MS = 3700;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -182,20 +184,31 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       );
     }
     // Switch-on. The room is dark. At 0.3 s the lamp comes on like a
-    // filament bulb: it flares to several times its steady level in a few frames,
-    // sags back below it, then settles with a small wobble — the overshoot
-    // is what reads as incandescent rather than a fade. The tube powers up
-    // WITH the lamp — one switch throws both — and the name warms onto the
-    // phosphor once the picture is steady.
+    // filament bulb: it overshoots its steady level by about half in a few
+    // frames, sags back below it, then settles with a small wobble — the
+    // overshoot is what reads as incandescent rather than a fade.
+    //
+    // The peak is held under the clipping point ON PURPOSE. roomLight is a
+    // linear multiplier on every light in the room AND on what the glass
+    // reflects of them (uRoomGlass), so the flare scales the whole shot.
+    // Measured on the held television shot (1920x1080, sweeping roomLight
+    // by hand): pure-white pixels are 0.00% of the frame up to 2.5, 0.76%
+    // at 3.0 and 1.35% at 3.6, where the lamp's reflection in the glass
+    // blows out and the room runs 3.4x its settled brightness. That read as
+    // the whole page flashing white rather than a lamp coming on. 1.55
+    // keeps the overshoot visible with no clipped pixels anywhere.
+    //
+    // The tube powers up WITH the lamp — one switch throws both — and the
+    // name warms onto the phosphor once the picture is steady.
     // Headless captures set ?tvDark to hold the room before the lamp, or
     // ?tvFlare to hold it at the lamp's flare.
     const search = window.location.search;
     const powerOn = gsap.timeline({ paused: search.includes("tvDark") });
     powerOn
-      .to(sceneFx, { roomLight: 3.6, duration: 0.07, ease: "power3.in" }, 0.3)
-      .to(sceneFx, { roomLight: 0.78, duration: 0.2, ease: "power2.out" }, 0.37)
-      .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
-      .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
+      .to(sceneFx, { roomLight: 1.55, duration: 0.07, ease: "power3.in" }, 0.3)
+      .to(sceneFx, { roomLight: 0.88, duration: 0.2, ease: "power2.out" }, 0.37)
+      .to(sceneFx, { roomLight: 1.05, duration: 0.16, ease: "sine.inOut" }, 0.57)
+      .to(sceneFx, { roomLight: 0.98, duration: 0.14, ease: "sine.inOut" }, 0.73)
       .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
       // The tube's attack is the LAMP's attack: same start, same
       // back-loaded ease, so both surge in the same frames — the line
@@ -529,11 +542,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const pageEnd = statueSpace
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growStart;
-    // Pinned, not page-relative: the break keeps its pace however much
-    // scroll room the growing panel needs after it. The robot outro owns
-    // everything from there to the bottom.
+    // The panel finishes growing at the end of the hero timeline; the
+    // statue then holds the full screen for STATUE_HOLD_VIEWPORTS more
+    // before the robot outro takes over everything below.
+    const panelFull = heroStart + heroLength;
     const statueEnd = Math.min(
-      growStart + viewportHeight * STATUE_STRETCH_VIEWPORTS,
+      panelFull + viewportHeight * STATUE_HOLD_VIEWPORTS,
       pageEnd,
     );
     const end = pageEnd;
@@ -603,7 +617,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           (which begins with the growth) its short, deliberately outpaced
           run, and the robot outro the tail beyond it. */}
       <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[15vh]" ref={statueSpaceRef} />
+      <div aria-hidden="true" className="h-[110vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
