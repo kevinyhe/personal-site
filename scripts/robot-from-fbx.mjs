@@ -60,6 +60,12 @@ const CAP_WHEEL = 40000;
 // budgetedMesh) and a per-mesh ceiling of their own. Instances that share
 // geometry AND orientation share one mesh, so the ceiling is on unique data.
 const CAP_SPIN = 22000;
+/**
+ * How far in from the end of an indexer channel its hinge sits, inches —
+ * roughly half a hole pitch, so the pivot lands in the last hole rather
+ * than on the very tip of the metal.
+ */
+const INDEXER_HINGE_INSET = 0.25;
 const DETAIL_SPIN = 2.5;
 
 await MeshoptSimplifier.ready;
@@ -570,6 +576,14 @@ for (const type of PART_TYPES) {
     const box = worldBox(occ.meshes);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
+    // The indexer channels are hinged, not spun: they swing about the last
+    // hole at one END, the end away from the component that sits behind
+    // them. Model +Y is forward and the component is the rearmost of the
+    // three, so that is the +Y end of the channel, inset by half a hole
+    // pitch so the pivot sits in the hole rather than off the tip.
+    if (type.category === "indexer" && /Half-C/i.test(type.prefix)) {
+      center.y = box.max.y - INDEXER_HINGE_INSET;
+    }
     // Every one of these that SPINS turns on an axle along model X, the same
     // as the drive wheels. The bounding box of a disc on that axle is thinnest along X and
     // square across it, so check both. The square test is what actually pins

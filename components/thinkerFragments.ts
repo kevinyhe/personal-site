@@ -318,7 +318,15 @@ type FragmentPiece = {
   flat?: Float64Array;
   id: number;
   polygons: FragmentPolygon[];
+  /** Area of the piece's SKIN only — what the flight's origin is weighted by. */
   totalArea: number;
+  /**
+   * Area of every face, cut faces included. This, not `totalArea`, is what
+   * says how big a piece actually is: a fragment from inside the figure is
+   * nearly all cut face and has almost no skin, so judging it by `totalArea`
+   * called a real chunk dust and left a hole where it should have been.
+   */
+  faceArea: number;
 };
 
 type SplitPlane = {
@@ -353,6 +361,8 @@ export type CapBuildStats = {
 export type SplitStats = {
   /** Islands too small to keep. */
   dust: number;
+  /** Of those, how many were dropped for being all cut face and no skin. */
+  interior: number;
   /** Extra pieces from cells that came apart into more than one island. */
   islands: number;
   seedCount: number;
@@ -373,7 +383,7 @@ export type ThinkerChunkData = {
   /** Half the bounding-box diagonal, for the stage's own sanity checks. */
   radius: number;
   /** Which part of the figure the chunk belongs to, for the break's order. */
-  phase: "arm" | "head" | "upper" | "lower";
+  phase: "head" | "upper" | "lower";
   /** Breakup progress (0..1) at which this chunk starts moving. */
   releaseAt: number;
   scale: number;
@@ -394,66 +404,100 @@ export type ThinkerChunkBuild = {
 };
 
 export type BuildSolidChunkOptions = {
-  /** Pieces along the arm's path beyond the hand. */
-  armPieces: number;
   /**
-   * Seeds placed by hand (figure-space bounding-box fractions, like
-   * breakPath), released before everything else in this order. The first
-   * two sit either side of the palm's diagonal fracture, so the first cut
-   * falls exactly on their bisector.
+   * Where the figure struck the floor, as fractions of its bounding box
+   * (0..1 on each axis). Everything about the break is measured from here:
+   * cells are finest at this point and coarsen away from it, and pieces
+   * come loose in order of their distance from it.
    */
-  handSeeds: Array<[number, number, number]>;
+  impact: [number, number, number];
+  /** Target cell width at the impact, in figure units. */
+  spacingNear: number;
+  /** Target cell width far from the impact. */
+  spacingFar: number;
   /**
-   * Extra body seeds placed by hand rather than sampled — guards, so a
-   * neighbouring limb (the knee the hand rests against) keeps its own
-   * pieces instead of being carved into the hand's.
+   * How quickly the spacing opens out, in figure units: at this distance
+   * from the impact the cells are ~63% of the way from near to far.
+   */
+  spacingFalloff: number;
+  /**
+   * 0..1 pull of seeds onto the concentric shells around the impact. 0 is
+   * a plain graded scatter; higher lines the cuts up into rings around the
+   * blow with spokes between them.
+   */
+  shellBias: number;
+  /**
+   * How much cell size varies on top of the distance grading. Each seed
+   * gets its own target-spacing multiplier of e^±sizeVariation, so at 0.6 a
+   * seed may want anything from 0.55x to 1.8x the spacing its distance from
+   * the blow asks for — a ~6x range in cell volume between neighbours.
+   *
+   * 0 gives the even, soap-bubble cells that a plain Poisson-disc sampling
+   * produces: real stone does not break that regularly.
+   */
+  sizeVariation: number;
+  /**
+   * Hard ceiling on seeds. The carve is super-quadratic in seed count and
+   * the television shot holds until the build finishes, so this is a time
+   * budget, not a target.
+   */
+  maxPieces: number;
+  /**
+   * Extra seeds placed by hand (bounding-box fractions), for anywhere the
+   * grading needs help. They repel the sampled ones.
    */
   guardSeeds: Array<[number, number, number]>;
-  /** Pieces through the rest of the body below the head. */
-  bodyPieces: number;
-  /**
-   * The break's path: the arm from the hand to the shoulder, as fractions
-   * of the figure's bounding box (0..1 on each axis). The arm is cut along
-   * it, finest at the hand, and breaks in that order.
-   */
-  breakPath: Array<[number, number, number]>;
   /** The way the pieces fly, in the figure's own space. */
   direction: [number, number, number];
   /** Above this fraction of the figure's height is the head. */
   headFrom: number;
-  headPieces: number;
   /** Below this fraction of the figure's height are the legs and the base. */
   legsFrom: number;
-  /** Offset (figure units) from the path, which follows the surface, into the limb. */
-  pathInset: [number, number, number];
   seed: number;
   /** Distance scale of the flight, in the figure's units (it is 3.1 tall). */
   spread: number;
 };
 
-// Once the arm's opening run is done, the break grows outward from the
-// path's end. Distance below that point counts this many times over, so
-// the growth reaches the head well before the legs and the base.
-const DOWNWARD_LAG = 2;
-
-// How the arm's seeds bunch toward the hand: 1 is even, higher is denser at
-// the hand.
-const ARM_SEED_DENSITY = 1.5;
-// Arm path seeds start this far along the path: the stretch before it is
-// the hand, which gets its explicitly placed seeds instead.
-const ARM_PATH_FROM = 0.24;
-// Body seeds keep this far (figure units) from the arm's path.
-const ARM_CLEARANCE = 0.2;
+// Roughly how many surface points are offered to the sampler. It has to be
+// dense enough that the finest spacing near the impact has candidates to
+// choose between, and no denser — every candidate costs work in the sampler.
+const CANDIDATE_TARGET = 2200;
+// Sampling stops once no candidate has this much room relative to what its
+// own distance from the impact asks for: the figure is covered at the
+// density the grading wanted, and more seeds would only shave slivers.
+const SEED_STOP_RATIO = 0.75;
+// Two seeds closer than this are treated as one. `carveCell` builds a
+// bisector by normalising the vector between two seeds with no zero guard,
+// so a coincident pair is a NaN plane and a corrupt cell.
+const SEED_MIN_SEPARATION = 0.02;
+// The first concentric shell sits this many near-spacings out from the
+// impact; the rest step outward by the local spacing.
+const SHELL_START = 0.75;
 // The last piece releases this far into the breakup.
 const RELEASE_END = 0.86;
-// The first gap between releases is this many times the last: the trickle
-// of single pieces at the start becomes an exponential cascade by the end.
-const RELEASE_ACCELERATION = 24;
+// The first gap between releases is this many times the last, so the gaps
+// shrink and the whole thing accelerates away: a piece here and there to
+// begin with, then the figure going at once.
+//
+// The statue's run is short now — it ends when the name finishes leaving the
+// frame, not at the bottom of the page — so this is steeper than it was.
+// Set by measuring how much has let go partway through: at 3 a fifth was out
+// a quarter of the way in and half by 0.54, which spread the break evenly
+// over the run. At 10 it is a tenth and 0.63, so the first stretch stays
+// nearly whole and the collapse is genuinely exponential.
+const RELEASE_ACCELERATION = 10;
 // How much of the breakup a piece's flight takes once released.
 const TRAVEL_WINDOW = 0.275;
-// Islands smaller than this are dropped as dust.
-const ISLAND_MIN_POLYGONS = 40;
-const ISLAND_MIN_AREA = 0.01;
+// Islands smaller than this are dropped as dust. The real correctness
+// filter is the third condition at the call site (an island with no surface
+// polygon at all is a cap-only solid, which the carve should never have
+// produced); these two only exist to bin slivers. They were 40 / 0.01,
+// which was fine when the smallest cell was a knuckle — but an impact
+// fracture's whole point is fine shards near the blow, and at those floors
+// the shards were being deleted: 1.9% of the figure's volume at 113 seeds,
+// 3.0% at 150, as holes.
+const ISLAND_MIN_POLYGONS = 8;
+const ISLAND_MIN_AREA = 0.0015;
 // How far along its flight a piece is probed for running into a
 // neighbour (figure units), and the share of its shared face that must
 // land inside the neighbour for that to count.
@@ -534,17 +578,21 @@ function makePiece({
 }): FragmentPiece {
   const box = new THREE.Box3();
   let totalArea = 0;
+  let faceArea = 0;
 
   polygons.forEach((polygon) => {
+    const area = polygonArea(polygon.vertices);
+
+    faceArea += area;
     if (polygon.kind === "surface") {
-      totalArea += polygonArea(polygon.vertices);
+      totalArea += area;
     }
     polygon.vertices.forEach((vertex) => box.expandByPoint(vertex.point));
   });
 
   const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
 
-  return { box, capStats, center, depth, id, polygons, totalArea };
+  return { box, capStats, center, depth, faceArea, id, polygons, totalArea };
 }
 
 // The source mesh as one piece, welded: every distinct position becomes one
@@ -1473,13 +1521,13 @@ function countOpenGeometryEdges(geometry: THREE.BufferGeometry) {
 // Seeds: where the pieces are centred, and the order they break in
 // ---------------------------------------------------------------------------
 
-type BreakPhase = "arm" | "head" | "upper" | "lower";
+type BreakPhase = "head" | "upper" | "lower";
 
 type Seed = {
   phase: BreakPhase;
   point: THREE.Vector3;
-  /** 0..1 along the break: arm by path, everything else by how soon the
-   * growth outward from the arm's end reaches it. */
+  /** 0..1 along the break: how far the seed sits from the impact, so the
+   * cascade travels outward from where the figure struck. */
   position: number;
 };
 
@@ -1568,112 +1616,159 @@ function makeInsideTest(piece: FragmentPiece) {
   };
 }
 
-function distanceToPolyline(point: THREE.Vector3, path: THREE.Vector3[]) {
-  let best = Infinity;
-  let bestAlong = 0;
-  let cursor = 0;
-  const segment = new THREE.Vector3();
-  const toPoint = new THREE.Vector3();
-  const lengths = path.slice(1).map((p, i) => p.distanceTo(path[i]));
-  const total = Math.max(
-    lengths.reduce((sum, length) => sum + length, 0),
-    1e-6,
-  );
+const TAU = Math.PI * 2;
+// How far from the blow the size variation is held off, in figure units, so
+// the first thing to break always breaks small.
+const IMPACT_FINE_RADIUS = 0.55;
 
-  for (let index = 0; index < path.length - 1; index++) {
-    segment.subVectors(path[index + 1], path[index]);
-    toPoint.subVectors(point, path[index]);
-    const t = THREE.MathUtils.clamp(
-      toPoint.dot(segment) / Math.max(segment.lengthSq(), 1e-12),
-      0,
-      1,
-    );
-    const distance = toPoint.addScaledVector(segment, -t).length();
+/** Smoothstep on an already-normalised 0..1 input. */
+function smoothstep01(x: number) {
+  const t = THREE.MathUtils.clamp(x, 0, 1);
 
-    if (distance < best) {
-      best = distance;
-      bestAlong = (cursor + t * lengths[index]) / total;
-    }
-
-    cursor += lengths[index];
-  }
-
-  return { along: bestAlong, distance: best };
+  return t * t * (3 - 2 * t);
 }
 
-// Points spaced along the path, closer together near its start.
-function pointsAlongPath(path: THREE.Vector3[], count: number, seed: number) {
-  const lengths = path.slice(1).map((p, i) => p.distanceTo(path[i]));
-  const total = lengths.reduce((sum, length) => sum + length, 0);
-  const points: Array<{ along: number; point: THREE.Vector3 }> = [];
+/**
+ * How much bigger or smaller the cells want to be HERE, on top of the
+ * grading around the impact.
+ *
+ * This has to vary smoothly through space, not per seed. Giving every seed
+ * its own random size only produces salt-and-pepper: the sampler places all
+ * the small-spacing seeds first, they spread out evenly, and the Voronoi
+ * relaxes the difference away — measured, it moved the spread within a
+ * distance band from 2.2x to 2.9x, which is nothing. A smooth field means
+ * neighbouring seeds agree, so the figure comes apart in coarse patches and
+ * fine patches the way stone actually breaks.
+ *
+ * Sine products rather than a noise library: deterministic, cheap, and
+ * phased off the build seed so it is stable per build.
+ */
+function sizeFieldAt(point: THREE.Vector3, options: BuildSolidChunkOptions) {
+  const seed = options.seed;
+  const coarse =
+    Math.sin(point.x * 1.9 + hash01(1, seed) * TAU) *
+    Math.sin(point.y * 1.3 + hash01(2, seed) * TAU) *
+    Math.sin(point.z * 2.3 + hash01(3, seed) * TAU);
+  const finer =
+    Math.sin(point.x * 3.7 + hash01(4, seed) * TAU) *
+    Math.sin(point.y * 3.1 + hash01(5, seed) * TAU);
 
-  for (let index = 0; index < count; index++) {
-    const even = count <= 1 ? 0 : index / (count - 1);
-    const along = THREE.MathUtils.clamp(
-      ARM_PATH_FROM +
-        (1 - ARM_PATH_FROM) * Math.pow(even, ARM_SEED_DENSITY) +
-        signedHash(index, seed + 301) * 0.015,
-      ARM_PATH_FROM,
-      1,
-    );
-    let remaining = along * total;
-    let segmentIndex = 0;
-
-    while (segmentIndex < lengths.length - 1 && remaining > lengths[segmentIndex]) {
-      remaining -= lengths[segmentIndex];
-      segmentIndex += 1;
-    }
-
-    const t = lengths[segmentIndex] > 0 ? remaining / lengths[segmentIndex] : 0;
-    const point = path[segmentIndex].clone().lerp(path[segmentIndex + 1], t);
-
-    points.push({ along, point });
-  }
-
-  return points;
+  return Math.exp(((coarse + 0.55 * finer) / 1.55) * options.sizeVariation);
 }
 
-// Farthest-point sampling over the candidates: the next seed is always the
-// candidate furthest from every seed placed so far, which spreads them
-// evenly through the volume.
-function spreadSeeds(
+/**
+ * Seeds graded around the impact: a greedy Poisson-disc sampling whose
+ * target spacing GROWS with distance from the blow, so cells are fine where
+ * the figure struck and coarse away from it. That grading, more than any
+ * single crack, is what reads as smashed rather than taken apart.
+ *
+ * Candidates are surface points pushed inward, and that is load-bearing
+ * rather than incidental: `carveCell` sizes a cell's surface patch from the
+ * polygons nearest its seed, so a seed floating deep in the interior owns no
+ * surface, comes out as a cap-only solid, and is then dropped by the dust
+ * filter in `fractureIntoPieces` — a hole in the figure, silently. Every
+ * seed has to sit under skin.
+ */
+function sampleGradedSeeds(
   candidates: THREE.Vector3[],
-  count: number,
+  impact: THREE.Vector3,
+  spacingAt: (distance: number) => number,
+  shellRadii: number[],
   existing: THREE.Vector3[],
-  seed: number,
+  options: BuildSolidChunkOptions,
 ) {
-  const chosen: THREE.Vector3[] = [];
+  if (candidates.length === 0) return [];
+
+  const distances = candidates.map((candidate) => candidate.distanceTo(impact));
+  // Cell size is the distance grading times a SMOOTH field over the figure
+  // (see sizeFieldAt): coarse patches and fine patches, not per-seed noise.
+  // Cell size is the distance grading times the smooth field — but the
+  // field is held OFF right at the blow and eased in over
+  // IMPACT_FINE_RADIUS. The field swings cell size by e^±sizeVariation, and
+  // at 2.1 that is enough to drop a coarse patch straight onto the hand and
+  // take the whole thing off as one lump. The break has to start with the
+  // hand coming apart into pieces, so the blow's own neighbourhood keeps the
+  // fine spacing the grading asks for and the variation takes over outside
+  // it.
+  const spacings = candidates.map((candidate, index) => {
+    const fieldIn = smoothstep01(distances[index] / IMPACT_FINE_RADIUS);
+
+    return (
+      spacingAt(distances[index]) *
+      Math.pow(sizeFieldAt(candidate, options), fieldIn)
+    );
+  });
+  // How close a candidate sits to one of the concentric shells around the
+  // impact: 1 on a shell, 0 midway between two. Pulling seeds onto shells
+  // lines their bisectors up into rings around the blow with spokes between
+  // them, which is the signature of an impact fracture.
+  const shell = distances.map((distance, index) => {
+    let nearestShell = Infinity;
+
+    for (const radius of shellRadii) {
+      nearestShell = Math.min(nearestShell, Math.abs(distance - radius));
+    }
+
+    return 1 - Math.min(nearestShell / Math.max(spacings[index] * 0.5, 1e-6), 1);
+  });
   const nearest = candidates.map((candidate) =>
     existing.reduce((best, point) => Math.min(best, candidate.distanceTo(point)), Infinity),
   );
+  const chosen: THREE.Vector3[] = [];
+  const take = (index: number) => {
+    chosen.push(candidates[index]);
 
-  for (let placed = 0; placed < count && candidates.length > 0; placed++) {
+    for (let other = 0; other < candidates.length; other++) {
+      nearest[other] = Math.min(nearest[other], candidates[other].distanceTo(candidates[index]));
+    }
+  };
+
+  // Start at the blow itself, so the first cell is the one it made and the
+  // release order below begins there.
+  let first = 0;
+  for (let index = 1; index < candidates.length; index++) {
+    if (distances[index] < distances[first]) first = index;
+  }
+  take(first);
+
+  while (chosen.length < options.maxPieces) {
     let bestIndex = -1;
-    let bestDistance = -Infinity;
+    let bestScore = -Infinity;
 
-    candidates.forEach((_, index) => {
-      const score = nearest[index] * (0.9 + hash01(index + placed * 7, seed + 311) * 0.2);
+    for (let index = 0; index < candidates.length; index++) {
+      // Room measured against what this distance from the impact asks for,
+      // so a gap that is generous out at the base still loses to a gap that
+      // is merely adequate next to the blow.
+      const room = nearest[index] / spacings[index];
 
-      if (score > bestDistance) {
-        bestDistance = score;
+      if (room < SEED_STOP_RATIO) continue;
+
+      const score =
+        room *
+        (1 + options.shellBias * shell[index]) *
+        (0.92 + hash01(index + chosen.length * 7, options.seed + 311) * 0.16);
+
+      if (score > bestScore) {
+        bestScore = score;
         bestIndex = index;
       }
-    });
+    }
 
-    if (bestIndex < 0 || !isFinite(bestDistance)) break;
+    // Every candidate is now closer to a seed than its own spacing wanted:
+    // the figure is covered at the density the grading asked for.
+    if (bestIndex < 0) break;
 
-    const point = candidates[bestIndex];
-
-    chosen.push(point);
-    candidates.forEach((candidate, index) => {
-      nearest[index] = Math.min(nearest[index], candidate.distanceTo(point));
-    });
+    take(bestIndex);
   }
 
   return chosen;
 }
 
-function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed[] {
+/**
+ * Where the pieces are centred and the order they come loose in, both
+ * measured from the impact.
+ */
+function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   const modelBox = source.box;
   const size = modelBox.getSize(new THREE.Vector3());
   const toModel = (fraction: [number, number, number]) =>
@@ -1682,34 +1777,35 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
       modelBox.min.y + size.y * fraction[1],
       modelBox.min.z + size.z * fraction[2],
     );
-  const path = options.breakPath.map(toModel);
+  const impact = toModel(options.impact);
   const headFloor = modelBox.min.y + size.y * options.headFrom;
   const legsCeiling = modelBox.min.y + size.y * options.legsFrom;
   const inside = makeInsideTest(source);
-  const seeds: Seed[] = [];
 
-  // The hand first, from its own seeds — the first two frame the palm's
-  // diagonal fracture — then the arm along the path, pushed a little into
-  // the limb. Hand seeds take the earliest positions.
-  options.handSeeds.forEach((fractionPoint, index) => {
-    seeds.push({
-      phase: "arm",
-      point: toModel(fractionPoint),
-      position: (index / Math.max(options.handSeeds.length, 1)) * ARM_PATH_FROM,
-    });
-  });
+  // Target cell width against distance from the impact: tight at the blow,
+  // easing out to `spacingFar`.
+  const spacingAt = (distance: number) =>
+    options.spacingNear +
+    (options.spacingFar - options.spacingNear) *
+      (1 - Math.exp(-distance / Math.max(options.spacingFalloff, 1e-6)));
 
-  const armPoints = pointsAlongPath(path, options.armPieces, options.seed);
-  const pathInset = new THREE.Vector3(...options.pathInset);
+  // Shells stepping outward from the impact, each one the local spacing
+  // beyond the last, so the rings open out as the cells do.
+  const reach = modelBox.min.distanceTo(modelBox.max);
+  const shellRadii: number[] = [];
 
-  armPoints.forEach(({ along, point }) => {
-    seeds.push({ phase: "arm", point: point.clone().add(pathInset), position: along });
-  });
+  for (
+    let radius = options.spacingNear * SHELL_START;
+    radius < reach;
+    radius += spacingAt(radius)
+  ) {
+    shellRadii.push(radius);
+  }
 
-  // Body and head: candidates are surface points pushed inward along their
-  // normals, kept if they land inside the figure and clear of the arm.
-  const candidates: Array<{ point: THREE.Vector3; phase: BreakPhase }> = [];
-  const stride = Math.max(1, Math.floor(source.polygons.length / 1400));
+  // Candidates: surface points pushed inward along their normals, kept if
+  // they land inside the figure.
+  const candidates: THREE.Vector3[] = [];
+  const stride = Math.max(1, Math.floor(source.polygons.length / CANDIDATE_TARGET));
 
   for (let index = 0; index < source.polygons.length; index += stride) {
     const polygon = source.polygons[index];
@@ -1726,56 +1822,35 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions): Seed
     const depth = 0.1 + hash01(index, options.seed + 331) * 0.14;
     const point = centroid.addScaledVector(normal, -depth);
 
-    if (distanceToPolyline(point, path).distance < ARM_CLEARANCE) continue;
     if (!inside(point)) continue;
 
-    candidates.push({
-      phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
-      point,
-    });
+    candidates.push(point);
   }
 
-  const armSeedPoints = seeds.map((seed) => seed.point);
   const guardPoints = options.guardSeeds.map(toModel);
-  const bodySeeds = guardPoints.concat(
-    spreadSeeds(
-      candidates.filter((candidate) => candidate.phase !== "head").map((c) => c.point),
-      options.bodyPieces - guardPoints.length,
-      [...armSeedPoints, ...guardPoints],
-      options.seed,
-    ),
+  const points = guardPoints.concat(
+    sampleGradedSeeds(candidates, impact, spacingAt, shellRadii, guardPoints, options),
   );
-  const headSeeds = spreadSeeds(
-    candidates.filter((candidate) => candidate.phase === "head").map((c) => c.point),
-    options.headPieces,
-    [...armSeedPoints, ...bodySeeds],
-    options.seed + 1,
-  );
-  // Everything but the arm breaks in the order the growth reaches it:
-  // plain distance from the arm path's end, except that distance spent
-  // going downward counts DOWNWARD_LAG times over — so the break climbs
-  // through the chest and head first and the legs and base wait, the
-  // base's far corner longest of all.
-  const growthPoint = path[path.length - 1].clone().add(pathInset);
-  const reach = (point: THREE.Vector3) =>
-    point.distanceTo(growthPoint) +
-    DOWNWARD_LAG * Math.max(0, growthPoint.y - point.y);
-  const others = [...bodySeeds, ...headSeeds];
-  const farthest = Math.max(...others.map(reach), 1e-6);
+  // Drop any pair that ended up on top of each other (see
+  // SEED_MIN_SEPARATION: a coincident pair is a NaN bisector).
+  const kept: THREE.Vector3[] = [];
 
-  bodySeeds.forEach((point) => {
-    seeds.push({
-      phase: point.y < legsCeiling ? "lower" : "upper",
-      point,
-      position: reach(point) / farthest,
-    });
-  });
+  for (const point of points) {
+    if (kept.some((other) => other.distanceTo(point) < SEED_MIN_SEPARATION)) continue;
 
-  headSeeds.forEach((point) => {
-    seeds.push({ phase: "head", point, position: reach(point) / farthest });
-  });
+    kept.push(point);
+  }
 
-  return seeds;
+  // The break travels outward from the blow, so a piece's place in the
+  // order is simply how far its seed sits from the impact.
+  const farthest = Math.max(...kept.map((point) => point.distanceTo(impact)), 1e-6);
+  const seeds: Seed[] = kept.map((point) => ({
+    phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
+    point,
+    position: point.distanceTo(impact) / farthest,
+  }));
+
+  return { impact, seeds };
 }
 
 // ---------------------------------------------------------------------------
@@ -1915,7 +1990,22 @@ function carveCell(
     });
   });
 
-  const radius = reach * 1.3 + 0.2;
+  // Floor the patch on the distance to the nearest other seed. `reach` is 0
+  // for a seed that owns no polygon at all, which left a radius of 0.2 —
+  // often too small to catch any surface, so the cell came out cap-only and
+  // was thrown away as dust, leaving a hole. The neighbour distance is a
+  // size the cell cannot be smaller than, so it is a safe floor.
+  let nearestOther = Infinity;
+
+  seeds.forEach((other, index) => {
+    if (index === seedIndex) return;
+    nearestOther = Math.min(nearestOther, other.point.distanceTo(seed));
+  });
+
+  const radius = Math.max(
+    reach * 1.3 + 0.2,
+    isFinite(nearestOther) ? nearestOther * 1.3 : 0,
+  );
   let polygons = source.polygons.filter((polygon) =>
     polygon.vertices.some((vertex) => vertex.point.distanceTo(seed) <= radius),
   );
@@ -1970,19 +2060,28 @@ type CellBuild = {
 
 function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: BuildSolidChunkOptions) {
   const source = makeSourcePiece(sourceGeometry);
-  const seeds = planSeeds(source, options);
+  const { impact, seeds } = planSeeds(source, options);
   const stats: SplitStats = {
     dust: 0,
+    interior: 0,
     islands: 0,
     seedCount: seeds.length,
     sourceOpenEdges: countOpenGeometryEdges(sourceGeometry),
   };
-  // Which seed each polygon is nearest (by its first vertex): the sizing of
-  // each cell's patch comes from this.
+  // Which seed each polygon is nearest, by its CENTROID: the sizing of each
+  // cell's patch comes from this, and keying on the first vertex (what this
+  // did) misassigns polygons wherever the seeds are packed closer together
+  // than the mesh triangles are — which is exactly what a fine patch is.
+  // A seed that ends up owning nothing gets an empty patch and comes out as
+  // a cap-only solid, which is then dropped as a hole in the figure.
   const nearestSeed = new Int32Array(source.polygons.length);
+  const centroid = new THREE.Vector3();
 
   source.polygons.forEach((polygon, polygonIndex) => {
-    const point = polygon.vertices[0].point;
+    centroid.set(0, 0, 0);
+    polygon.vertices.forEach((vertex) => centroid.add(vertex.point));
+    centroid.multiplyScalar(1 / polygon.vertices.length);
+    const point = centroid;
     let best = 0;
     let bestDistance = Infinity;
 
@@ -2013,10 +2112,18 @@ function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: Build
     islands.forEach((island, islandIndex) => {
       // Dust: a few polygons caught in a fold, or a flake of cap with no
       // surface of its own.
+      // An island with no surface of its own is a piece from INSIDE the
+      // figure — every face of it is a cut. Those are real fragments, and a
+      // smashed statue has them; dropping them punched holes in the figure
+      // (2.75% of its volume once the size variation was strong enough to
+      // leave seeds stranded in the interior). Only genuine slivers go.
+      if (!island.polygons.some((polygon) => polygon.kind === "surface")) {
+        stats.interior += 1;
+      }
+
       if (
         island.polygons.length < ISLAND_MIN_POLYGONS ||
-        island.totalArea < ISLAND_MIN_AREA ||
-        !island.polygons.some((polygon) => polygon.kind === "surface")
+        island.faceArea < ISLAND_MIN_AREA
       ) {
         stats.dust += 1;
         return;
@@ -2026,7 +2133,7 @@ function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: Build
     });
   });
 
-  return { cells, seeds, stats };
+  return { cells, impact, seeds, stats };
 }
 
 function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
@@ -2116,7 +2223,7 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
       unit = unitRank.length;
       unitOf.set(seed, unit);
       unitRank.push(
-        (seed.phase === "arm" ? 0 : 1) + THREE.MathUtils.clamp(seed.position, 0, 0.999),
+        THREE.MathUtils.clamp(seed.position, 0, 0.999),
       );
       unitCells.push([]);
     }
@@ -2321,7 +2428,7 @@ export function buildSolidThinkerChunks(
   sourceGeometry: THREE.BufferGeometry,
   options: BuildSolidChunkOptions,
 ): ThinkerChunkBuild {
-  const { cells, seeds, stats } = fractureIntoPieces(sourceGeometry, options);
+  const { cells, impact, stats } = fractureIntoPieces(sourceGeometry, options);
   const pieces = cells.map((cell) => cell.piece);
   const origin = new THREE.Vector3();
   let weight = 0;
@@ -2393,10 +2500,9 @@ export function buildSolidThinkerChunks(
 
   driftCenter.multiplyScalar(1 / Math.max(chunks.length, 1));
 
-  const hand = seeds.find((seed) => seed.phase === "arm")?.point ?? origin;
-
   return {
-    breakOrigin: [hand.x, hand.y, hand.z],
+    // Published so the stage can open its camera on the blow.
+    breakOrigin: [impact.x, impact.y, impact.z],
     chunks,
     drift: [driftCenter.x, driftCenter.y, driftCenter.z],
     stats,
