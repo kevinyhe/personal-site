@@ -6519,14 +6519,22 @@ void main() {
               float lineW = smoothstep(0.0, 0.26, pw);
               float halfH = 0.5 * powerOpen;
               float inX = 1.0 - smoothstep(0.5 * lineW, 0.5 * lineW + 0.01, abs(pc.x));
-              float inY = 1.0 - smoothstep(halfH, halfH + 0.004, abs(pc.y));
-              float rim = exp(-abs(abs(pc.y) - halfH) * 260.0) * (1.0 - smoothstep(0.7, 0.95, pw));
+              // The opening raster's edge softens as the band grows, and
+              // its light spills past the edge into the dark glass. With a
+              // hard 0.004 edge and no spill, the half-open picture was a
+              // razor-edged bright rectangle floating in the tube.
+              float edgeY = 0.004 + 0.1 * powerOpen;
+              float inY = 1.0 - smoothstep(halfH - edgeY, halfH + edgeY, abs(pc.y));
+              float rimFade = 1.0 - smoothstep(0.7, 0.95, pw);
+              float rim = exp(-abs(abs(pc.y) - halfH) * 70.0) * rimFade;
+              float spill = exp(-max(abs(pc.y) - halfH, 0.0) * 14.0) * rimFade;
               float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 0.6;
               float overshoot = 1.0 + 0.45 * (1.0 - smoothstep(0.45, 0.95, pw));
               float jitter = 1.0 + 0.18 * sin(t * 57.0) * sin(t * 13.0) * (1.0 - smoothstep(0.8, 1.0, pw));
               vec3 hot = vec3(1.0, 0.78, 0.88);
               vec3 picture = col * overshoot * jitter * inY * inX;
-              picture += hot * (rim * 0.35 + lineHeat) * inX * inY;
+              picture += hot * (rim * 0.3 + spill * 0.12) * inX;
+              picture += hot * lineHeat * inX * inY;
               picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.006, abs(pc.y))));
               col = mix(glass, picture, smoothstep(0.0, 0.04, pw));
             }
