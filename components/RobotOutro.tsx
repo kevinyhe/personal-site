@@ -154,6 +154,14 @@ const RUN_START = 0.15;
  * read as seated.
  */
 const GOAL_GAP = -0.34;
+/**
+ * How far the goal is sunk below the floor plane, stage units. The balls
+ * come to rest at the channel height measured off the asset, but the model
+ * sat just high enough that they grazed its inner faces; dropping the whole
+ * goal a little clears them without moving the balls, which are placed off
+ * the robot's own indexer height.
+ */
+const GOAL_DROP = 0.07;
 // How fast the intake's rollers pull a ball across their surface, stage
 // units/s. Faster than the robot drives, which is what makes a ball snap in
 // rather than get nudged along the floor.
@@ -201,6 +209,8 @@ type PropsModule = {
 type BallPhysicsModule = {
   ballCount: () => number;
   ballStatesAt: (time: number) => BallState[];
+  /** Last moment anything is still moving, including the scoring. */
+  ballTimelineEnd?: () => number;
 };
 
 /**
@@ -714,7 +724,7 @@ function placeGoal(goal: GoalModel, finish: DriftFinish): THREE.Vector3 {
   const sin = Math.sin(yaw);
   goal.object.position.set(
     mouth.x - (opening.position[0] * cos + opening.position[2] * sin),
-    ROBOT_GROUND_Y,
+    ROBOT_GROUND_Y - GOAL_DROP,
     mouth.z - (-opening.position[0] * sin + opening.position[2] * cos),
   );
   goal.object.traverse((node) => {
@@ -828,6 +838,8 @@ export default function RobotOutro({
     group: THREE.Group;
   } | null>(null);
   const ballStatesRef = useRef<((time: number) => BallState[]) | null>(null);
+  /** Last moment a ball is still moving; the playhead has to reach it. */
+  const ballTimelineRef = useRef(0);
   // Read by headless captures to check the goal landed and the parts turn.
   const probeRef = useRef({
     balls: 0,
@@ -867,6 +879,7 @@ export default function RobotOutro({
         buildPlaceholderBallPhysics(frames, ball.radius, mouth);
       if (!live) return;
       ballStatesRef.current = physics.ballStatesAt;
+      ballTimelineRef.current = physics.ballTimelineEnd?.() ?? 0;
       const group = new THREE.Group();
       group.add(goal.object);
       // One mesh per ball; the clones share the source's geometry and
@@ -1010,7 +1023,16 @@ export default function RobotOutro({
 
     if (!frames || !rig) return;
     const run = runRef.current;
-    const duration = frames[frames.length - 1].time;
+    // The playhead has to span the BALL timeline, not just the drift. The
+    // robot parks around 5.3s but the balls are not thrown until after that
+    // and take until about 8.9s to finish going in — mapping the scroll to
+    // the drift alone meant those times were never reached and nothing was
+    // ever scored. Beyond its last frame the drift sampler just holds the
+    // parked pose, which is exactly what should happen while it unloads.
+    const duration = Math.max(
+      frames[frames.length - 1].time,
+      ballTimelineRef.current,
+    );
     // The scroll IS the playhead: the run is scrubbed, not played. Position,
     // heading and wheel spin all come from where the scroll sits, so the
     // drift runs backwards when the page does and holds still when it does.
