@@ -93,12 +93,14 @@ export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
 
 
 /**
- * Where the run ends. The robot enters travelling backwards with its nose
- * toward +x, drifts left, snaps a 180, and finishes with the nose back on +x
- * — so its REAR points along -x, and that is where the goal mouth sits. It
- * scores out of its back, so this is the pose that lets it feed the goal.
+ * Where the run ends, in radians. The goal is placed off the robot's REAR,
+ * so this heading decides where the goal sits — and it has to sit INSIDE
+ * the U the robot drifts around, not out along the exit path, or the robot
+ * would drive through it on the way round. 1.135 rad aims the tail at the
+ * centre of the arc traced between t = 2.0 and 5.3, which is where the goal
+ * belongs; recompute it if the U is retuned.
  */
-const FINISH_HEADING = Math.PI / 2;
+const FINISH_HEADING = 1.135;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
@@ -172,30 +174,33 @@ type DriverPhase = {
  * clear of that edge. Entry, flick, exit and park keep their old lengths;
  * the whole run is 5.3 s.
  */
-/** How long the reverse run home lasts — tuned so it arrives at the mouth. */
-const RETURN_DURATION = 0.6;
+/**
+ * The U-turn: how long it is held, how hard the inside wheels are backed
+ * off, and the yaw rate it is trimmed to. Low yaw against high speed is
+ * what makes the arc wide — radius is roughly speed over yaw rate.
+ */
+const U_DURATION = 3.0;
+const U_INNER = 2.4;
+const U_YAW = 1.05;
 
 const SCHEDULE: DriverPhase[] = [
-  // Reverse entry. The robot starts BEHIND the goal, off to one side, and
-  // comes out backwards — nose on -x, momentum carrying it +x across the
-  // frame. Both sides in reverse to hold that.
+  // Reverse entry, wide of the goal: nose on -x, body carrying +x.
   { duration: 0.7, left: -4.4, right: -4.4 },
-  // Whip: one side thrown against the other swings the nose round toward
-  // the direction of travel while the body keeps sliding. The entry becomes
+  // Whip the nose round to the direction of travel — the entry turns into
   // a drift here.
-  { duration: 0.6, left: -4.5, right: 4.5, yawGain: 1.4, yawTarget: 4.0 },
-  // The drift curve: carving on across the frame with the tail out. The
-  // balls are collected along this arc.
-  { duration: 1.8, left: 4.5, right: 2.0, yawGain: 2.2, yawTarget: 2.8 },
-  // The flip: a hard, short counter-rotation that puts the nose back on +x
-  // — which points the robot's TAIL at the goal, ready to reverse into it.
-  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.5 },
-  // Run home in reverse: nose stays on the finish heading while the robot
-  // drives backwards the length of the frame toward the goal mouth.
-  { duration: RETURN_DURATION, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.4, right: -4.4, yawGain: 2.4 },
-  // Seat the aligner: ease off and let the last of the momentum push the
-  // triangle at the back into the mouth until it stops against it.
-  { duration: 1.1, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -0.6, right: -0.6, yawGain: 2.6 },
+  { duration: 0.55, left: -4.5, right: 4.5, yawGain: 1.4, yawTarget: 4.0 },
+  // The U. A long, sustained, gentle turn rather than a flick: held at a
+  // low yaw rate against a high forward speed, which is what makes the arc
+  // wide. The robot carves right around the goal, tail out the whole way,
+  // and this is where the five floor balls are collected.
+  { duration: U_DURATION, left: 4.5, right: U_INNER, yawGain: 2.2, yawTarget: U_YAW },
+  // Out of the U and squared up, still sliding, now pointed back across.
+  { duration: 0.8, headingGain: 2.8, headingTarget: FINISH_HEADING, left: 2.0, right: 2.0, yawGain: 2.4 },
+  // Back it in: reversed gently so the aligner seats into the mouth.
+  { duration: 1.0, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.2, right: -1.2, yawGain: 2.6 },
+  // Stop. Sticks to zero and the trims hold the nose square while the last
+  // of the slide dies under it.
+  { duration: 1.4, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
 const START_HEADING = -Math.PI / 2;
