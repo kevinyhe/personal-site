@@ -111,6 +111,9 @@ export type RobotCameraState = {
   position: THREE.Vector3;
   /** True once the run has finished and the robot sits still. */
   resting: boolean;
+  /** Seconds into the drift the scroll currently sits at, and its length. */
+  runDuration: number;
+  runTime: number;
   /** |velocity|, stage units/s. */
   speed: number;
   /** Stage-space velocity. */
@@ -124,6 +127,8 @@ export function createRobotCameraState(): RobotCameraState {
     playheadDelta: 0,
     position: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
     resting: false,
+    runDuration: 1,
+    runTime: 0,
     speed: 0,
     velocity: new THREE.Vector3(),
   };
@@ -146,14 +151,13 @@ const FADE_IN_END = 0.13;
 // stretches of scroll.
 const RUN_START = 0.15;
 /**
- * Where the robot's rear sits relative to the goal's mouth at the finish,
- * stage units. NEGATIVE means the robot finishes slightly INSIDE the mouth,
- * which is what is wanted: the triangle aligner on its back should be up
- * against the furthest point it can reach into the goal, not standing off
- * it. A positive value would leave daylight and the alignment would not
- * read as seated.
+ * Where the goal's mouth sits relative to the robot's rear at the finish,
+ * stage units, on top of half a robot length. The robot parks about two
+ * robot lengths clear of the mouth rather than seated inside it: backing
+ * right in put the goal on top of the drift, so the tail end of the run
+ * was passing under the goal body.
  */
-const GOAL_GAP = -0.34;
+const GOAL_GAP = 2.4;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -1126,6 +1130,8 @@ export default function RobotOutro({
     robotState.heading = sample.heading;
     robotState.aLat = sample.aLat * ROBOT_LENGTH;
     robotState.playheadDelta = Math.abs(dTime);
+    robotState.runTime = run.time;
+    robotState.runDuration = duration;
     // Resting means "has stopped", not "is nearly out of timeline". The run
     // parks well before its last frame — the drift ends around 2.6 s of 5.3 s
     // and the park phase just holds it still — and a fixed 0.2 s tail left the
