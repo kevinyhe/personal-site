@@ -196,9 +196,9 @@ const U_INNER = 0.4;
 const U_YAW = 2.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // Straight in, forwards, already alongside the run of balls. There is no
-  // reverse entry any more: the robot arrives driving and goes to work.
-  { duration: 0.5, left: 4.4, right: 4.4 },
+  // Reverse entry: the robot comes in already rolling backwards, alongside
+  // the run of balls, nose pointing back the way it came.
+  { duration: 0.5, left: -4.4, right: -4.4 },
   // Break the rear loose and settle straight into the turn.
   { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
   // The drift. Held at a steady yaw against a steady speed so it carves one
@@ -245,13 +245,13 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
 
 const START_HEADING = 0;
 /**
- * Chosen so the run finishes near the middle of the floor. The robot drives
- * in FORWARDS on heading 0, which carries it along +z, and the run covers
- * about (-0.3, +6.7) robot lengths, so it starts downstage and works back
- * toward the middle of the 46 x 32 ground plane.
+ * The original start: upstage and rolling BACKWARDS on heading 0, so the
+ * body carries along -z with the nose pointing back the way it came. The
+ * run covers roughly (-0.3, -6.7) robot lengths from here and finishes near
+ * the middle of the 46 x 32 ground plane.
  */
-const START_POSITION: [number, number] = [-2.0, -6.7];
-const START_SPEED = 4.0;
+const START_POSITION: [number, number] = [-2.0, 7.5];
+const START_SPEED = -4.0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -434,7 +434,7 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 // the last two pickups where the robot had slowed almost to a stop, so the
 // balls they call for ended up 0.39 robot lengths apart on the floor — less
 // than a ball diameter, and they intersected.
-const PICKUP_WINDOW: [number, number] = [0.9, 3.2];
+const PICKUP_WINDOW: [number, number] = [2.0, 4.1];
 const PICKUP_COUNT = 5;
 
 // One simulation at module load, shared by the two exports below. Neither

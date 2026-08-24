@@ -183,14 +183,30 @@ const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [6.4, 8.6],
 ];
 const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
-  [0, 1.15],
-  [3.4, 1.35],
+  // Down at the level of the drivetrain, looking up at the robot — the
+  // angle a trackside racing camera sits at, where the car fills the frame
+  // against the sky rather than being looked down on.
+  [0, 0.28],
+  [3.4, 0.42],
+  // Only at the very end does it climb, for the wide shot that has to hold
+  // the goal and the scored balls as well.
   [6.4, 3.0],
 ];
+
 const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
   [0, 0],
   [4.6, 0.4],
   [6.4, 1.8],
+];
+
+/**
+ * Height the camera aims at, model units above the floor. Low and slightly
+ * ABOVE the lens for most of the run, which is what tilts the shot upward.
+ */
+const CAMERA_AIM_HEIGHT: Array<[number, number]> = [
+  [0, 0.62],
+  [3.4, 0.7],
+  [6.4, 0.9],
 ];
 
 /** Smoothstep between [time, value] keys. */
@@ -540,7 +556,7 @@ function CameraRig({
     const behind = keyed(CAMERA_AIM_BEHIND_KEYS, runAt);
     scratch.lookTarget.set(
       robotState.position.x - Math.sin(robotState.heading) * behind,
-      ROBOT_GROUND_Y + 0.85,
+      ROBOT_GROUND_Y + keyed(CAMERA_AIM_HEIGHT, runAt),
       robotState.position.z - Math.cos(robotState.heading) * behind,
     );
 
