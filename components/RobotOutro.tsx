@@ -44,11 +44,54 @@ export type RobotDriftFrame = {
 export type RobotModel = {
   chassis: THREE.Object3D;
   length: number;
+  /** Gears and rollers that turn without steering. Optional: a robotModel
+   *  that predates them still loads, it just has nothing extra to spin. */
+  spinners?: RobotSpinner[];
   wheels: Array<{
     object: THREE.Object3D;
     radius: number;
     side: "left" | "right";
   }>;
+};
+
+/**
+ * A part that turns in place: a drivetrain gear, an intake roller. "drive"
+ * parts are geared to the wheels, "intake" parts run whenever the intake
+ * does. axis is the local axis it turns about, radius is its own radius in
+ * the same units as the wheels'.
+ * (Frozen interface shared with components/robotModel.ts.)
+ */
+export type RobotSpinner = {
+  axis: "x" | "y" | "z";
+  category: "drive" | "intake";
+  object: THREE.Object3D;
+  radius: number;
+  side: "left" | "right" | "center";
+};
+
+/**
+ * The Push Back long goal: a trough whose tube sits troughHeight above its
+ * base, with a mouth at each end. Opening positions and inward directions
+ * are in the goal's own frame, base at y = 0, long axis through the two
+ * openings; "inward" points from the mouth into the trough.
+ * (Frozen interface shared with components/propModels.ts.)
+ */
+export type GoalModel = {
+  length: number;
+  object: THREE.Object3D;
+  openings: Array<{ inward: [number, number, number]; position: [number, number, number] }>;
+  troughHeight: number;
+};
+
+/**
+ * One ball at one instant, in STAGE units and world space (the ground is at
+ * ROBOT_GROUND_Y, not 0). carried is true while the robot holds it.
+ * (Frozen interface shared with components/ballPhysics.ts.)
+ */
+export type BallState = {
+  carried: boolean;
+  position: [number, number, number];
+  rotation: [number, number, number];
 };
 
 /** What the rally camera needs to know about the robot, every frame. */
@@ -94,6 +137,13 @@ const FADE_IN_END = 0.13;
 // whole run, so the straight, the flick and the half-turn are all just
 // stretches of scroll.
 const RUN_START = 0.15;
+// Daylight between the robot's rear and the goal's mouth at the finish, in
+// stage units: enough that the aligner reads as seated, not intersecting.
+const GOAL_GAP = 0.12;
+// How fast the intake's rollers pull a ball across their surface, stage
+// units/s. Faster than the robot drives, which is what makes a ball snap in
+// rather than get nudged along the floor.
+const INTAKE_SURFACE_SPEED = 3.2;
 
 type RobotRig = {
   /** World position + heading. */
@@ -101,6 +151,11 @@ type RobotRig = {
   /** Receives the small body-roll tilt (the chassis without its wheels
    *  when the model provides that split, the whole robot otherwise). */
   roll: THREE.Object3D;
+  /** Stage units per model unit, applied to the whole robot. */
+  scale: number;
+  spinners: RobotSpinner[];
+  /** The wheel radius the drive gears are geared against, model units. */
+  wheelRadius: number;
   wheels: Array<{ object: THREE.Object3D; side: "left" | "right" }>;
 };
 
@@ -118,20 +173,72 @@ type RunState = { time: number };
 // upgrade this scene without touching it.
 // ---------------------------------------------------------------------------
 
-type DriftModule = { buildDriftPath: (options?: unknown) => RobotDriftFrame[] };
+type DriftFinish = { heading: number; position: [number, number] };
+type DriftModule = {
+  buildDriftPath: (options?: unknown) => RobotDriftFrame[];
+  DRIFT_FINISH?: DriftFinish;
+  DRIFT_REST_POSE?: DriftFinish;
+};
 type ModelModule = { loadRobotModel: () => Promise<RobotModel> };
+type PropsModule = {
+  loadBallModel: () => Promise<{ object: THREE.Object3D; radius: number }>;
+  loadGoalModel: () => Promise<GoalModel>;
+};
+type BallPhysicsModule = {
+  ballCount: () => number;
+  ballStatesAt: (time: number) => BallState[];
+};
 
-async function loadDriftFrames(
+/**
+ * The drift, plus where it ends. The finish drives the goal's placement, so
+ * it is read from the drift module's own constant when there is one and
+ * from the last frame otherwise — the two agree, and the fallback keeps the
+ * goal on the robot's rear even if that constant is renamed away.
+ */
+async function loadDrift(
   wheelRadius?: number,
-): Promise<RobotDriftFrame[]> {
+): Promise<{ finish: DriftFinish; frames: RobotDriftFrame[] }> {
   const name = "robotDrift";
   const driftModule = (await import(`@/components/${name}`).catch(
     () => null,
   )) as DriftModule | null;
-  if (driftModule?.buildDriftPath) {
-    return driftModule.buildDriftPath(wheelRadius ? { wheelRadius } : undefined);
-  }
-  return buildPlaceholderDriftPath();
+  const frames = driftModule?.buildDriftPath
+    ? driftModule.buildDriftPath(wheelRadius ? { wheelRadius } : undefined)
+    : buildPlaceholderDriftPath();
+  const last = frames[frames.length - 1];
+  const finish =
+    driftModule?.DRIFT_FINISH ??
+    driftModule?.DRIFT_REST_POSE ?? {
+      heading: last.heading,
+      position: last.position,
+    };
+  return { finish, frames };
+}
+
+async function loadProps(): Promise<{
+  ball: { object: THREE.Object3D; radius: number };
+  goal: GoalModel;
+}> {
+  const name = "propModels";
+  const propsModule = (await import(`@/components/${name}`).catch(
+    () => null,
+  )) as PropsModule | null;
+  const goal =
+    (await propsModule?.loadGoalModel?.().catch(() => null)) ??
+    buildPlaceholderGoal();
+  const ball =
+    (await propsModule?.loadBallModel?.().catch(() => null)) ??
+    buildPlaceholderBall();
+  return { ball, goal };
+}
+
+async function loadBallPhysics(): Promise<BallPhysicsModule | null> {
+  const name = "ballPhysics";
+  const physics = (await import(`@/components/${name}`).catch(
+    () => null,
+  )) as BallPhysicsModule | null;
+  if (!physics?.ballStatesAt || !physics.ballCount) return null;
+  return physics;
 }
 
 async function loadModel(): Promise<RobotModel | null> {
@@ -146,7 +253,7 @@ async function loadModel(): Promise<RobotModel | null> {
 // ---------------------------------------------------------------------------
 // PLACEHOLDER TRAJECTORY — components/robotDrift.ts (batch/robot-drift)
 // replaces this. When that lands, delete this function and its single call
-// site in loadDriftFrames above.
+// site in loadDrift above.
 //
 // A hand-scripted run, ~7 s at 60 samples/s: straight in from the right at
 // x ≈ 6 heading -x; a flick; slip past sideways (peaks ≈ -110°, the reverse
@@ -331,7 +438,202 @@ function buildPlaceholderRobot(): RobotModel {
     wheels.push({ object: wheel, radius: 0.22, side });
   }
 
-  return { chassis, length: ROBOT_LENGTH, wheels };
+  // Two drivetrain gears (one per side, geared to that side's wheels) and a
+  // front intake roller, each with a bright marker so the turn is visible.
+  const spinners: RobotSpinner[] = [];
+  const gearGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.05, 16);
+  gearGeometry.rotateZ(Math.PI / 2);
+  const markerGeometry = new THREE.BoxGeometry(0.06, 0.22, 0.04);
+  for (const [x, side] of [
+    [0.48, "left"],
+    [-0.48, "right"],
+  ] as Array<[number, "left" | "right"]>) {
+    const gear = new THREE.Group();
+    gear.position.set(x, 0.34, 0);
+    gear.add(
+      new THREE.Mesh(gearGeometry, darkSteel),
+      new THREE.Mesh(markerGeometry, spoke),
+    );
+    chassis.add(gear);
+    spinners.push({
+      axis: "x",
+      category: "drive",
+      object: gear,
+      radius: 0.12,
+      side,
+    });
+  }
+  const roller = new THREE.Group();
+  roller.position.set(0, 0.46, 0.72);
+  const rollerGeometry = new THREE.CylinderGeometry(0.13, 0.13, 0.7, 16);
+  rollerGeometry.rotateZ(Math.PI / 2);
+  roller.add(
+    new THREE.Mesh(rollerGeometry, darkSteel),
+    new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.26, 0.04), accent),
+  );
+  chassis.add(roller);
+  spinners.push({
+    axis: "x",
+    category: "intake",
+    object: roller,
+    radius: 0.13,
+    side: "center",
+  });
+
+  return { chassis, length: ROBOT_LENGTH, spinners, wheels };
+}
+
+// ---------------------------------------------------------------------------
+// PLACEHOLDER PROPS — components/propModels.ts (batch/props) replaces these.
+// When that lands, delete these two functions and their call sites in
+// loadProps above.
+//
+// The goal is the Push Back long goal reduced to the shape that matters: a
+// horizontal tube on two legs, open at both ends, so "the robot backs into
+// the mouth" is still readable. The ball is a plain sphere at match size.
+// ---------------------------------------------------------------------------
+
+const PLACEHOLDER_GOAL_LENGTH = 5.7;
+const PLACEHOLDER_TROUGH_HEIGHT = 1.29;
+
+function buildPlaceholderGoal(): GoalModel {
+  const frame = new THREE.MeshStandardMaterial({
+    color: "#6f7885",
+    metalness: 0.7,
+    roughness: 0.4,
+  });
+  const trim = new THREE.MeshStandardMaterial({
+    color: "#c23b3b",
+    metalness: 0.25,
+    roughness: 0.5,
+  });
+
+  const object = new THREE.Group();
+  const half = PLACEHOLDER_GOAL_LENGTH / 2;
+  const tubeGeometry = new THREE.CylinderGeometry(
+    0.34,
+    0.34,
+    PLACEHOLDER_GOAL_LENGTH,
+    20,
+    1,
+    true,
+  );
+  tubeGeometry.rotateX(Math.PI / 2); // long axis along local Z
+  const tube = new THREE.Mesh(tubeGeometry, frame);
+  tube.position.y = PLACEHOLDER_TROUGH_HEIGHT;
+  object.add(tube);
+  for (const z of [half, -half]) {
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.05, 8, 20), trim);
+    lip.position.set(0, PLACEHOLDER_TROUGH_HEIGHT, z);
+    const leg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, PLACEHOLDER_TROUGH_HEIGHT, 0.1),
+      frame,
+    );
+    leg.position.set(0, PLACEHOLDER_TROUGH_HEIGHT / 2, z * 0.75);
+    object.add(lip, leg);
+  }
+
+  return {
+    length: PLACEHOLDER_GOAL_LENGTH,
+    object,
+    openings: [
+      { inward: [0, 0, -1], position: [0, PLACEHOLDER_TROUGH_HEIGHT, half] },
+      { inward: [0, 0, 1], position: [0, PLACEHOLDER_TROUGH_HEIGHT, -half] },
+    ],
+    troughHeight: PLACEHOLDER_TROUGH_HEIGHT,
+  };
+}
+
+function buildPlaceholderBall(): { object: THREE.Object3D; radius: number } {
+  // A Push Back ball is about a fifth of the robot's length across.
+  const radius = ROBOT_LENGTH * 0.1;
+  const object = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 20, 14),
+    new THREE.MeshStandardMaterial({
+      color: "#d8d24a",
+      metalness: 0.1,
+      roughness: 0.6,
+    }),
+  );
+  return { object, radius };
+}
+
+// ---------------------------------------------------------------------------
+// PLACEHOLDER BALL MOTION — components/ballPhysics.ts (batch/ball-physics)
+// replaces this. When that lands, delete this function and its call site in
+// the loader effect below.
+//
+// Balls are laid on the drift path itself, so the robot drives over each
+// one: it sits still until the robot reaches it, rides in the intake, then
+// hops out into the goal mouth at the end of the run.
+// ---------------------------------------------------------------------------
+
+function buildPlaceholderBallPhysics(
+  frames: RobotDriftFrame[],
+  radius: number,
+  mouth: THREE.Vector3,
+): BallPhysicsModule {
+  const COUNT = 5;
+  const SCORE_SPAN = 0.45; // seconds from leaving the robot to inside the goal
+  const duration = frames[frames.length - 1].time;
+  const seeds = Array.from({ length: COUNT }, (ignored, i) => {
+    const pickup = duration * (0.14 + 0.12 * i);
+    const sample = sampleDrift(frames, pickup);
+    return {
+      pickup,
+      release: duration * 0.82 + SCORE_SPAN * 0.5 * i,
+      rest: new THREE.Vector3(
+        sample.position[0] * ROBOT_LENGTH,
+        ROBOT_GROUND_Y + radius,
+        sample.position[1] * ROBOT_LENGTH,
+      ),
+    };
+  });
+
+  return {
+    ballCount: () => seeds.length,
+    ballStatesAt: (time: number) =>
+      seeds.map((seed) => {
+        if (time < seed.pickup) {
+          const resting: BallState = {
+            carried: false,
+            position: [seed.rest.x, seed.rest.y, seed.rest.z],
+            rotation: [0, 0, 0],
+          };
+          return resting;
+        }
+        const held = sampleDrift(frames, Math.min(time, seed.release));
+        const carriedAt: [number, number, number] = [
+          held.position[0] * ROBOT_LENGTH,
+          ROBOT_GROUND_Y + ROBOT_LENGTH * 0.4,
+          held.position[1] * ROBOT_LENGTH,
+        ];
+        const spin = (time - seed.pickup) * 7;
+        if (time < seed.release) {
+          return { carried: true, position: carriedAt, rotation: [spin, 0, 0] };
+        }
+        // Out of the intake and up into the mouth on a short lob.
+        const u = THREE.MathUtils.clamp((time - seed.release) / SCORE_SPAN, 0, 1);
+        return {
+          carried: false,
+          position: [
+            THREE.MathUtils.lerp(carriedAt[0], mouth.x, u),
+            THREE.MathUtils.lerp(carriedAt[1], mouth.y, u) +
+              Math.sin(Math.PI * u) * 0.35,
+            THREE.MathUtils.lerp(carriedAt[2], mouth.z, u),
+          ],
+          rotation: [spin, 0, 0],
+        };
+      }),
+  };
+}
+
+/** True when node already hangs somewhere under root. */
+function isUnder(node: THREE.Object3D, root: THREE.Object3D) {
+  for (let walk = node.parent; walk; walk = walk.parent) {
+    if (walk === root) return true;
+  }
+  return false;
 }
 
 function assembleRig(model: RobotModel | null): RobotRig {
@@ -341,13 +643,16 @@ function assembleRig(model: RobotModel | null): RobotRig {
   // spins about its own axle, so it cannot be buried inside it — while the
   // placeholder parents them to the chassis. Re-home whatever is loose under
   // one group and scale that, or the real robot's four wheels are left
-  // orphaned and never reach the scene at all.
+  // orphaned and never reach the scene at all. The gears and rollers arrive
+  // the same way and for the same reason, so they get the same treatment.
   const body = new THREE.Group();
   body.add(resolved.chassis);
-  for (const { object } of resolved.wheels) {
-    if (object.parent !== resolved.chassis) body.add(object);
+  const spinners = resolved.spinners ?? [];
+  for (const { object } of [...resolved.wheels, ...spinners]) {
+    if (!isUnder(object, resolved.chassis)) body.add(object);
   }
-  body.scale.setScalar(ROBOT_LENGTH / Math.max(resolved.length, 1e-3));
+  const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
+  body.scale.setScalar(scale);
   pose.add(body);
   pose.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) node.castShadow = true;
@@ -355,8 +660,55 @@ function assembleRig(model: RobotModel | null): RobotRig {
   return {
     pose,
     roll: resolved.chassis.getObjectByName("robot-body") ?? body,
+    scale,
+    spinners,
+    wheelRadius: resolved.wheels[0]?.radius ?? 0.22,
     wheels: resolved.wheels.map(({ object, side }) => ({ object, side })),
   };
+}
+
+/**
+ * Stand the goal on the floor with one of its mouths just off the robot's
+ * rear at the finish, turned so that backing straight out of the run drives
+ * the aligner down the trough's axis and into the opening. Returns that
+ * mouth's world position, which is where scored balls end up.
+ */
+function placeGoal(goal: GoalModel, finish: DriftFinish): THREE.Vector3 {
+  // The robot faces along (sin h, cos h), so its rear points the other way.
+  const rearX = -Math.sin(finish.heading);
+  const rearZ = -Math.cos(finish.heading);
+  const opening = goal.openings[0] ?? {
+    inward: [0, 0, -1] as [number, number, number],
+    position: [0, goal.troughHeight, goal.length / 2] as [number, number, number],
+  };
+  // Turn the goal until "into this mouth" and "the way the robot is backing"
+  // are the same direction. Both angles are measured the same way headings
+  // are, atan2(x, z), so the difference is the yaw to apply.
+  const yaw =
+    Math.atan2(rearX, rearZ) - Math.atan2(opening.inward[0], opening.inward[2]);
+  goal.object.rotation.set(0, yaw, 0);
+  // The mouth sits half a robot behind the finish, plus a hair of daylight.
+  const standoff = ROBOT_LENGTH * 0.5 + GOAL_GAP;
+  const mouth = new THREE.Vector3(
+    finish.position[0] * ROBOT_LENGTH + rearX * standoff,
+    ROBOT_GROUND_Y + opening.position[1],
+    finish.position[1] * ROBOT_LENGTH + rearZ * standoff,
+  );
+  // Back the goal's own origin out from the mouth: the opening's offset,
+  // turned by the same yaw. The base rides on the floor.
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  goal.object.position.set(
+    mouth.x - (opening.position[0] * cos + opening.position[2] * sin),
+    ROBOT_GROUND_Y,
+    mouth.z - (-opening.position[0] * sin + opening.position[2] * cos),
+  );
+  goal.object.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    node.castShadow = true;
+    node.receiveShadow = true;
+  });
+  return mouth;
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +807,20 @@ export default function RobotOutro({
   }>({ active: false, previous: null, previousIntensity: 1, texture: null });
   const [frames, setFrames] = useState<RobotDriftFrame[] | null>(null);
   const [rig, setRig] = useState<RobotRig | null>(null);
+  // The goal and the balls: one group so the scene mounts and disposes them
+  // together, plus the ball meshes in ballPhysics' own order.
+  const [scenery, setScenery] = useState<{
+    balls: THREE.Object3D[];
+    group: THREE.Group;
+  } | null>(null);
+  const ballStatesRef = useRef<((time: number) => BallState[]) | null>(null);
+  // Read by headless captures to check the goal landed and the parts turn.
+  const probeRef = useRef({
+    balls: 0,
+    driveAngle: 0,
+    goal: [0, 0, 0] as [number, number, number],
+    intakeAngle: 0,
+  });
 
   useEffect(() => {
     let live = true;
@@ -469,12 +835,46 @@ export default function RobotOutro({
       // smaller than that default, and wheels turning too slowly for the
       // ground read as the whole run sliding.
       const wheel = model?.wheels[0];
-      const frames = await loadDriftFrames(
+      const { finish, frames } = await loadDrift(
         model && wheel && model.length > 0
           ? wheel.radius / model.length
           : undefined,
       );
-      if (live) setFrames(frames);
+      if (!live) return;
+      setFrames(frames);
+
+      // The goal and the balls. Both come from sibling branches; either one
+      // missing falls back to a placeholder, so the scene never waits.
+      const { ball, goal } = await loadProps();
+      if (!live) return;
+      const mouth = placeGoal(goal, finish);
+      const physics =
+        (await loadBallPhysics()) ??
+        buildPlaceholderBallPhysics(frames, ball.radius, mouth);
+      if (!live) return;
+      ballStatesRef.current = physics.ballStatesAt;
+      const group = new THREE.Group();
+      group.add(goal.object);
+      // One mesh per ball; the clones share the source's geometry and
+      // material, so disposing the group's meshes frees each exactly once.
+      const balls = Array.from(
+        { length: Math.max(0, Math.round(physics.ballCount())) },
+        (ignored, i) => {
+          const object = i === 0 ? ball.object : ball.object.clone();
+          object.traverse((node) => {
+            if ((node as THREE.Mesh).isMesh) node.castShadow = true;
+          });
+          group.add(object);
+          return object;
+        },
+      );
+      probeRef.current.balls = balls.length;
+      probeRef.current.goal = [
+        goal.object.position.x,
+        goal.object.position.y,
+        goal.object.position.z,
+      ];
+      setScenery({ balls, group });
     })();
     return () => {
       live = false;
@@ -500,6 +900,25 @@ export default function RobotOutro({
     };
   }, [rig]);
 
+  // Same for the goal and the balls: the group owns every mesh in the prop
+  // set, and the ball clones share their source's geometry and material, so
+  // three's own guard against a double dispose covers the repeats.
+  useEffect(() => {
+    if (!scenery) return undefined;
+    return () => {
+      scenery.group.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry.dispose();
+        for (const material of Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material]) {
+          material.dispose();
+        }
+      });
+    };
+  }, [scenery]);
+
   // Restore the scene's environment and free the PMREM texture on unmount.
   useEffect(() => {
     const environment = environmentRef.current;
@@ -517,6 +936,7 @@ export default function RobotOutro({
   // Exposed so headless captures can read where the playhead sits.
   useEffect(() => {
     const debug = {
+      probe: probeRef.current,
       run: runRef.current,
     };
     (window as unknown as Record<string, unknown>).__robotOutro = debug;
@@ -612,6 +1032,50 @@ export default function RobotOutro({
       wheel.object.rotation.x += omega * dTime;
     }
 
+    // The gears and rollers, on the same playhead-integrated footing.
+    // The intake runs the whole way: the robot is collecting through the
+    // pickups and still feeding at the goal, so it never idles mid-run.
+    const intakeRunning = run.time > 0 && run.time < duration;
+    for (const spinner of rig.spinners) {
+      let omega = 0;
+      if (spinner.category === "drive") {
+        const wheelOmega =
+          spinner.side === "left"
+            ? sample.wheelAngularSpeed[0]
+            : spinner.side === "right"
+              ? sample.wheelAngularSpeed[1]
+              : (sample.wheelAngularSpeed[0] + sample.wheelAngularSpeed[1]) / 2;
+        // Meshed parts share a surface speed, so a gear smaller than the
+        // wheel it drives turns proportionally faster.
+        omega = wheelOmega * (rig.wheelRadius / Math.max(spinner.radius, 1e-4));
+      } else if (intakeRunning) {
+        // Radius is in model units; the surface speed is in stage units.
+        omega =
+          INTAKE_SURFACE_SPEED / Math.max(spinner.radius * rig.scale, 1e-4);
+      }
+      spinner.object.rotation[spinner.axis] += omega * dTime;
+      const probe = probeRef.current;
+      if (spinner.category === "drive") {
+        probe.driveAngle = spinner.object.rotation[spinner.axis];
+      } else {
+        probe.intakeAngle = spinner.object.rotation[spinner.axis];
+      }
+    }
+
+    // The balls are a pure function of the playhead too, so scrolling back
+    // puts every one of them back where it was.
+    const ballStates = ballStatesRef.current?.(run.time);
+    if (scenery && ballStates) {
+      for (let i = 0; i < scenery.balls.length; i += 1) {
+        const state = ballStates[i];
+        const object = scenery.balls[i];
+        object.visible = Boolean(state);
+        if (!state) continue;
+        object.position.set(...state.position);
+        object.rotation.set(...state.rotation);
+      }
+    }
+
     robotState.position.set(
       sample.position[0] * ROBOT_LENGTH,
       ROBOT_GROUND_Y,
@@ -668,6 +1132,7 @@ export default function RobotOutro({
         intensity={0}
         position={[-7, 5, -7]}
       />
+      {scenery ? <primitive object={scenery.group} /> : null}
       {rig ? <primitive object={rig.pose} /> : null}
     </group>
   );
