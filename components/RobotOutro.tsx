@@ -185,13 +185,15 @@ const INTAKE_SURFACE_SPEED = 3.2;
  */
 const UPPER_STAGE_Y = 1.15;
 /**
- * How far the indexer plates rise out of the ball's way while the robot is
- * scoring, model units, and how long they take. They are named parts now
- * (see PART_TYPES in scripts/robot-from-fbx.mjs), so this moves the pieces
- * that actually stop the balls rather than guessing at them by height.
+ * How far the indexer swings open to release the balls, radians, and how
+ * long it takes. They are named parts (see PART_TYPES in
+ * scripts/robot-from-fbx.mjs), so this turns the pieces that actually stop
+ * the balls rather than guessing at them by height — and it turns them,
+ * rather than sliding the whole assembly upward, which is not how the
+ * mechanism works.
  */
-const INDEXER_LIFT = 0.3;
-const INDEXER_LIFT_TIME = 0.35;
+const INDEXER_OPEN = 0.85;
+const INDEXER_OPEN_TIME = 0.35;
 
 type RobotRig = {
   /** World position + heading. */
@@ -703,11 +705,6 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
-  // Remember where the indexer rests so it can lift at scoring time and
-  // drop back when the scroll runs backwards.
-  for (const { category, object } of spinners) {
-    if (category === "indexer") object.userData.baseY = object.position.y;
-  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -1111,20 +1108,18 @@ export default function RobotOutro({
     const intakeRunning = run.time > 0 && run.time < duration;
     for (const spinner of rig.spinners) {
       if (spinner.category === "indexer") {
-        // The indexer holds the balls in the tower, so it has to get out of
-        // the way before they are fed out or they pass straight through it.
-        // It rises just ahead of the first throw and stays up for the rest
-        // of the run; driven off the playhead, so it drops again when the
-        // page scrolls back.
-        const base = spinner.object.userData.baseY as number | undefined;
-        if (base !== undefined) {
-          const opening = THREE.MathUtils.smoothstep(
-            run.time,
-            scoringStartRef.current - INDEXER_LIFT_TIME,
-            scoringStartRef.current,
-          );
-          spinner.object.position.y = base + INDEXER_LIFT * opening;
-        }
+        // The indexer holds the balls in the tower until it is time to
+        // score, then swings OPEN to let them past. The two plates and the
+        // component behind them turn opposite ways, so the gap opens
+        // between them rather than the whole assembly rolling one way.
+        // Driven off the playhead, so it closes again on scroll-back.
+        const opening = THREE.MathUtils.smoothstep(
+          run.time,
+          scoringStartRef.current - INDEXER_OPEN_TIME,
+          scoringStartRef.current,
+        );
+        const away = spinner.object.name.includes("component") ? -1 : 1;
+        spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening * away;
         continue;
       }
       let omega = 0;

@@ -179,32 +179,23 @@ type DriverPhase = {
  * off, and the yaw rate it is trimmed to. Low yaw against high speed is
  * what makes the arc wide — radius is roughly speed over yaw rate.
  */
-/**
- * The skid. It starts once the turn-in has brought the nose to about -160,
- * which is only 20 degrees off the heading it drove in on, so almost all of
- * the move is the slide itself. Held on a differential rather than a
- * heading trim: trimming the nose onto a fixed heading let the tyres pull
- * the travel back into line with it and the slip washed out to nothing, so
- * it braked instead of sliding.
- */
-const SKID_DURATION = 1.9;
-const SKID_OUTER = 4.5;
-const SKID_INNER = -1.5;
-const SKID_YAW = 2.4;
 
 const SCHEDULE: DriverPhase[] = [
-  // In forwards, alongside the run of balls.
+  // In forwards, alongside the run of balls. This is the flat part of the
+  // curve — the top of the parabola, where it has barely started to bend.
   { duration: 0.6, left: 4.4, right: 4.4 },
-  // Turn in to the left. Short — it only has about 20 degrees to cover
-  // before the nose is where the slide wants it.
-  { duration: 0.35, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: 3.2 },
-  // THE SKID. The nose is held near -160 while the robot keeps carrying its
-  // momentum down the field, so it travels a long way sideways to where it
-  // is pointing. The sticks stay barely on: this is a slide, not a turn,
-  // and holding the heading rather than flicking again is what makes the
-  // move read as one continuous motion.
-  { duration: SKID_DURATION, left: SKID_OUTER, right: SKID_INNER, yawGain: 1.6, yawTarget: SKID_YAW },
-  // Out of the skid, bring the tail round toward the mouth.
+  // The bend starts, and TIGHTENS with every phase. A constant-radius arc
+  // reads as a circle; a curve whose radius keeps shrinking reads as a
+  // robot getting deeper and deeper into a slide, which is the shape of
+  // -(x-2)^2 down its falling side.
+  { duration: 0.7, left: 4.5, right: 2.6, yawGain: 1.6, yawTarget: 0.9 },
+  { duration: 0.7, left: 4.5, right: 1.0, yawGain: 1.8, yawTarget: 1.9 },
+  // Steepest: the aggressive part, tail well out.
+  { duration: 1.2, left: 4.5, right: -1.0, yawGain: 2.0, yawTarget: 3.2 },
+  // The flip into the goal, turning the SAME way the drift was already
+  // going. Spinning back against it would carry the robot across to the
+  // other side of the ball line, and the goal is placed off its rear, so
+  // the goal would end up on the wrong side of the balls.
   { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 5.0 },
   // Reverse entry into the goal: driven backwards with the nose trimmed on
   // the finish heading, so it arrives tail-first and still sideways.
@@ -251,7 +242,7 @@ const START_HEADING = Math.PI;
 /**
  * The robot enters from the FAR end and drives toward the camera: heading PI
  * with forward drive carries it along -z, so it comes in upstage of the
- * balls and works down through them. Move this with SKID_DURATION — a
+ * balls and works down through them. Move this with the drift phases — a
  * longer slide covers more ground and the start has to give it room, or
  * the run finishes off the 46 x 32 floor.
  */

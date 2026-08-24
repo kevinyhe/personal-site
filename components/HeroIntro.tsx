@@ -35,7 +35,18 @@ const TREE_DROP_DURATION = 0.292;
 // name, tree and orbit keep their old absolute pacing. The Thinker inside
 // the panel starts breaking the moment it starts growing.
 const PANEL_GROW_AT = TREE_DROP_DURATION;
-const PANEL_GROW_DURATION = 1 - PANEL_GROW_AT;
+// Where the box finishes growing, the statue's run ends and the page cuts
+// to the robot — all on this one frame.
+const HERO_CUT_AT = 0.712;
+const PANEL_GROW_DURATION = HERO_CUT_AT - PANEL_GROW_AT;
+// How long the two words take to clear the frame sideways. Set against the
+// BOX, not against the timeline: they have to be gone while it is still
+// opening, not race its edges out. The box used to grow over 0.708 and the
+// words over 0.42, so the name was clear by the time the box was 59% of the
+// screen. The box now grows over 0.42 — it has to be full for the cut — so
+// holding the words at 0.42 meant they only just beat it. 0.249 puts the
+// name off screen at that same 59% again.
+const WORD_EXIT_DURATION = 0.249;
 // How long the two words take to clear the frame sideways, and the moment
 // the last of them is gone — which is when the statement below them
 // arrives.
@@ -44,23 +55,13 @@ const PANEL_GROW_DURATION = 1 - PANEL_GROW_AT;
 // timeline. It MUST lead PANEL_GROW_AT: the canvas is frozen while the
 // panel is closed, so whatever scroll passes between this and the panel's
 // first pixel is the stage's only chance to compile its shaders and upload
-// the chunk geometry. It matters more now than it did — the box no longer
-// creeps up from nothing, it appears at PANEL_APPEAR_SCALE already big
-// enough to see what is inside it.
+// the chunk geometry. It matters more now than it did — the box grows
+// linearly out of nothing, so it is big enough to see what is inside it
+// within a few vh rather than tens.
 const PANEL_OPEN_AT = 0.22;
-const WORD_EXIT_DURATION = 0.42;
-const WORD_EXIT_END = PANEL_GROW_AT + WORD_EXIT_DURATION;
 // How far into the panel's growth the statue waits before it starts coming
 // apart, in viewport heights of scroll.
 const CHUNK_DELAY_VIEWPORTS = 0.3;
-
-// The statue owns the screen until the panel has finished growing AND held
-// at full screen for this much further scroll; only then does the page cut
-// to the robot. Pinning the stretch to a fixed length instead (it was 1.64
-// viewport-heights) ended the statue at 205vh when the panel does not fill
-// the screen until 332vh — the figure had long since flown apart and the
-// stage sat empty waiting for the cut.
-const STATUE_HOLD_VIEWPORTS = 0.5;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -498,7 +499,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       const words = gsap.utils.toArray<HTMLElement>(
         lockup.querySelectorAll("[data-hero-letters]"),
       );
-      const statement = root.querySelector<HTMLElement>("[data-hero-statement]");
       // Clear of the frame, not parked at its edge: the type layer sits
       // ABOVE the panel (z-20 over z-15), so a word left at the edge would
       // still be sitting on the full-screen box at the end of the growth.
@@ -532,13 +532,26 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       });
       // Times are fractions of the whole 432vh scroll: the hero's exit in
       // the first 0.205, the panel from TREE_DROP_DURATION.
+      //
+      // A timeline is only as long as its longest child, and every offset
+      // here is written as a fraction of the WHOLE scroll — so the length
+      // has to be pinned to 1 explicitly. It used to come out right by
+      // accident, because the panel's growth ran to the end; the moment that
+      // stopped being true the scrub stretched the whole choreography over
+      // the full scroll and every cue landed ~1.4x later than it reads here,
+      // with the robot cutting in before the name had finished leaving.
+      tl.set({}, {}, 1);
       gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
       tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
-        // Up to the middle over the WHOLE of the tree's fall, so the name
-        // arrives on the frame the tree finishes leaving.
+        // Up to the middle over the WHOLE of the tree's fall, on the TREE'S
+        // OWN EASE so the two move as one thing. Sharing only a start and an
+        // end is not enough: with power2.out on the name and power1.in on
+        // the tree they crossed the same window at completely different
+        // rates — half way through, the name was 87% of the way up and the
+        // tree had barely gone a quarter. The name rushed, then dawdled.
         .to(
           lockup,
-          { y: centreOffset, duration: TREE_DROP_DURATION, ease: "power2.out" },
+          { y: centreOffset, duration: TREE_DROP_DURATION, ease: "power1.in" },
           0,
         )
         .to(
@@ -547,6 +560,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           0,
         )
         .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.343 }, 0)
+        // The dot matrix is the last of the television left on the page.
+        // It thins out over the name's rise and is gone by the time the box
+        // appears, so nothing inside the box is seen through it.
+        .to(
+          sceneFx,
+          { halftone: 0, duration: PANEL_GROW_AT, ease: "power1.in" },
+          0,
+        )
         // The box grows out of NOTHING — it starts at scale 0 and is never
         // set to any other size, so there is nothing to pop. The ease is
         // linear on purpose: an ease with no slope at its start (power2.inOut,
@@ -559,8 +580,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           PANEL_GROW_AT,
         )
         // Shoved apart by the box, accelerating out of frame. They start
-        // with the growth and are gone by roughly its half-way point, so
-        // they clear ahead of the box's own edges rather than racing them.
+        // with the growth and are gone before it is two thirds open, so they
+        // clear ahead of the box's own edges rather than racing them.
         .to(
           words[0],
           { x: outLeft, duration: WORD_EXIT_DURATION, ease: "power2.in" },
@@ -571,19 +592,13 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { x: outRight, duration: WORD_EXIT_DURATION, ease: "power2.in" },
           PANEL_GROW_AT,
         );
-      // Takes the name's place the moment the last letter clears the frame.
-      if (statement) {
-        tl.to(
-          statement,
-          { autoAlpha: 1, duration: 0.05, ease: "power2.out" },
-          WORD_EXIT_END,
-        );
-      }
+
     }, root);
     return () => {
       ctx.revert();
       sceneFx.treeDrop = 0;
       sceneFx.orbit = 0;
+      sceneFx.halftone = 1;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
   }, [revealComplete]);
@@ -642,14 +657,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const pageEnd = statueSpace
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growStart;
-    // The panel finishes growing at the end of the hero timeline; the
-    // statue then holds the full screen for STATUE_HOLD_VIEWPORTS more
-    // before the robot outro takes over everything below.
-    const panelFull = heroStart + heroLength;
-    const statueEnd = Math.min(
-      panelFull + viewportHeight * STATUE_HOLD_VIEWPORTS,
-      pageEnd,
-    );
+    // The statue's run ends on the frame the box reaches full screen, and the
+    // page clips straight to the robot there. The name is long gone by then
+    // — it clears the frame while the box is still opening. Everything below
+    // this is the robot's.
+    const statueEnd = Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
     const end = pageEnd;
     return {
       // The stage opens with the box; the figure holds together for a beat

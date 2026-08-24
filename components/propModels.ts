@@ -49,6 +49,34 @@ export async function loadBallModel(): Promise<{ object: THREE.Object3D; radius:
   return { object, radius: meta.radius };
 }
 
+/**
+ * The goal's trough is polycarbonate, not painted metal: the balls sitting
+ * in it should read through the wall. Fusion exports every appearance as
+ * "Opaque(...)", so the translucency cannot come from the file — the white
+ * body material is turned to clear plastic here instead.
+ *
+ * depthWrite is off so the balls behind the wall are not culled by it,
+ * which is the whole point of making it see-through.
+ */
+const TROUGH_MATERIAL_NAME = "Opaque(255,255,255)";
+function makeTroughTranslucent(root: THREE.Object3D) {
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of list) {
+      const standard = material as THREE.MeshStandardMaterial;
+      if (standard.name !== TROUGH_MATERIAL_NAME) continue;
+      standard.transparent = true;
+      standard.opacity = 0.34;
+      standard.depthWrite = false;
+      standard.roughness = 0.12;
+      standard.metalness = 0;
+      standard.side = THREE.DoubleSide;
+    }
+  });
+}
+
 export async function loadGoalModel(): Promise<GoalModel> {
   const object = await loadGlb(GOAL_URL, "goal");
   const meta = object.userData as GoalMeta;
@@ -58,6 +86,7 @@ export async function loadGoalModel(): Promise<GoalModel> {
   if (meta.openings.length !== 2) {
     throw new Error(`goal model has ${meta.openings.length} openings, expected the tube's two ends`);
   }
+  makeTroughTranslucent(object);
   return {
     length: meta.length,
     object,
