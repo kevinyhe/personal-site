@@ -182,11 +182,13 @@ type DriverPhase = {
 /**
  * The U-turn. Radius is speed over yaw rate, so the two are set together
  * and the sticks matter as much as the yaw target: driving the outside
- * hard makes a wide arc no matter what the trim asks for. Swept against a
- * measured radius, these give 1.63 robot lengths — about 27 in, against
- * the 24 asked for — while still leaving enough rotation in the run for
- * the U and the 180 after it. Tighter settings hit 24 in exactly but lost
- * the second half turn.
+ * hard makes a wide arc no matter what the trim asks for. Swept against the
+ * measured curvature of the PATH (not heading over speed — in a drift the
+ * nose is not tangent to the path, so that ratio says nothing about the arc
+ * it traces), these hold 1.71 robot lengths, about 28 in against the 24
+ * asked for. Tighter needs grip the tyres do not have: holding radius R at
+ * speed v costs v²/R of lateral acceleration and only mu*g = 2.1 is
+ * available, so a tighter arc has to be a slower one.
  */
 const U_DURATION = 1.7;
 const U_OUTER = 2.2;
@@ -194,20 +196,21 @@ const U_INNER = 1.4;
 const U_YAW = 1.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // On backwards from the start: the robot is already rolling when it comes
-  // into frame, nose pointing back the way it came and the body carrying it
-  // left. Both sides driven in reverse to hold that.
+  // On backwards from the start, down the RIGHT-hand side of the goal: the
+  // robot is already rolling when it comes into frame, nose pointing back
+  // the way it came, and it passes the goal well clear before turning.
+  // Both sides driven in reverse to hold that.
   { duration: 0.7, left: -4.2, right: -4.2 },
   // Reverse entry into the U. One side thrown against the other breaks the
   // rear loose and swings the nose round, and the turn is then HELD at a
   // steady yaw rate against a steady forward speed, which is what makes a
   // clean constant-radius arc rather than a flick. Tuned for about 24
   // inches of radius (see U_YAW).
-  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
-  { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
+  { duration: 0.5, left: 4.5, right: -4.5, yawGain: 1.6, yawTarget: -U_YAW },
+  { duration: U_DURATION, left: U_INNER, right: U_OUTER, yawGain: 2.6, yawTarget: -U_YAW },
   // The 180: a hard, short counter-rotation once the U is done, bringing
   // the tail round to face the goal.
-  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
+  { duration: 0.55, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.0 },
   // Line up on the mouth as the slide dies.
   { duration: 0.8, headingGain: 3.2, headingTarget: FINISH_HEADING, left: 0.6, right: 0.6, yawGain: 2.4 },
   // Back it in: reversed gently so the aligner seats.
