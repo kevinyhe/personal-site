@@ -201,13 +201,13 @@ const SCHEDULE: DriverPhase[] = [
   // goal.
   { duration: 0.5, left: 4.4, right: 4.4 },
   // Break the rear loose and settle straight into the turn.
-  { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
+  { duration: 0.4, left: 4.5, right: -4.5, yawGain: 1.6, yawTarget: -U_YAW },
   // The drift. Held at a steady yaw against a steady speed so it carves one
   // clean arc, tail out, collecting the balls as it comes round.
-  { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
+  { duration: U_DURATION, left: U_INNER, right: U_OUTER, yawGain: 2.6, yawTarget: -U_YAW },
   // The flip into the goal: a hard, short counter-rotation that brings the
   // tail round to face the mouth.
-  { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.0 },
+  { duration: 0.4, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
   // Reverse entry into the goal - the robot slides tail-first at the mouth
   // with the body still sideways to its travel.
   { duration: 1.1, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.2, right: -4.2, yawGain: 2.4 },
