@@ -104,18 +104,35 @@ const BREAK_END = 0.96;
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 4.65;
-const CAMERA_DISTANCE_COMPACT = 6.2;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 5.85;
-// Where the camera aims (figure height, centre 0): above the chest at
-// rest — the frame sits high, with air over the figure's head — panning
-// to the middle once broken.
+const CAMERA_DISTANCE_BROKEN = 5.1;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 6.3;
+// The shot OPENS on the hand — the piece that breaks first — and pulls out
+// from there. World position of the hand: the hand seeds' own model coords
+// (see thinkerChunks) turned by the stage group's yaw, computed once rather
+// than eyeballed. It sits at the front of the figure, nearest the lens,
+// which is why the break starts there and why the camera can sit this close
+// without the rest of the figure crossing in front of it.
+const HAND_LOOK_AT = new THREE.Vector3(-0.033, -0.137, 1.329);
+const CAMERA_DISTANCE_HAND = 1.45;
+const CAMERA_DISTANCE_HAND_COMPACT = 1.9;
+// Where the camera aims (figure height, centre 0): the pan runs hand ->
+// chest -> middle as a quadratic Bezier, so the aim ARCS up the figure and
+// back down instead of sliding along a straight line between two points.
 const LOOK_AT_Y = 0.85;
 const LOOK_AT_Y_BROKEN = -0.05;
+const LOOK_AT_MID = new THREE.Vector3(0.05, LOOK_AT_Y + 0.1, 0.35);
+const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
+// Where the camera sits for the opening hand shot, per unit of distance:
+// nearly head-on and a little BELOW the hand, so the move out to
+// CAMERA_OFFSET's high three-quarter view is a real tilt and swing rather
+// than a straight dolly back.
+const CAMERA_OFFSET_HAND = new THREE.Vector3(0.18, -0.06, 1).normalize();
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
-const ORBIT_LEFT = -0.275;
-const ORBIT_LEFT_COMPACT = -0.2;
+// The swing rides the RAW breakup while the zoom rides its smoothstep, so
+// the orbit keeps drifting after the pull-out has settled.
+const ORBIT_LEFT = -0.7;
+const ORBIT_LEFT_COMPACT = -0.5;
 
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
@@ -326,24 +343,48 @@ function CameraRig({
       forward: new THREE.Vector3(),
       look: new THREE.Vector3(),
       lookTarget: new THREE.Vector3(),
+      offset: new THREE.Vector3(),
       positionTarget: new THREE.Vector3(),
     }),
     [],
   );
+  // The statue camera lerps toward its target so the scroll scrub stays
+  // smooth, but the FIRST frame must not: the canvas starts at the wide
+  // framing, and lerping from there would slide the lens into the hand
+  // shot over a second instead of opening on it.
+  const opened = useRef(false);
 
   useFrame(({ clock }, delta) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const compact = size.width < 720;
+    // The pull-out holds the tight framing for a beat — long enough to
+    // watch the hand itself come apart — then opens through the middle of
+    // the run and settles at the end. Smoothstep, not linear.
+    //
+    // Reduced motion pins breakup to 0, which is the hand close-up. That
+    // would strand those users in an extreme close-up they can never move
+    // out of, so they get the settled wide framing instead: the figure
+    // whole, from the far end of the same arc.
+    const open = reducedMotion
+      ? 1
+      : breakup * breakup * (3 - 2 * breakup);
     const distance = compact
-      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, breakup)
-      : THREE.MathUtils.lerp(CAMERA_DISTANCE, CAMERA_DISTANCE_BROKEN, breakup);
-    // Aimed at the chest, panning down to the middle; the camera itself
-    // swings around to the left as the pieces go — a rotation about the
-    // figure, not a sideways move.
-    lookAt.set(0, THREE.MathUtils.lerp(LOOK_AT_Y, LOOK_AT_Y_BROKEN, breakup), 0);
+      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_HAND_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, open)
+      : THREE.MathUtils.lerp(CAMERA_DISTANCE_HAND, CAMERA_DISTANCE_BROKEN, open);
+    // Aim: quadratic Bezier hand -> chest -> middle.
+    const u = 1 - open;
+    lookAt
+      .copy(HAND_LOOK_AT)
+      .multiplyScalar(u * u)
+      .addScaledVector(LOOK_AT_MID, 2 * u * open)
+      .addScaledVector(LOOK_AT_END, open * open);
+    // The eye swings from nearly head-on and below the hand round to the
+    // high three-quarter view, and keeps orbiting left after the zoom has
+    // settled.
+    scratch.offset.copy(CAMERA_OFFSET_HAND).lerp(CAMERA_OFFSET, open).normalize();
     target
-      .copy(CAMERA_OFFSET)
+      .copy(scratch.offset)
       .applyAxisAngle(UP, (compact ? ORBIT_LEFT_COMPACT : ORBIT_LEFT) * breakup)
       .multiplyScalar(distance)
       .add(lookAt);
@@ -360,8 +401,19 @@ function CameraRig({
     if (chase.blend <= 0) {
       // The statue's camera, untouched.
       chase.seeded = false;
-      if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
-      camera.position.lerp(target, 0.08);
+      // Handheld drift, scaled by how far out the camera is: the same
+      // angular wander reads as much bigger movement on the tight hand
+      // shot than on the wide one.
+      if (!reducedMotion) {
+        const sway = distance * 0.016;
+        target.x += Math.sin(clock.elapsedTime * 0.18) * sway;
+        target.y += Math.sin(clock.elapsedTime * 0.13 + 1.1) * sway * 0.6;
+      }
+      if (opened.current) camera.position.lerp(target, 0.08);
+      else {
+        opened.current = true;
+        camera.position.copy(target);
+      }
       camera.lookAt(lookAt);
       if (persp.isPerspectiveCamera && Math.abs(persp.fov - STATUE_FOV) > 0.01) {
         persp.fov = STATUE_FOV;
@@ -412,15 +464,21 @@ function CameraRig({
       // robot in its 10-o'clock pose, softer springs so it eases in.
       const fx = Math.sin(robotState.heading);
       const fz = Math.cos(robotState.heading);
+      // Wide enough to hold the robot AND the goal it has just backed into,
+      // with the scored balls sitting in the trough. The old 3.6-unit
+      // standoff framed the robot alone so tightly that the point of the
+      // ending — nine balls in the goal — was off screen entirely.
       scratch.positionTarget.set(
-        robotState.position.x + fx * 3.0 + Math.cos(robotState.heading) * 2.0,
-        ROBOT_GROUND_Y + 1.55,
-        robotState.position.z + fz * 3.0 - Math.sin(robotState.heading) * 2.0,
+        robotState.position.x + fx * 6.4 + Math.cos(robotState.heading) * 4.6,
+        ROBOT_GROUND_Y + 3.1,
+        robotState.position.z + fz * 6.4 - Math.sin(robotState.heading) * 4.6,
       );
+      // Aim past the robot into the goal, so the trough and what is in it
+      // share the frame instead of sitting off the edge behind it.
       scratch.lookTarget.set(
-        robotState.position.x,
-        ROBOT_GROUND_Y + 0.5,
-        robotState.position.z,
+        robotState.position.x - Math.sin(robotState.heading) * 1.8,
+        ROBOT_GROUND_Y + 0.9,
+        robotState.position.z - Math.cos(robotState.heading) * 1.8,
       );
     } else {
       // Low, behind-left of the motion, ~2.5 robot lengths back, looking
