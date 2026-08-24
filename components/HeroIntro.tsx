@@ -633,8 +633,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           (which begins with the growth) its short, deliberately outpaced
           run, and the robot outro the tail beyond it. */}
       <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-      {/* 50vh of the statue holding the full screen, then 20vh for the robot. */}
-      <div aria-hidden="true" className="h-[70vh]" ref={statueSpaceRef} />
+      {/* 50vh of the statue holding the full screen, then 100vh for the
+          robot: the scroll scrubs its whole drift, roughly a screen of
+          scrolling from the first move to the stop. */}
+      <div aria-hidden="true" className="h-[150vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree

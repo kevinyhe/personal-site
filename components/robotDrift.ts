@@ -101,12 +101,16 @@ const INTERNAL_RATE = 480;
 const MAX_WHEEL_ACCEL = 14;
 /** Wheel surface speed the motors top out at, rl/s. */
 const MAX_WHEEL_SPEED = 4.5;
-/** Sliding friction coefficient — the robot drifts on this. */
-const MU_KINETIC = 0.85;
+/** Sliding friction coefficient — the robot drifts on this. A drift drive
+ *  on a slick floor: once the tyres let go there is very little left to
+ *  stop them, so the slide runs long instead of hooking up again a moment
+ *  after the flick. */
+const MU_KINETIC = 0.42;
 /** Nose error below which the parking driver lets go of the sticks, rad. */
 const NOSE_SETTLED = 0.04;
-/** Gripping friction coefficient near zero slip. */
-const MU_STATIC = 1.1;
+/** Gripping friction coefficient near zero slip. Only a little above the
+ *  sliding value, so the tyres break away early and easily. */
+const MU_STATIC = 0.58;
 /** Ground speed below which the reported slip angle fades to zero, rl/s. */
 const SLIP_FADE_SPEED = 0.3;
 /** Slip speed below which friction ramps linearly (pseudo-static), rl/s. */
@@ -139,6 +143,13 @@ type DriverPhase = {
  * The stick inputs. Tuned against the offline audit: entry from x ~ +6.5
  * heading -x, a hard left-side reversal to start the drift, a held slide of
  * about a full turn, then park at TEN_OCLOCK_HEADING.
+ *
+ * Retuned for the low-grip tyres above. With that little friction there is
+ * far less to resist the yaw, so the old caps span nearly two turns instead
+ * of one; the flick is shorter and the yaw caps lower to bring it back to a
+ * single circle. Total rotation is bimodal — the parking controller either
+ * catches the nose on this turn or takes a whole extra one — so these sit
+ * in the middle of the lower band rather than near its edge.
  */
 const SCHEDULE: DriverPhase[] = [
   // Entry: flat out across the frame, driving in nose-first.
@@ -146,21 +157,21 @@ const SCHEDULE: DriverPhase[] = [
   // Flick: left side slammed into reverse while the right stays planted.
   // Momentum keeps the robot travelling -x while the nose whips CCW past
   // the velocity vector — the tail leads, the reverse entry.
-  { duration: 0.7, left: -4.5, right: 4.5 },
+  { duration: 0.5, left: -4.5, right: 4.5 },
   // Ride it backwards for a beat: a soft yaw cap stops the spin turning
   // into a pirouette, both sides stay saturated so almost all the friction
   // budget is spent longitudinally (little lateral grip is left to eat the
   // momentum), and the robot sails on with the nose far past the direction
   // of travel.
-  { duration: 1.0, left: -3.5, right: 4.5, yawGain: 1.0, yawTarget: 2.2 },
+  { duration: 1.0, left: -2.9, right: 4.5, yawGain: 1.6, yawTarget: 1.42 },
   // Power slide: ease the yaw down and feed forward drive back in so the
   // spin opens into a circle; the right side overspins the whole way,
   // pumping energy into the slide.
-  { duration: 3.6, left: 2.1, right: 4.5, yawGain: 2.5, yawTarget: 1.9 },
+  { duration: 3.5, left: 2.3, right: 4.5, yawGain: 2.8, yawTarget: 1.05 },
   // Exit: straighten out and let the slide bleed off.
-  { duration: 1.0, headingGain: 3.0, headingTarget: TEN_OCLOCK_HEADING, left: 0.6, right: 0.6, yawGain: 2.0 },
+  { duration: 1.1, headingGain: 3.4, headingTarget: TEN_OCLOCK_HEADING, left: 0.5, right: 0.5, yawGain: 2.4 },
   // Park: sticks to zero, small trims settle the nose on 10 o'clock.
-  { duration: 1.4, headingGain: 3.0, headingTarget: TEN_OCLOCK_HEADING, left: 0, right: 0, yawGain: 2.0 },
+  { duration: 1.6, headingGain: 3.4, headingTarget: TEN_OCLOCK_HEADING, left: 0, right: 0, yawGain: 2.4 },
 ];
 
 const START_HEADING = -Math.PI / 2;
