@@ -121,17 +121,26 @@ const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
 // The robot outro's first stretch: the statue's materials (and its lights
-// and floor shadow) fade out over robot phase 0..0.2; scrolling back
+// and floor shadow) fade out over robot phase 0..0.08; scrolling back
 // restores everything. The robot does not begin to appear until this is
 // finished (RobotOutro's ROBOT_FADE_START matches), so the two scenes never
 // share the screen — the hand-off reads as a cut, not a dissolve.
-const STATUE_FADE_END = 0.2;
+const STATUE_FADE_END = 0.08;
 const STATUE_FOV = 34;
 // The chase camera does not roll. Banking the camera tips the horizon, and
 // on screen that is indistinguishable from the robot itself leaning — which
 // it must not do. Kept as a constant so the lateral-acceleration term below
 // stays readable; raise it to bring the bank back.
 const CAMERA_ROLL_MAX = 0;
+
+/** Pull `value` to within `maxDistance` of `target`, in place. */
+const lagScratch = new THREE.Vector3();
+function clampLag(value: THREE.Vector3, target: THREE.Vector3, maxDistance: number) {
+  lagScratch.subVectors(value, target);
+  const distance = lagScratch.length();
+  if (distance <= maxDistance) return;
+  value.copy(target).addScaledVector(lagScratch, maxDistance / distance);
+}
 
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
@@ -441,6 +450,13 @@ function CameraRig({
       robotState.resting ? 2.2 : 2.0,
       dt,
     );
+    // The run is scrubbed by the scroll now, so a flick of the wheel can
+    // move the robot faster than these springs will ever follow. Generous
+    // bounds: they do not engage while the page is scrolled at any normal
+    // rate — the framing is exactly as it was — but they stop the robot
+    // being left behind entirely and the shot becoming an empty floor.
+    clampLag(chase.position, scratch.positionTarget, 3.5);
+    clampLag(chase.lookPosition, scratch.lookTarget, 3.5);
 
     // A small roll out of the lateral acceleration, FOV widening with
     // speed, and a light two-sine handheld wobble.
