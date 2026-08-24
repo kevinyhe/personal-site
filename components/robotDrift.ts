@@ -91,21 +91,14 @@ export type RobotDriftOptions = {
  */
 export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
 
+
 /**
- * Where the nose points once the robot has stopped: the exact opposite of
- * TEN_OCLOCK_HEADING, about +30 degrees.
- *
- * The robot scores out of its back — the intake feeds a tower to an indexer
- * at the top rear, and the triangular aligner that seats against the goal
- * mouth is back there too — so it has to finish reversed into the goal. The
- * goal therefore sits along the robot's rear direction, -(sin h, 0, cos h),
- * which for this heading is up and to the left, away from the camera. That
- * keeps the shot readable: the goal is upstage and clear of the robot's
- * silhouette, the camera still looks at the front of the robot, and the
- * whole run finishes on the same screen axis the scene was framed around
- * instead of a new one.
+ * Where the run ends. The robot enters travelling backwards with its nose
+ * toward +x, drifts left, snaps a 180, and finishes with the nose back on +x
+ * — so its REAR points along -x, and that is where the goal mouth sits. It
+ * scores out of its back, so this is the pose that lets it feed the goal.
  */
-const BACKED_IN_HEADING = TEN_OCLOCK_HEADING + Math.PI;
+const FINISH_HEADING = Math.PI / 2;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
@@ -180,31 +173,30 @@ type DriverPhase = {
  * the whole run is 5.3 s.
  */
 const SCHEDULE: DriverPhase[] = [
-  // Entry: flat out across the frame, driving in nose-first.
-  { duration: 0.6, left: 4.2, right: 4.2 },
-  // Flick: left side slammed into reverse while the right stays planted.
-  // Momentum keeps the robot travelling -x while the nose whips CCW past
-  // the velocity vector — the tail leads, the reverse entry.
-  { duration: 0.5, left: -4.5, right: 4.5 },
-  // Ride it backwards for a beat: a soft yaw cap stops the spin turning
-  // into a pirouette, both sides stay saturated so almost all the friction
-  // budget is spent longitudinally (little lateral grip is left to eat the
-  // momentum), and the robot sails on with the nose far past the direction
-  // of travel.
-  { duration: 0.4, left: -2.9, right: 4.5, yawGain: 1.6, yawTarget: 2.6 },
-  // Power slide: ease the yaw down and feed forward drive back in so the
-  // spin opens into a circle; the right side overspins the whole way,
-  // pumping energy into the slide.
-  { duration: 1.1, left: 2.3, right: 4.5, yawGain: 2.8, yawTarget: 1.8 },
-  // Exit: straighten out and let the slide bleed off.
-  { duration: 1.1, headingGain: 3.4, headingTarget: BACKED_IN_HEADING, left: 0.5, right: 0.5, yawGain: 2.4 },
-  // Park: sticks to zero, small trims back the robot's tail into the goal.
-  { duration: 1.6, headingGain: 3.4, headingTarget: BACKED_IN_HEADING, left: 0, right: 0, yawGain: 2.4 },
+  // Reverse entry: the robot comes into frame from the right already
+  // travelling backwards — nose pointing back the way it came (+x), momentum
+  // carrying it left. Both sides driven in reverse to hold that.
+  { duration: 0.7, left: -4.4, right: -4.4 },
+  // Whip: one side flipped against the other swings the nose round through
+  // half a turn toward the direction of travel, while momentum keeps the
+  // body going left. This is where the entry becomes a drift.
+  { duration: 0.6, left: 4.5, right: -4.5, yawGain: 1.4, yawTarget: -4.0 },
+  // Forward drift, left: the nose is trimmed onto the direction of travel
+  // (-x) and held there while the tail stays hung out, so the robot is
+  // driving forwards and sliding left across the frame at the same time.
+  { duration: 1.0, headingGain: 2.4, headingTarget: -Math.PI / 2, left: 4.5, right: 3.2, yawGain: 2.0 },
+  // The 180: both sides slammed against each other for a hard, short
+  // counter-rotation. Its own beat, not a drift — it should read as a snap.
+  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.5 },
+  // Line it up: trim the nose onto the finish heading while the slide dies.
+  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0.4, right: 0.4, yawGain: 2.6 },
+  // Park: sticks to zero, trims settle the tail square into the goal mouth.
+  { duration: 1.4, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
-const START_HEADING = -Math.PI / 2;
+const START_HEADING = Math.PI / 2;
 const START_POSITION: [number, number] = [6.5, -2.8];
-const START_SPEED = 4.0;
+const START_SPEED = -4.0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -413,10 +405,10 @@ const RUN = (() => {
  * Where the run ends — the resting pose, and the pose the goal is placed
  * against. The heading is the final frame's CONTINUOUS heading; the run now
  * stays inside one turn, so it is also within a few degrees of
- * BACKED_IN_HEADING, but wrap it before comparing if that ever changes.
+ * FINISH_HEADING, but wrap it before comparing if that ever changes.
  *
  * The goal sits just off the robot's REAR, along -(sin h, 0, cos h) from
- * this position — see BACKED_IN_HEADING for why the robot finishes reversed
+ * this position — see FINISH_HEADING for why the robot finishes reversed
  * into it.
  */
 export const DRIFT_FINISH: { heading: number; position: [number, number] } = RUN.finish;

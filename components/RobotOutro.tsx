@@ -98,6 +98,13 @@ export type BallState = {
 export type RobotCameraState = {
   /** Lateral acceleration (stage units/s^2), positive toward the robot's left. */
   aLat: number;
+  /**
+   * Seconds of the run the scroll moved through this frame. The run is
+   * scrubbed, so the robot can cover ground far faster than wall-clock; a
+   * camera that integrates only real time is left behind. Sign is dropped —
+   * a chase should catch up just as hard when the page scrolls backwards.
+   */
+  playheadDelta: number;
   /** World yaw, same convention as RobotDriftFrame.heading. */
   heading: number;
   /** Stage-space position (y is the ground height). */
@@ -114,6 +121,7 @@ export function createRobotCameraState(): RobotCameraState {
   return {
     aLat: 0,
     heading: -Math.PI / 2,
+    playheadDelta: 0,
     position: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
     resting: false,
     speed: 0,
@@ -1089,6 +1097,7 @@ export default function RobotOutro({
     robotState.speed = robotState.velocity.length();
     robotState.heading = sample.heading;
     robotState.aLat = sample.aLat * ROBOT_LENGTH;
+    robotState.playheadDelta = Math.abs(dTime);
     // Resting means "has stopped", not "is nearly out of timeline". The run
     // parks well before its last frame — the drift ends around 2.6 s of 5.3 s
     // and the park phase just holds it still — and a fixed 0.2 s tail left the
