@@ -190,15 +190,16 @@ type DriverPhase = {
  * speed v costs v²/R of lateral acceleration and only mu*g = 2.1 is
  * available, so a tighter arc has to be a slower one.
  */
-const U_DURATION = 2.7;
+const U_DURATION = 3.8;
 const U_OUTER = 1.1;
 const U_INNER = 0.4;
 const U_YAW = 2.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // Reverse entry: the robot comes in already rolling backwards, alongside
-  // the run of balls, nose pointing back the way it came.
-  { duration: 0.5, left: -4.4, right: -4.4 },
+  // Straight in, driving forwards, alongside the run of balls. No reverse
+  // entry at the start any more — the only one left is the arrival at the
+  // goal.
+  { duration: 0.5, left: 4.4, right: 4.4 },
   // Break the rear loose and settle straight into the turn.
   { duration: 0.4, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
   // The drift. Held at a steady yaw against a steady speed so it carves one
@@ -232,10 +233,15 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
       inWindow[i].position[1] - inWindow[i - 1].position[1],
     ));
   }
-  const total = arc[arc.length - 1];
+  // A FIXED step, not the window divided up. Dividing meant a slower drift
+  // put the pickups closer together, and once consecutive balls were under
+  // a diameter apart on the floor they intersected. Stepping by a set
+  // distance keeps them clear however long the drift takes; if the window
+  // is too short to fit them all, the last ones simply land at its end,
+  // which the audit catches.
   const times: number[] = [];
   for (let k = 0; k < PICKUP_COUNT; k += 1) {
-    const want = (total * (k + 0.5)) / PICKUP_COUNT;
+    const want = PICKUP_SPACING * (k + 0.5);
     let i = 1;
     while (i < arc.length - 1 && arc[i] < want) i += 1;
     times.push(inWindow[i].time);
@@ -245,13 +251,13 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
 
 const START_HEADING = 0;
 /**
- * The original start: upstage and rolling BACKWARDS on heading 0, so the
- * body carries along -z with the nose pointing back the way it came. The
- * run covers roughly (-0.3, -6.7) robot lengths from here and finishes near
- * the middle of the 46 x 32 ground plane.
+ * Driving in FORWARDS on heading 0 carries the robot along +z, so it starts
+ * downstage and works back toward the middle of the 46 x 32 ground plane.
+ * Move this with U_DURATION: a longer drift covers more ground, and the
+ * start has to give it room or the run finishes off the floor.
  */
-const START_POSITION: [number, number] = [-2.0, 7.5];
-const START_SPEED = -4.0;
+const START_POSITION: [number, number] = [-2.0, -8.4];
+const START_SPEED = 4.0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -434,8 +440,11 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 // the last two pickups where the robot had slowed almost to a stop, so the
 // balls they call for ended up 0.39 robot lengths apart on the floor — less
 // than a ball diameter, and they intersected.
-const PICKUP_WINDOW: [number, number] = [2.0, 4.1];
+const PICKUP_WINDOW: [number, number] = [1.2, 4.4];
 const PICKUP_COUNT = 5;
+/** Ground between one ball and the next, robot lengths. A ball is 0.2 of
+ *  one across, so this is comfortably clear of the one in front. */
+const PICKUP_SPACING = 0.75;
 
 // One simulation at module load, shared by the two exports below. Neither
 // depends on the options: wheelRadius only scales the reported wheel speeds,

@@ -162,18 +162,18 @@ const cameraProbe: Record<string, unknown> = {};
  * of [time, value] read with `keyed`, which eases between them.
  */
 const CAMERA_AZIMUTH: Array<[number, number]> = [
-  // Held while the robot makes its reverse entry, so the shot opens on the
-  // move rather than swinging during it...
+  // Held while the robot makes its entry, so the shot opens on the move
+  // rather than swinging during it...
   [0, -45],
   [1.0, -45],
-  // ...and from there it only ever DECREASES, so the camera swings one way
-  // for the whole run and never doubles back. It lands on -270, which is
-  // the same bearing as +90 — off the robot's left — after three quarters
-  // of a turn the other way round.
-  [2.2, -110],
-  [3.4, -180],
-  [4.6, -240],
-  [6.4, -270],
+  // ...and from there it only ever INCREASES — counter-clockwise seen from
+  // above — so the camera sweeps one way from the first frame of the action
+  // to the last and never doubles back. It lands on +90, off the robot's
+  // left, which puts the goal (off its rear) on the right of frame.
+  [2.4, 0],
+  [3.8, 40],
+  [5.2, 70],
+  [6.4, 90],
 ];
 
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
