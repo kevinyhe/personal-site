@@ -388,7 +388,12 @@ function queueBackset(place: number): number {
         const gap = Math.hypot(here[0] - previous[0], here[1] - previous[1], here[2] - previous[2]);
         if (gap >= BALL_GAP || back >= total) break;
       }
-      queueBacksets.push(Math.min(back, total));
+      // Past the bottom of the path the queue keeps going, stepping a full
+      // gap at a time. Clamping it to the path length instead piled every
+      // remaining ball on the same spot: nine balls is more than the tower
+      // physically holds, so the tail of the queue has to sit back down the
+      // intake rather than inside it.
+      queueBacksets.push(back >= total ? queueBacksets[k - 1] + BALL_GAP : back);
     }
   }
   const whole = Math.floor(place);
@@ -533,6 +538,19 @@ function ballPlans(): BallPlan[] {
 /** Point on a ball's internal path at fraction `s` of its total length, model space. */
 function pathPoint(plan: BallPlan, s: number): Vec3 {
   const total = plan.arc[plan.arc.length - 1];
+  // Below zero the queue has run off the bottom of the path — more balls
+  // than the tower holds — so it carries on in a straight line back down
+  // the intake rather than every one of them landing on the first point.
+  if (s < 0) {
+    const a = plan.path[0];
+    const b = plan.path[1] ?? a;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const dz = b[2] - a[2];
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const back = -s * total;
+    return [a[0] - (dx / len) * back, a[1] - (dy / len) * back, a[2] - (dz / len) * back];
+  }
   const target = clamp(s, 0, 1) * total;
   let i = 1;
   while (i < plan.arc.length - 1 && plan.arc[i] < target) i += 1;
