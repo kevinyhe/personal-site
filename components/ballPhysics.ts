@@ -115,14 +115,25 @@ const ROLL_WOBBLE = [0.06, -0.1, 0.13, -0.05, 0.09, -0.12, 0.04, 0.11, -0.08];
 const EJECT_LEAD_IN = 0.3;
 /** Seconds between one ball leaving the indexer and the next. */
 const EJECT_SPACING = 0.34;
+/**
+ * Per-ball jitter on that spacing, in seconds. Fixed literals rather than
+ * random numbers, because the run has to replay identically when the page
+ * is scrolled back, but enough variation that the balls do not go in on a
+ * metronome.
+ */
+const EJECT_JITTER = [0, 0.07, -0.05, 0.11, -0.03, 0.09, -0.07, 0.04, 0.12];
 /** Seconds a thrown ball spends in the air. */
 const FLIGHT_DURATION = 0.35;
-/** Gravity used for the throw arc, stage units per second squared. */
-const FLIGHT_GRAVITY = 9;
+/** How far the ball dips crossing into the goal, stage units. */
+const FLIGHT_SAG = 0.03;
 /** Seconds of settling hop after a ball lands in the trough. */
 const BOUNCE_DURATION = 0.2;
-/** Height of that settling hop, stage units. */
-const BOUNCE_HEIGHT = 0.05;
+/**
+ * How far the ball settles DOWN into the channel after it arrives. It is a
+ * small drop, not a bounce: a ball rolling into a trough does not spring
+ * back up, and an upward hop here looked like it had been kicked.
+ */
+const BOUNCE_HEIGHT = 0.02;
 /** Model z the balls come to rest at inside the trough, stage units (behind the robot's rear at -0.8). */
 const TROUGH_Z = -1.2;
 /**
@@ -455,7 +466,7 @@ function buildPlans(): BallPlan[] {
     const path: Vec3[] = CARRY_PATH.map(([z, y]) => [0, y, z] as Vec3);
     return {
       arc: arcLengths(path),
-      ejectTime: firstEject + index * EJECT_SPACING,
+      ejectTime: firstEject + index * EJECT_SPACING + EJECT_JITTER[index % EJECT_JITTER.length],
       path,
       pickupTime: -CARRY_DURATION,
       restPosition: modelToWorld(path[path.length - 1], robotPoseAt(0)),
@@ -485,7 +496,7 @@ function buildPlans(): BallPlan[] {
     const order = PRELOAD_COUNT + index;
     return {
       arc,
-      ejectTime: firstEject + order * EJECT_SPACING,
+      ejectTime: firstEject + order * EJECT_SPACING + EJECT_JITTER[order % EJECT_JITTER.length],
       path,
       pickupTime: entry.time,
       restPosition,
@@ -548,17 +559,19 @@ function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean
   const flight = time - plan.ejectTime;
 
   if (flight < FLIGHT_DURATION) {
-    // A plain projectile from the indexer to the resting spot in the
-    // trough. Both ends are at the same height, so the vertical launch
-    // speed is whatever brings it back down in FLIGHT_DURATION and the arc
-    // peaks halfway across.
+    // Fed across into the trough, not lobbed into it. The indexer lets go
+    // level with the goal's channel, so the ball crosses on a nearly flat
+    // line with a slight sag in the middle — never rising above where it
+    // started. The old version launched it on a projectile arc that peaked
+    // 0.14 above the release, which read as the ball hopping upward the
+    // instant it was scored.
     const u = flight / FLIGHT_DURATION;
-    const rise = (FLIGHT_GRAVITY * FLIGHT_DURATION) / 2;
+    const sag = FLIGHT_SAG * Math.sin(Math.PI * u);
     return {
       carried: false,
       position: [
         release[0] + (landing[0] - release[0]) * u,
-        release[1] + rise * flight - 0.5 * FLIGHT_GRAVITY * flight * flight,
+        release[1] + (landing[1] - release[1]) * u - sag,
         release[2] + (landing[2] - release[2]) * u,
       ],
     };
@@ -567,10 +580,10 @@ function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean
   const rest = troughAt(plan, index, time);
   const settle = time - plan.ejectTime - FLIGHT_DURATION;
   if (settle < BOUNCE_DURATION) {
-    // One small damped hop so the ball does not stick to the trough floor
-    // the instant it touches it.
+    // A small damped settle DOWNWARD, so the ball beds into the channel
+    // instead of sticking to it dead the instant it touches.
     const u = settle / BOUNCE_DURATION;
-    const hop = BOUNCE_HEIGHT * Math.sin(Math.PI * u) * (1 - u);
+    const hop = -BOUNCE_HEIGHT * Math.sin(Math.PI * u) * (1 - u);
     return { carried: false, position: [rest[0], rest[1] + hop, rest[2]] };
   }
 
