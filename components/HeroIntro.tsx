@@ -197,18 +197,25 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
       .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
       .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
-      // Fast and front-loaded: the tube's first light lands with the
-      // lamp's flare, not a beat after it. The shader spends its own
-      // ramp (dot -> line -> opening raster) inside this, so a slow
-      // symmetric ease here made the picture read as switching on late.
-      .to(sceneFx, { screenPower: 1, duration: 0.12, ease: "power1.out" }, 0.3)
+      // The tube's attack is the LAMP's attack: same start, same
+      // back-loaded ease, so both surge in the same frames — the line
+      // flashes as the filament bangs on and the raster opens through
+      // the flare. Any mismatch in ramp shape read as one turning on
+      // before the other, whichever way it leaned.
+      .to(sceneFx, { screenPower: 1, duration: 0.1, ease: "power3.in" }, 0.3)
       .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4);
     if (search.includes("tvFlare")) {
       powerOn.pause(0.37);
     }
     // Holds the raster mid-opening (the band about two thirds grown).
     if (search.includes("tvOpen")) {
-      powerOn.pause(0.345);
+      powerOn.pause(0.383);
+    }
+    // Holds the power-on at an arbitrary timeline second, for measuring
+    // that the lamp and the tube light up in the same frames.
+    const tvAt = /tvAt=([0-9.]+)/.exec(search);
+    if (tvAt) {
+      powerOn.pause(Number(tvAt[1]));
     }
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
