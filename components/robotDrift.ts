@@ -100,7 +100,7 @@ export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
  * centre of the arc traced between t = 2.0 and 5.3, which is where the goal
  * belongs; recompute it if the U is retuned.
  */
-const FINISH_HEADING = 0;
+const FINISH_HEADING = Math.PI;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
