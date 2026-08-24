@@ -36,7 +36,8 @@ const PANEL_GROW_DURATION = 0.877;
 
 // The statue's stretch stays this many viewport-heights long no matter how
 // much scroll room follows it — the hero spacer growing must not slow the
-// break back down.
+// break back down. Whatever scroll remains past that stretch belongs to
+// the robot outro.
 const STATUE_STRETCH_VIEWPORTS = 1.64;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
@@ -479,6 +480,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     void loadThinkerChunks().catch(() => undefined);
   }, []);
 
+  // Capture aid: ?robotView jumps the page to its bottom once the reveal is
+  // done, which opens the panel, completes the statue and drives the robot
+  // phase to 1 through the real scroll path — arming and starting the run
+  // without hand-scrolling. Twice, because ThinkerStage schedules its own
+  // ScrollTrigger refresh ~250 ms after it mounts.
+  useEffect(() => {
+    if (!revealComplete) return undefined;
+    if (!window.location.search.includes("robotView")) return undefined;
+    const jump = () => window.scrollTo(0, document.documentElement.scrollHeight);
+    const first = window.setTimeout(jump, 600);
+    const second = window.setTimeout(jump, 1600);
+    return () => {
+      window.clearTimeout(first);
+      window.clearTimeout(second);
+    };
+  }, [revealComplete]);
+
   // The stretch of scroll the statue's stage owns: from the panel starting
   // to grow to the bottom of the page, breaking from its very first pixel.
   // Read from the layout each time ScrollTrigger refreshes.
@@ -497,12 +515,18 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growStart;
     // Pinned, not page-relative: the break keeps its pace however much
-    // scroll room the growing panel needs after it.
-    const end = Math.min(growStart + viewportHeight * STATUE_STRETCH_VIEWPORTS, pageEnd);
+    // scroll room the growing panel needs after it. The robot outro owns
+    // everything from there to the bottom.
+    const statueEnd = Math.min(
+      growStart + viewportHeight * STATUE_STRETCH_VIEWPORTS,
+      pageEnd,
+    );
+    const end = pageEnd;
     return {
       breakAt: growStart,
       end,
       start: growStart,
+      statueEnd,
     };
   }, []);
 
@@ -561,10 +585,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       {/* Scroll room. Every visible layer is fixed, so these spacers are the
           only thing giving the document height: the first drives the hero's
           exit and the panel's growth, the second gives the statue's breakup
-          (which begins with the growth) the rest of its run — kept short on
-          purpose, so the break outpaces the box. */}
+          (which begins with the growth) its short, deliberately outpaced
+          run, and the robot outro the tail beyond it. */}
       <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[62vh]" ref={statueSpaceRef} />
+      <div aria-hidden="true" className="h-[15vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
