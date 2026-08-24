@@ -121,14 +121,20 @@ const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
 // The robot outro's first stretch: the statue's materials (and its lights
-// and floor shadow) fade out over robot phase 0..0.3 while the robot
-// scene's lights fade in; scrolling back restores everything.
-const STATUE_FADE_END = 0.3;
+// and floor shadow) fade out over robot phase 0..0.2; scrolling back
+// restores everything. The robot does not begin to appear until this is
+// finished (RobotOutro's ROBOT_FADE_START matches), so the two scenes never
+// share the screen — the hand-off reads as a cut, not a dissolve.
+const STATUE_FADE_END = 0.2;
 // The statue camera blends into the rally chase over about a second of
 // wall time once the robot phase opens.
 const CAMERA_BLEND_SECONDS = 1;
 const STATUE_FOV = 34;
-const CAMERA_ROLL_MAX = (4 * Math.PI) / 180;
+// The chase camera does not roll. Banking the camera tips the horizon, and
+// on screen that is indistinguishable from the robot itself leaning — which
+// it must not do. Kept as a constant so the lateral-acceleration term below
+// stays readable; raise it to bring the bank back.
+const CAMERA_ROLL_MAX = 0;
 
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
