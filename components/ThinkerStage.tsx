@@ -6,9 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type MutableRefObject,
-  type PointerEvent,
 } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -33,7 +31,7 @@ gsap.registerPlugin(ScrollTrigger);
 
 /**
  * The Thinker, ported from kevinsworks: the figure is cut into solid chunks
- * that fly away as the page scrolls, drag-rotatable, on a black stage with
+ * that fly away as the page scrolls, on a black stage with
  * one hard key. Here it lives inside the home page's panel (the box that
  * grows over the tree scene). The page tells it which stretch of scroll it
  * owns — from the moment the panel starts growing to the end of the page —
@@ -84,18 +82,6 @@ export type ThinkerTiming = () => {
    */
   statueEnd: number;
 };
-type DragRotation = {
-  active: boolean;
-  lastX: number;
-  lastY: number;
-  pitch: number;
-  pointerId: number | null;
-  targetPitch: number;
-  targetYaw: number;
-  yaw: number;
-};
-type DragRotationRef = MutableRefObject<DragRotation>;
-
 // Where the breakup ends, as a fraction of the stage's stretch (where it
 // starts comes from the page, see ThinkerTiming).
 const BREAK_END = 0.96;
@@ -300,7 +286,10 @@ function useThinkerScrollProgress({
         end: () => timing().statueEnd,
         invalidateOnRefresh: true,
         onRefresh: readBreakStart,
-        scrub: 1.6,
+        // Light: the page itself now glides (components/SmoothScroll), so a
+        // long scrub here would smooth an already-smoothed scroll and the
+        // statue would visibly trail the page.
+        scrub: 0.35,
         start: () => timing().start,
       },
       value: 1,
@@ -311,7 +300,10 @@ function useThinkerScrollProgress({
       scrollTrigger: {
         end: () => timing().end,
         invalidateOnRefresh: true,
-        scrub: 1.6,
+        // Light: the page itself now glides (components/SmoothScroll), so a
+        // long scrub here would smooth an already-smoothed scroll and the
+        // statue would visibly trail the page.
+        scrub: 0.35,
         start: () => timing().statueEnd,
       },
     });
@@ -721,12 +713,10 @@ function StageLights({
 
 function ChunkedThinker({
   build,
-  dragRotationRef,
   progressRef,
   reducedMotion,
 }: {
   build: ThinkerChunkBuild;
-  dragRotationRef: DragRotationRef;
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
@@ -822,18 +812,11 @@ function ChunkedThinker({
     if (stageRef.current) {
       const compact = size.width < 720;
       const stageScale = compact ? 0.92 : 1;
-      const drag = dragRotationRef.current;
-      drag.yaw = THREE.MathUtils.lerp(drag.yaw, drag.targetYaw, drag.active ? 0.32 : 0.12);
-      drag.pitch = THREE.MathUtils.lerp(
-        drag.pitch,
-        drag.targetPitch,
-        drag.active ? 0.32 : 0.12,
-      );
       stageRef.current.scale.setScalar(stageScale);
       const spread = travelAt(breakup);
       stageRef.current.rotation.set(
-        -0.08 + spread * 0.04 + drag.pitch,
-        THINKER_BASE_YAW - spread * 0.05 + drag.yaw,
+        -0.08 + spread * 0.04,
+        THINKER_BASE_YAW - spread * 0.05,
         0.012,
       );
     }
@@ -940,12 +923,10 @@ function StageFloor({
 
 function ThinkerCanvas({
   active,
-  dragRotationRef,
   progressRef,
   reducedMotion,
 }: {
   active: boolean;
-  dragRotationRef: DragRotationRef;
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
@@ -1028,7 +1009,6 @@ function ThinkerCanvas({
       {build ? (
         <ChunkedThinker
           build={build}
-          dragRotationRef={dragRotationRef}
           progressRef={progressRef}
           reducedMotion={reducedMotion}
         />
@@ -1047,17 +1027,6 @@ export default function ThinkerStage({
   timing: ThinkerTiming;
 }) {
   const progressRef = useRef({ breakStart: 0.05, robot: 0, value: 0 });
-  const dragRotationRef = useRef<DragRotation>({
-    active: false,
-    lastX: 0,
-    lastY: 0,
-    pitch: 0,
-    pointerId: null,
-    targetPitch: 0,
-    targetYaw: 0,
-    yaw: 0,
-  });
-  const [isDragging, setIsDragging] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
 
   // Exposed so headless captures can read the scrubbed state.
@@ -1069,88 +1038,15 @@ export default function ThinkerStage({
     };
   }, []);
 
-  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRotationRef.current;
-    if (drag.pointerId !== event.pointerId) return;
-    drag.active = false;
-    drag.pointerId = null;
-    setIsDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const drag = dragRotationRef.current;
-    drag.active = true;
-    drag.lastX = event.clientX;
-    drag.lastY = event.clientY;
-    drag.pointerId = event.pointerId;
-    setIsDragging(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRotationRef.current;
-    if (!drag.active || drag.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - drag.lastX;
-    const deltaY = event.clientY - drag.lastY;
-    drag.lastX = event.clientX;
-    drag.lastY = event.clientY;
-    drag.targetYaw = THREE.MathUtils.clamp(
-      drag.targetYaw + deltaX * 0.006,
-      -Math.PI * 0.72,
-      Math.PI * 0.72,
-    );
-    drag.targetPitch = THREE.MathUtils.clamp(
-      drag.targetPitch + deltaY * 0.004,
-      -0.42,
-      0.32,
-    );
-  };
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const drag = dragRotationRef.current;
-    const yawStep = Math.PI * 0.08;
-    const pitchStep = 0.08;
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      drag.targetYaw = THREE.MathUtils.clamp(
-        drag.targetYaw + (event.key === "ArrowLeft" ? -yawStep : yawStep),
-        -Math.PI * 0.72,
-        Math.PI * 0.72,
-      );
-      event.preventDefault();
-    }
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      drag.targetPitch = THREE.MathUtils.clamp(
-        drag.targetPitch + (event.key === "ArrowUp" ? -pitchStep : pitchStep),
-        -0.42,
-        0.32,
-      );
-      event.preventDefault();
-    }
-  };
-
   useThinkerScrollProgress({ progressRef, reducedMotion, timing });
 
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ background: STAGE_BLACK }}>
-      <div
-        aria-label="Drag or use arrow keys to rotate The Thinker"
-        className={`absolute inset-0 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-        onKeyDown={handleKeyDown}
-        onPointerCancel={stopDragging}
-        onPointerDown={handlePointerDown}
-        onPointerLeave={(event) => {
-          if (dragRotationRef.current.active) stopDragging(event);
-        }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopDragging}
-        role="application"
-        style={{ pointerEvents: active ? "auto" : "none", touchAction: "none" }}
-        tabIndex={active ? 0 : -1}
-      >
+      {/* The stage is not interactive: it takes no pointer or keyboard
+          input, so it never swallows a scroll or a drag meant for the page. */}
+      <div className="pointer-events-none absolute inset-0">
         <ThinkerCanvas
           active={active}
-          dragRotationRef={dragRotationRef}
           progressRef={progressRef}
           reducedMotion={reducedMotion}
         />
