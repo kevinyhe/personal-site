@@ -333,14 +333,24 @@ function buildPlaceholderRobot(): RobotModel {
 function assembleRig(model: RobotModel | null): RobotRig {
   const resolved = model ?? buildPlaceholderRobot();
   const pose = new THREE.Group();
-  pose.add(resolved.chassis);
-  resolved.chassis.scale.setScalar(ROBOT_LENGTH / Math.max(resolved.length, 1e-3));
+  // The loaded model hands its wheels back as SIBLINGS of the chassis — each
+  // spins about its own axle, so it cannot be buried inside it — while the
+  // placeholder parents them to the chassis. Re-home whatever is loose under
+  // one group and scale that, or the real robot's four wheels are left
+  // orphaned and never reach the scene at all.
+  const body = new THREE.Group();
+  body.add(resolved.chassis);
+  for (const { object } of resolved.wheels) {
+    if (object.parent !== resolved.chassis) body.add(object);
+  }
+  body.scale.setScalar(ROBOT_LENGTH / Math.max(resolved.length, 1e-3));
+  pose.add(body);
   pose.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) node.castShadow = true;
   });
   return {
     pose,
-    roll: resolved.chassis.getObjectByName("robot-body") ?? resolved.chassis,
+    roll: resolved.chassis.getObjectByName("robot-body") ?? body,
     wheels: resolved.wheels.map(({ object, side }) => ({ object, side })),
   };
 }
