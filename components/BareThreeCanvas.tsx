@@ -25,7 +25,10 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 // viewport instead of ending mid-air, and the crown keeps ~15% headroom
 // below the top edge.
 const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 8.35, 15.6);
-const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 12.9, 17.2);
+// Start of the intro orbit: 35 degrees round the hero target from the
+// final pose (was 23; the user wanted half again as much spin), same
+// radius and height.
+const INTRO_CAMERA_POSITION = new THREE.Vector3(13.7, 12.9, 15.27);
 const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
 // How far (world units) the tree group sinks at sceneFx.treeDrop = 1, at
@@ -5704,13 +5707,14 @@ void main() {
               // outer edge never shows a visible rim.
               // Biased to the right, the key light's side, so the wall
               // reads lit from one direction like the machine.
-              vec2 pp = (q - vec2(0.2, -0.12)) * vec2(1.05, 1.9);
+              vec2 pp = (q - vec2(0.34, -0.12)) * vec2(1.15, 1.9);
               float pool = exp(-dot(pp, pp) * 3.4);
               // Violet practical, off to the upper left and weak.
               vec2 vp = (q - vec2(-0.55 * aspect, 0.48)) * vec2(1.2, 1.6);
-              float violet = exp(-dot(vp, vp) * 2.2) * 0.22;
+              float violet = exp(-dot(vp, vp) * 2.2) * 0.08;
               // Floor pool: a low band hugging the bottom edge.
-              float floorGlow = exp(-uv.y * uv.y * 26.0) * 0.32;
+              float floorGlow = exp(-uv.y * uv.y * 26.0) * 0.18 *
+                smoothstep(-0.2, 0.6, q.x);
               vec3 c = BASE;
               c = mix(c, VIOLET, violet);
               c = mix(c, DEEP, clamp(pool * 1.2 + floorGlow, 0.0, 1.0));
@@ -5774,7 +5778,7 @@ void main() {
         envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
         crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
-        crtScene.environmentIntensity = 0.28;
+        crtScene.environmentIntensity = 0.1;
         envTex.dispose();
         pmrem.dispose();
       }
@@ -6315,10 +6319,10 @@ void main() {
       // key so the dark side stays dark: no ambient to speak of, a fill
       // you only notice when it is gone, and a thin rim to cut the dark
       // edge out of the black.
-      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.04);
+      const crtHemi = new THREE.HemisphereLight(0x5c2f7a, 0x1a0810, 0.02);
       crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xffa9c4, 3.6);
-      crtKey.position.set(3.4, 2.8, 2.0);
+      const crtKey = new THREE.DirectionalLight(0xffa9c4, 4.6);
+      crtKey.position.set(3.6, 2.6, 1.8);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
       crtKey.shadow.camera.near = 0.1;
@@ -6329,10 +6333,12 @@ void main() {
       crtKey.shadow.camera.bottom = -4;
       crtKey.shadow.bias = -0.0005;
       crtScene.add(crtKey);
-      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.1);
+      const crtFill = new THREE.DirectionalLight(0x5c2f7a, 0.03);
       crtFill.position.set(-2.8, 0.6, 1.6);
       crtScene.add(crtFill);
-      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.9);
+      // The rim was the thing still lifting the dark side: at 0.9 it drew
+      // the whole left cheek, not an edge. Barely there now.
+      const crtRim = new THREE.DirectionalLight(0x9a6cff, 0.25);
       crtRim.position.set(-2.0, 3.0, -2.6);
       crtScene.add(crtRim);
       // Practical on the KEY side, low: the same lamp the key stands in
@@ -6590,7 +6596,7 @@ void main() {
           lines,
         );
         crtScreenUniforms.uCellLod.value = Math.log2(crtExt.extH / lines);
-        crtGlow.intensity = 5 * fx;
+        crtGlow.intensity = 3 * fx;
       };
 
       // Model load: async, never blocks scene-ready. The page loads AS the
@@ -6655,7 +6661,7 @@ void main() {
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
               roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
-              envMapIntensity: 0.7,
+              envMapIntensity: 0.45,
             });
             model.traverse((obj) => {
               if (!(obj as THREE.Mesh).isMesh) return;

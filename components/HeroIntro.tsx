@@ -35,9 +35,13 @@ const HERO_POSE = {
   loaderAlpha: 0,
 };
 
-// How long the filled bar holds on the glass before the reveal starts; a
-// cut the instant it fills would read as a flash.
-const TV_DWELL_MS = 500;
+// Minimum time the television is on screen before the reveal may start,
+// whatever the build and the bar are doing.
+const TV_DWELL_MS = 1500;
+// Until the television is up, the bar stops short of full, so the tree's
+// loading visibly completes ON the glass even when the build is quicker
+// than the model fetch.
+const LOADER_CAP_BEFORE_TV = 0.85;
 
 export default function HeroIntro({ children }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -122,7 +126,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       const target = sceneProgressRef.current;
       creep = Math.min(creep + 0.0035, 0.85 / SCENE_BUILD_MILESTONE_TOTAL);
       if (target >= 1) creep = 0;
-      const goal = Math.min(1, target + (target < 1 ? creep : 0));
+      const cap = tvShownAtRef.current > 0 ? 1 : LOADER_CAP_BEFORE_TV;
+      const goal = Math.min(cap, target + (target < 1 ? creep : 0));
       displayed += (goal - displayed) * 0.12;
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
