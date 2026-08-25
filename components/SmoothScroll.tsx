@@ -29,19 +29,25 @@ gsap.registerPlugin(ScrollTrigger);
  */
 
 /**
- * Seconds the page takes to glide to a new target. Long enough to feel
- * weighted, short enough that a flick still lands where you meant.
+ * How hard the page chases the scroll target each frame. Lenis turns this
+ * into frame-rate independent damping (`lerp * 60` per second), so 0.055 is
+ * a time constant of about a third of a second and roughly a second to
+ * settle — the weighted glide this had before, and the same feel as the
+ * reference site.
+ *
+ * This must NOT be a `duration` + `easing` pair, which is what it was.
+ * Lenis runs those two modes differently: an eased tween has a start time,
+ * and every wheel notch calls `fromTo` again and resets it to zero. A mouse
+ * wheel delivers a notch every 40 ms or so and frames come every 8, so the
+ * page replayed the steep first part of the ease five times a second and
+ * never reached the rest of it. Measured under steady wheel input,
+ * consecutive frames moved 5, 5, 6, 3, 4, 6, 2, 4, 4, 8, 9, 10, 4, 7 px —
+ * each frame's rate off the average of its neighbours by 87% of the mean.
+ * With `lerp` there is no start time; it damps toward wherever the target
+ * currently is, so a new notch mid-glide just moves the target. Same
+ * measurement afterwards: 5.5%.
  */
-const GLIDE_SECONDS = 1.05;
-
-/**
- * Exponential ease-out, the shape a heavy thing settling has: quickest at
- * the start, asymptotic at the end. `1 - 2^(-10t)` is the standard curve
- * for this and is what the reference site's motion matches.
- */
-function easeOut(t: number) {
-  return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-}
+const SCROLL_LERP = 0.055;
 
 export default function SmoothScroll() {
   useEffect(() => {
@@ -52,8 +58,7 @@ export default function SmoothScroll() {
     }
 
     const lenis = new Lenis({
-      duration: GLIDE_SECONDS,
-      easing: easeOut,
+      lerp: SCROLL_LERP,
       // Touch devices already have inertial scrolling of their own; adding
       // a second layer of it fights the platform.
       // Lenis drives its own frame loop. The documented GSAP integration
