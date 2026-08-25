@@ -178,6 +178,35 @@ function worldBox(meshes) {
 // from the vertices rather than the bounding box because a gear's box depends
 // on how its teeth happen to be clocked, and two copies of the same gear at
 // different clockings must come out with the same radius.
+/**
+ * The centre of a hinged channel's END SECTION, in world inches: the mean of
+ * every vertex within `depth` of the part's far end along model Y.
+ *
+ * A bounding-box centre is no good here. These channels run on a diagonal —
+ * over their 0.58 units of length they climb 0.20 in height — so the box's
+ * mid-height is nowhere near the part at the end where the hinge is. Taking
+ * it gave a pivot 0.094 units BELOW the channel (0.055 clear of its nearest
+ * vertex, on a part only 0.037 thick), and rotating about a point off the
+ * body translates it as well as turning it: the flap lifted away from the
+ * frame it is bolted to, and the plate carried on it went with it. Averaging
+ * the end section puts the pivot in the middle of the material, where the
+ * shaft actually runs.
+ */
+function endSectionCenter(meshes, box, depth) {
+  const sum = new THREE.Vector3();
+  let count = 0;
+  for (const m of meshes) {
+    const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      if (v.y < box.max.y - depth) continue;
+      sum.add(v);
+      count += 1;
+    }
+  }
+  if (!count) throw new Error("end section is empty");
+  return sum.divideScalar(count);
+}
 function worldRadius(meshes, center) {
   let r2 = 0;
   for (const m of meshes) {
@@ -585,6 +614,10 @@ for (const type of PART_TYPES) {
     // three, so that is the +Y end of the channel, inset by half a hole
     // pitch so the pivot sits in the hole rather than off the tip.
     if (type.category === "indexer" && /Half-C/i.test(type.prefix)) {
+      // On the channel's own centreline at that end, not at the box's
+      // mid-height — see endSectionCenter. The window is one hole pitch, so
+      // the average is taken over the material around the last hole.
+      center.z = endSectionCenter(occ.meshes, box, 2 * INDEXER_HINGE_INSET).z;
       center.y = box.max.y - INDEXER_HINGE_INSET;
       // Everything on the indexer swings about ONE line, so the component
       // has to be given the channels' hinge rather than its own centroid.
