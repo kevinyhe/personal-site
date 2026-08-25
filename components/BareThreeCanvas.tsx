@@ -5890,9 +5890,16 @@ void main() {
       // 2048x2048 of depth every frame — a large share of the scroll jank.
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = true;
+      // A real (very dark, matte) floor rather than a shadow-only one: the
+      // faint fill has to be able to pick it up so the set stands on
+      // something, and the key's shadow falls across it.
       const crtGround = new THREE.Mesh(
         new THREE.PlaneGeometry(60, 60),
-        new THREE.ShadowMaterial({ opacity: 0.7 }),
+        new THREE.MeshStandardMaterial({
+          color: 0x0d0a10,
+          roughness: 0.96,
+          metalness: 0,
+        }),
       );
       crtGround.rotation.x = -Math.PI / 2;
       crtGround.position.y = -1.4; // refined to the model's base on load
@@ -6474,6 +6481,24 @@ void main() {
       crtKey.shadow.normalBias = 0.015;
       crtKey.shadow.radius = 3;
       crtScene.add(crtKey);
+      // Fill: a wide, fully soft, cool lavender source from the left and
+      // in front, about a twentieth of the key. It never competes — it is
+      // there so the dark half of the set and the floor read as surfaces
+      // in a room rather than holes, and so the key's shadow has
+      // something to fall on. No shadow of its own.
+      const crtFill = new THREE.SpotLight(0x7c78ff, 16, 22, 0.95, 1.0, 2);
+      crtFill.position.set(-5.5, 3.6, 4.8);
+      crtFill.target.position.set(0, -0.6, 0);
+      crtScene.add(crtFill.target);
+      crtScene.add(crtFill);
+      // Kicker: from behind-left, a magenta-violet a step off the key's
+      // pink, low, so the dark side's silhouette gets a thin edge against
+      // the black rather than a lit cheek.
+      const crtKicker = new THREE.SpotLight(0xd06cff, 55, 16, 0.5, 0.7, 2);
+      crtKicker.position.set(-3.6, 3.4, -3.4);
+      crtKicker.target.position.set(0.2, 0.3, 0);
+      crtScene.add(crtKicker.target);
+      crtScene.add(crtKicker);
       // Screen spill: the display lighting its own bezel. Ramps with the
       // scene (see updateCrtRig) so it is off while the flat hero shows.
       // Tight (distance 1.8): it should catch the bezel lip around the
