@@ -122,16 +122,65 @@ const EJECT_LEAD_IN = 0.3;
 /** Seconds between one ball leaving the indexer and the next. */
 const EJECT_SPACING = 0.34;
 /**
- * Per-ball jitter on that spacing, in seconds. Fixed literals rather than
- * random numbers, because the run has to replay identically when the page
- * is scrolled back, but enough variation that the balls do not go in on a
- * metronome.
+ * Per-gap multipliers on that spacing, so the balls do not go in on a
+ * metronome. Fixed literals rather than random numbers, because the run has
+ * to replay identically when the page is scrolled back.
+ *
+ * These scale the GAPS, and none is below 0.85. The previous version added
+ * a signed offset to each ball's own time instead, which is not the same
+ * thing: an offset of +0.12 followed by one of -0.07 puts those two balls
+ * 0.19 s apart from a nominal 0.34, and the second one then arrives while
+ * the first is still rolling in and lands on top of it. Scaling the gap
+ * cannot do that — the shortest gap this can produce is 0.29 s, which is
+ * longer than the roll-out.
  */
-const EJECT_JITTER = [0, 0.07, -0.05, 0.11, -0.03, 0.09, -0.07, 0.04, 0.12];
-/** Seconds a thrown ball spends in the air. */
-const FLIGHT_DURATION = 0.35;
+const EJECT_GAP_SCALE = [1.21, 0.88, 1.14, 0.92, 1.27, 0.86, 1.08, 0.95, 1.18];
+/**
+ * Seconds a thrown ball spends crossing into the goal. The gap is about
+ * 0.41 stage units, so this sets the speed it arrives at: 0.14 gives about
+ * 2.9 units a second, which is a ball being fed out rather than placed. At
+ * 0.35 it crossed at 1.16 and the roll-out below then started at three
+ * times that — the ball sped UP as it landed, which is the opposite of what
+ * it should do. Change one of these and the audit will tell you the other
+ * is now wrong.
+ */
+const FLIGHT_DURATION = 0.14;
 /** How far the ball dips crossing into the goal, stage units. */
 const FLIGHT_SAG = 0.03;
+/**
+ * How far into the goal a ball carries after it touches down, stage units,
+ * and how long that roll-out takes.
+ *
+ * A ball fed out of the indexer crosses the gap at about three stage units
+ * a second and then has to lose that. It used to arrive at its resting spot
+ * at the end of the flight and stop on the frame it got there, which is the
+ * one thing a ball with that much speed cannot do. Now the flight lands it
+ * short — just inside the mouth — and it rolls the rest of the way on a
+ * decelerating curve.
+ *
+ * The run cannot exceed the distance from the mouth to TROUGH_Z (0.75) or
+ * the ball touches down before it is inside the goal.
+ */
+const GLIDE_RUN = 0.42;
+/**
+ * Chosen so the roll-out STARTS at the speed the flight ended at: the
+ * ease-out leaves at twice its average, so this is 2 * GLIDE_RUN over the
+ * flight's speed — 2 * 0.42 / 2.9 = 0.29, near enough. Checked in the
+ * audit; a mismatch shows up as a visible kick or stall at touchdown.
+ *
+ * It also has to fit inside the shortest gap between two throws (0.29 s,
+ * see EJECT_GAP_SCALE) so a ball has finished rolling before the next one
+ * arrives behind it.
+ */
+const GLIDE_DURATION = 0.28;
+/**
+ * How long before the incoming ball's touchdown the one already in the goal
+ * starts moving, seconds. They meet before it lands — it is rolling in, not
+ * dropping vertically — so the contact is a little early. Without this the
+ * two overlap by about 0.03 of a 0.312 diameter for a tenth of a second as
+ * the arriving ball crosses.
+ */
+const PUSH_LEAD = 0.12;
 /** Seconds of settling hop after a ball lands in the trough. */
 const BOUNCE_DURATION = 0.2;
 /**
@@ -422,6 +471,17 @@ function arcLengths(path: Vec3[]): number[] {
  * eased over the gap between throws rather than snapping, so the balls
  * visibly shuffle forward instead of teleporting.
  */
+/**
+ * Fast at the start, stopping at the end — the shape a rolling thing that
+ * is losing speed makes. `smoothstep` is the wrong curve for this: it eases
+ * IN as well, so a ball that had just been hit would creep away from the
+ * contact before it got going.
+ */
+function easeOut(x: number) {
+  const u = clamp(x, 0, 1);
+  return 1 - (1 - u) * (1 - u);
+}
+
 function queueAdvance(time: number): number {
   const list = ballPlans();
   let advance = 0;
@@ -440,11 +500,13 @@ function pushedBy(index: number, time: number): number {
   const list = ballPlans();
   let pushed = 0;
   for (let i = index + 1; i < list.length; i += 1) {
-    // Timed off the THROW, not the landing, and completing within the
-    // flight: the ball already in the goal has finished shuffling deeper by
-    // the moment the next one arrives, instead of still sitting in the spot
-    // that ball is about to land on.
-    pushed += smoothstep((time - list[i].ejectTime) / FLIGHT_DURATION);
+    // Timed off the pusher's TOUCHDOWN, and on the same decelerating curve
+    // over the same GLIDE_DURATION, so the two move as one: the arriving
+    // ball rolls in from the mouth while the one already there is shoved
+    // ahead of it, both slowing together. Neither has to be anywhere the
+    // other is, because the arriving ball is still GLIDE_RUN short of this
+    // one when it lands.
+    pushed += easeOut((time - list[i].ejectTime - FLIGHT_DURATION + PUSH_LEAD) / GLIDE_DURATION);
   }
   return pushed;
 }
@@ -454,8 +516,8 @@ function pushedBy(index: number, time: number): number {
  * and is shoved further in by every ball thrown after it, so the goal fills
  * from the back: first in, deepest. A stack would have done the opposite.
  */
-function troughAt(plan: BallPlan, index: number, time: number): Vec3 {
-  const depth = TROUGH_Z - pushedBy(index, time) * TROUGH_SPACING;
+function troughAt(plan: BallPlan, index: number, time: number, shortBy = 0): Vec3 {
+  const depth = TROUGH_Z + shortBy - pushedBy(index, time) * TROUGH_SPACING;
   const lateral = TROUGH_JITTER[index % TROUGH_JITTER.length];
   return modelToWorld([lateral, TROUGH_Y, depth], finishPose());
 }
@@ -478,7 +540,7 @@ function buildPlans(): BallPlan[] {
     const path: Vec3[] = CARRY_PATH.map(([z, y]) => [0, y, z] as Vec3);
     return {
       arc: arcLengths(path),
-      ejectTime: firstEject + index * EJECT_SPACING + EJECT_JITTER[index % EJECT_JITTER.length],
+      ejectTime: ejectTimeFor(firstEject, index),
       path,
       pickupTime: -CARRY_DURATION,
       restPosition: modelToWorld(path[path.length - 1], robotPoseAt(0)),
@@ -508,7 +570,7 @@ function buildPlans(): BallPlan[] {
     const order = PRELOAD_COUNT + index;
     return {
       arc,
-      ejectTime: firstEject + order * EJECT_SPACING + EJECT_JITTER[order % EJECT_JITTER.length],
+      ejectTime: ejectTimeFor(firstEject, order),
       path,
       pickupTime: entry.time,
       restPosition,
@@ -518,9 +580,22 @@ function buildPlans(): BallPlan[] {
 
   const all = [...preloaded, ...built];
   timelineEnd = all.length
-    ? all[all.length - 1].ejectTime + FLIGHT_DURATION + BOUNCE_DURATION
+    ? all[all.length - 1].ejectTime + FLIGHT_DURATION + Math.max(GLIDE_DURATION, BOUNCE_DURATION)
     : driftEnd();
   return all;
+}
+
+/**
+ * When the `order`-th ball is let go, seconds. Gaps accumulate, so the
+ * spacing between any two consecutive balls is the scale times
+ * EJECT_SPACING and nothing shorter.
+ */
+function ejectTimeFor(firstEject: number, order: number): number {
+  let time = firstEject;
+  for (let i = 0; i < order; i += 1) {
+    time += EJECT_SPACING * EJECT_GAP_SCALE[i % EJECT_GAP_SCALE.length];
+  }
+  return time;
 }
 
 /** Resting spot for the `order`-th ball thrown, queued back along the goal. */
@@ -561,26 +636,42 @@ function pathPoint(plan: BallPlan, s: number): Vec3 {
   return [a[0] + (b[0] - a[0]) * blend, a[1] + (b[1] - a[1]) * blend, a[2] + (b[2] - a[2]) * blend];
 }
 
+/**
+ * Where a ball being carried sits on its internal path, model space. Two
+ * things decide it: how far it has climbed since the grab, and how far back
+ * in the queue it is. It takes whichever is further from the exit, so a
+ * ball that has finished climbing still waits its turn behind the ones in
+ * front instead of piling onto them at the mouth.
+ */
+function carriedPoint(plan: BallPlan, index: number, time: number): Vec3 {
+  const total = plan.arc[plan.arc.length - 1];
+  const climbed = smoothstep((time - plan.pickupTime) / CARRY_DURATION) * total;
+  const place = Math.max(0, index - queueAdvance(time));
+  const held = total - QUEUE_LEAD - queueBackset(place);
+  return pathPoint(plan, Math.min(climbed, held) / Math.max(total, 1e-9));
+}
+
 /** Where a ball is at time `t`, in world stage units, and whether the robot is holding it. */
 function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean; position: Vec3 } {
   if (time <= plan.pickupTime) return { carried: false, position: plan.restPosition };
 
   if (time < plan.ejectTime) {
-    // Inside the robot. Two things decide where along the path it sits: how
-    // far it has climbed since the grab, and how far back in the queue it
-    // is. It takes whichever is further from the exit, so a ball that has
-    // finished climbing still waits its turn behind the ones in front
-    // instead of piling onto them at the mouth.
-    const total = plan.arc[plan.arc.length - 1];
-    const climbed = smoothstep((time - plan.pickupTime) / CARRY_DURATION) * total;
-    const place = Math.max(0, index - queueAdvance(time));
-    const held = total - QUEUE_LEAD - queueBackset(place);
-    const model = pathPoint(plan, Math.min(climbed, held) / Math.max(total, 1e-9));
-    return { carried: true, position: modelToWorld(model, robotPoseAt(time)) };
+    return {
+      carried: true,
+      position: modelToWorld(carriedPoint(plan, index, time), robotPoseAt(time)),
+    };
   }
 
-  const release = modelToWorld(plan.path[plan.path.length - 1], finishPose());
-  const landing = troughAt(plan, index, time);
+  // Where the ball actually WAS on the frame it was let go, not the end of
+  // the carry path. The queue holds each ball QUEUE_LEAD short of the exit
+  // and further back again for every ball in front, so reading the release
+  // off the path's end teleported it up to 0.35 units forward on the eject
+  // frame — a 75 unit/s pop, and worse, it dropped the ball straight on top
+  // of the one already in the goal.
+  const release = modelToWorld(carriedPoint(plan, index, plan.ejectTime), finishPose());
+  // The flight ends GLIDE_RUN short of where the ball comes to rest — just
+  // inside the mouth — and the roll-out below covers the rest.
+  const landing = troughAt(plan, index, time, GLIDE_RUN);
   const flight = time - plan.ejectTime;
 
   if (flight < FLIGHT_DURATION) {
@@ -604,15 +695,23 @@ function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean
 
   const rest = troughAt(plan, index, time);
   const settle = time - plan.ejectTime - FLIGHT_DURATION;
+  // The roll-out: still travelling when it touches down, losing it along
+  // the trough. Both ends are read at the SAME time, so a push arriving
+  // mid-roll carries the ball with it instead of fighting it.
+  const rolled = easeOut(settle / GLIDE_DURATION);
+  const touchdown = troughAt(plan, index, time, GLIDE_RUN);
+  const position: Vec3 = [
+    touchdown[0] + (rest[0] - touchdown[0]) * rolled,
+    touchdown[1] + (rest[1] - touchdown[1]) * rolled,
+    touchdown[2] + (rest[2] - touchdown[2]) * rolled,
+  ];
   if (settle < BOUNCE_DURATION) {
     // A small damped settle DOWNWARD, so the ball beds into the channel
     // instead of sticking to it dead the instant it touches.
     const u = settle / BOUNCE_DURATION;
-    const hop = -BOUNCE_HEIGHT * Math.sin(Math.PI * u) * (1 - u);
-    return { carried: false, position: [rest[0], rest[1] + hop, rest[2]] };
+    position[1] -= BOUNCE_HEIGHT * Math.sin(Math.PI * u) * (1 - u);
   }
-
-  return { carried: false, position: rest };
+  return { carried: false, position };
 }
 
 function quatMultiply(a: Quat, b: Quat): Quat {
