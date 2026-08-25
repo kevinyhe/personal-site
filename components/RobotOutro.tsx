@@ -169,6 +169,14 @@ const ROBOT_FADE_START = 0;
 // stretches of scroll.
 const RUN_START = 0.15;
 /**
+ * How much of the robot's scroll goes to the settling shot — everything
+ * after the robot has parked, while the balls unload into the goal. Its
+ * share of the CLOCK is about a third; giving it that much of the scroll
+ * left the picture nearly still for a viewport of scrolling. See the
+ * playhead map below.
+ */
+const SETTLE_SCROLL_SHARE = 0.18;
+/**
  * Daylight between the robot's rear and the goal's mouth once it has come
  * to rest, stage units, on top of half a robot length. NEGATIVE: the robot
  * finishes inside the mouth, far enough in that the tip of the triangle
@@ -1102,10 +1110,26 @@ export default function RobotOutro({
     // The scroll IS the playhead: the run is scrubbed, not played. Position,
     // heading and wheel spin all come from where the scroll sits, so the
     // drift runs backwards when the page does and holds still when it does.
+    //
+    // The map is bent, not linear. The robot parks with about a third of the
+    // playhead left — the balls are still going in — and that third was
+    // taking a third of the scroll with a motionless robot and, before the
+    // camera keys were extended, a completely motionless camera as well.
+    // Measured, the camera moved 0.00 units per scroll step there against
+    // 0.63 over the rest of the run: a viewport of scrolling in which the
+    // picture did not change at all. Giving the settling shot
+    // SETTLE_SCROLL_SHARE of the room instead of its share of the clock
+    // brings its rate up to something comparable without touching the ball
+    // timing, the framing, or the drift.
     const previousTime = run.time;
+    const scrolled = THREE.MathUtils.clamp((phase - RUN_START) / (1 - RUN_START), 0, 1);
+    const driftEnd = frames[frames.length - 1].time;
+    const driftShare = 1 - SETTLE_SCROLL_SHARE;
     run.time =
-      duration *
-      THREE.MathUtils.clamp((phase - RUN_START) / (1 - RUN_START), 0, 1);
+      scrolled <= driftShare
+        ? (scrolled / driftShare) * driftEnd
+        : driftEnd +
+          ((scrolled - driftShare) / SETTLE_SCROLL_SHARE) * (duration - driftEnd);
     // How far the playhead moved this frame, for integrating wheel spin.
     const dTime = run.time - previousTime;
 

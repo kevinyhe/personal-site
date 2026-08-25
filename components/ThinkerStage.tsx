@@ -162,21 +162,27 @@ const CAMERA_AZIMUTH: Array<[number, number]> = [
   // to the last and never doubles back. The robot itself turns a full
   // circle over the same stretch and this angle is measured against its
   // nose, so the two rotations compound instead of cancelling.
-  [2.6, -10],
-  [4.0, 30],
-  [5.6, 65],
-  // Lands on +90, off the robot's left, which puts the goal (off its rear)
-  // on the right of frame. It holds there for the rest of the playhead —
-  // the run parks at about 7.5 s but the balls take until 11.3 s to finish
-  // going in, and `keyed` clamps past its last key.
+  [2.9, -6],
+  [4.6, 24],
+  [5.9, 50],
+  // +90 as the robot parks: off its left, which puts the goal (off its
+  // rear) on the right of frame.
   [7.4, 90],
+  // And it keeps going, gently, while the balls unload. These keys used to
+  // stop at 7.4 and `keyed` clamps past its last key, so the whole
+  // settling shot — a third of the playhead — was one frozen frame. A
+  // little more orbit, a little further back and higher, and the aim
+  // walking down the goal below give it something to do.
+  [11.63, 112],
 ];
 
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [0, 4.6],
   [3.6, 5.2],
-  [5.2, 6.4],
-  [7.4, 8.6],
+  [5.2, 6.0],
+  [6.4, 7.2],
+  [7.4, 8.8],
+  [11.63, 10.0],
 ];
 const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   // Down at the level of the drivetrain, looking up at the robot — the
@@ -186,13 +192,25 @@ const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   [3.6, 0.42],
   // Only at the very end does it climb, for the wide shot that has to hold
   // the goal and the scored balls as well.
+  [6.4, 1.4],
   [7.4, 3.0],
+  [11.63, 3.8],
 ];
 
+/**
+ * How far behind the robot the camera aims, model units. Past the park this
+ * walks on down the goal's length as the balls fill it, so the frame pans
+ * along the row rather than sitting still on the robot.
+ */
 const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
   [0, 0],
   [5.2, 0.4],
-  [7.4, 1.8],
+  [6.4, 1.1],
+  [7.4, 2.0],
+  // Not past the goal's far end: the aim is what the frame centres on, and
+  // walking it the goal's whole 5.7 length shoved the robot into the left
+  // edge with two thirds of the picture empty floor. Half way down it is.
+  [11.63, 3.4],
 ];
 
 /**
@@ -203,19 +221,67 @@ const CAMERA_AIM_HEIGHT: Array<[number, number]> = [
   [0, 0.62],
   [3.6, 0.7],
   [7.4, 0.9],
+  [11.63, 1.1],
 ];
 
-/** Smoothstep between [time, value] keys. */
+/**
+ * Value at `at` along a list of [time, value] keys, interpolated so the
+ * RATE is continuous across the whole list.
+ *
+ * This used to smoothstep each segment independently, which looks fine on
+ * one segment and ripples badly on a chain of them: smoothstep's slope is
+ * zero at both ends, so the value stops dead at every key and sprints
+ * through the middle of every gap. On the outro camera — six keys of
+ * azimuth, four of distance, four of height, all read every frame — that
+ * put a stall in the shot at each key time and a rush between them, which
+ * is a large part of why the section did not scroll evenly.
+ *
+ * Fritsch-Carlson monotone cubic instead: each key gets a tangent averaged
+ * from the segments either side, limited so the curve cannot overshoot
+ * between two keys. Continuous rate, no ripple, and still no wandering
+ * outside the values given — which matters, because these keys are angles
+ * and distances that must not run past their endpoints.
+ */
 function keyed(keys: Array<[number, number]>, at: number) {
   if (at <= keys[0][0]) return keys[0][1];
-  for (let i = 1; i < keys.length; i += 1) {
-    if (at > keys[i][0]) continue;
-    const [t0, v0] = keys[i - 1];
-    const [t1, v1] = keys[i];
-    const x = THREE.MathUtils.clamp((at - t0) / Math.max(t1 - t0, 1e-6), 0, 1);
-    return v0 + (v1 - v0) * x * x * (3 - 2 * x);
+  const last = keys.length - 1;
+  if (at >= keys[last][0]) return keys[last][1];
+  let i = 0;
+  while (i < last - 1 && at > keys[i + 1][0]) i += 1;
+  const [t0, v0] = keys[i];
+  const [t1, v1] = keys[i + 1];
+  const h = Math.max(t1 - t0, 1e-6);
+  const slope = (index: number) => {
+    const a = keys[index];
+    const b = keys[index + 1];
+    return (b[1] - a[1]) / Math.max(b[0] - a[0], 1e-6);
+  };
+  const d = slope(i);
+  // A key's tangent is the mean of the segments meeting there, so the rate
+  // carries across it; at the ends there is only one segment to follow.
+  const rawStart = i === 0 ? d : (slope(i - 1) + d) / 2;
+  const rawEnd = i + 1 === last ? d : (d + slope(i + 1)) / 2;
+  // Fritsch-Carlson: a flat segment pins both tangents flat, and otherwise
+  // neither may exceed three times the segment's own slope. Without this a
+  // steep neighbour can bend this segment past v0 or v1.
+  let m0 = rawStart;
+  let m1 = rawEnd;
+  if (d === 0) {
+    m0 = 0;
+    m1 = 0;
+  } else {
+    m0 = Math.max(-3 * Math.abs(d), Math.min(3 * Math.abs(d), m0 * Math.sign(d) < 0 ? 0 : m0));
+    m1 = Math.max(-3 * Math.abs(d), Math.min(3 * Math.abs(d), m1 * Math.sign(d) < 0 ? 0 : m1));
   }
-  return keys[keys.length - 1][1];
+  const x = THREE.MathUtils.clamp((at - t0) / h, 0, 1);
+  const x2 = x * x;
+  const x3 = x2 * x;
+  return (
+    (2 * x3 - 3 * x2 + 1) * v0 +
+    (x3 - 2 * x2 + x) * h * m0 +
+    (-2 * x3 + 3 * x2) * v1 +
+    (x3 - x2) * h * m1
+  );
 }
 
 function smoothPhase(start: number, end: number, value: number) {
@@ -298,10 +364,14 @@ function useThinkerScrollProgress({
         end: () => timing().statueEnd,
         invalidateOnRefresh: true,
         onRefresh: readBreakStart,
-        // Light: the page itself now glides (components/SmoothScroll), so a
-        // long scrub here would smooth an already-smoothed scroll and the
-        // statue would visibly trail the page.
-        scrub: 0.35,
+        // NONE. The page itself already glides (components/SmoothScroll):
+        // Lenis eases the scroll position over about a second, and a scrub
+        // on top of that is a second lag stacked on the first. At 0.35 the
+        // scene kept moving for a third of a second after the page had
+        // stopped, which is what "not smooth" feels like from the wheel —
+        // the picture sliding on after your hand has finished. `true` binds
+        // the scene rigidly to the eased scroll, so the easing happens once.
+        scrub: true,
         start: () => timing().start,
       },
       value: 1,
@@ -312,10 +382,14 @@ function useThinkerScrollProgress({
       scrollTrigger: {
         end: () => timing().end,
         invalidateOnRefresh: true,
-        // Light: the page itself now glides (components/SmoothScroll), so a
-        // long scrub here would smooth an already-smoothed scroll and the
-        // statue would visibly trail the page.
-        scrub: 0.35,
+        // NONE. The page itself already glides (components/SmoothScroll):
+        // Lenis eases the scroll position over about a second, and a scrub
+        // on top of that is a second lag stacked on the first. At 0.35 the
+        // scene kept moving for a third of a second after the page had
+        // stopped, which is what "not smooth" feels like from the wheel —
+        // the picture sliding on after your hand has finished. `true` binds
+        // the scene rigidly to the eased scroll, so the easing happens once.
+        scrub: true,
         start: () => timing().statueEnd,
       },
     });
