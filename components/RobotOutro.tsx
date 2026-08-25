@@ -1149,13 +1149,14 @@ export default function RobotOutro({
           scoringStartRef.current - INDEXER_OPEN_TIME,
           scoringStartRef.current,
         );
-        // Only the channels move. The component behind them is fixed to the
-        // frame, so it stays exactly where it is while they swing past it —
-        // parenting it to a channel or turning it on its own axis both made
-        // it move, and neither is what the mechanism does.
-        if (!spinner.object.name.includes("component")) {
-          spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening;
-        }
+        // Every indexer part turns by the same angle, including the
+        // component. That is only correct because the extractor puts all
+        // three nodes on the SAME hinge line (see INDEXER_HINGE_INSET in
+        // scripts/robot-from-fbx.mjs): one angle about one line moves them
+        // as a single rigid body, which is what being bolted together
+        // means. Holding the component still instead left it behind as
+        // the channels swung away from it.
+        spinner.object.rotation[spinner.axis] = INDEXER_OPEN * opening;
         continue;
       }
       let omega = 0;

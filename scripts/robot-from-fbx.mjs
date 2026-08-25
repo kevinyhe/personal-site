@@ -566,6 +566,9 @@ function signature(occ, center) {
 // to be stable and unique: type slug plus the occurrence's index in the type.
 const slugOf = (prefix) => prefix.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
+// The indexer's hinge line, captured off the first channel and reused for
+// the component. See the note where it is set.
+let indexerHinge = null;
 const spinMeshes = []; // { prims, tris }
 const spinNodes = []; // { axleDirection, axis, category, meshIndex, name, radius, side, centerWorld, halfWidth }
 const meshBySignature = new Map();
@@ -583,6 +586,23 @@ for (const type of PART_TYPES) {
     // pitch so the pivot sits in the hole rather than off the tip.
     if (type.category === "indexer" && /Half-C/i.test(type.prefix)) {
       center.y = box.max.y - INDEXER_HINGE_INSET;
+      // Everything on the indexer swings about ONE line, so the component
+      // has to be given the channels' hinge rather than its own centroid.
+      // The line runs along model X; only its y and z pin it down.
+      indexerHinge ??= { y: center.y, z: center.z };
+    } else if (type.category === "indexer") {
+      // The component is bolted to the channels: it is not a second hinged
+      // body, it is part of the first one. Putting its node on the same
+      // line means one rotation angle moves the whole assembly rigidly,
+      // and the component cannot drift away from the channels however far
+      // they swing. Giving it its own centroid as a pivot (which is what
+      // every other part gets) is what detached it — the channels turned
+      // about the hole and it turned about itself, in the same direction
+      // but not the same arc, so it left them behind. Leaving it still
+      // detached it just as badly.
+      if (!indexerHinge) throw new Error("indexer component came before any channel; PART_TYPES order matters");
+      center.y = indexerHinge.y;
+      center.z = indexerHinge.z;
     }
     // Every one of these that SPINS turns on an axle along model X, the same
     // as the drive wheels. The bounding box of a disc on that axle is thinnest along X and
