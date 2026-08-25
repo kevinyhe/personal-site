@@ -442,36 +442,36 @@
       "axis": "x",
       "axlePosition": [
         0.20589068221725118,
-        1.6264725511857736,
+        1.7081148592685624,
         0.04660895155870985
       ],
       "category": "indexer",
       "name": "part_indexer_1x1_thin_5x_half_c_alu_v1_0",
-      "radius": 0.55930695035801,
+      "radius": 0.5733839689954761,
       "side": "right"
     },
     {
       "axis": "x",
       "axlePosition": [
         -0.17766967095787942,
-        1.6271076887638103,
+        1.7082503843422918,
         0.04787921894952685
       ],
       "category": "indexer",
       "name": "part_indexer_1x1_thin_5x_half_c_alu_v1_1",
-      "radius": 0.5606293008206222,
+      "radius": 0.5743363086341059,
       "side": "left"
     },
     {
       "axis": "x",
       "axlePosition": [
         0.014110503344651422,
-        1.6264725511857736,
+        1.7081148592685624,
         0.04660895155870985
       ],
       "category": "indexer",
       "name": "part_indexer_component222_0",
-      "radius": 0.8029408766880969,
+      "radius": 0.8179060716565066,
       "side": "right"
     }
   ],
