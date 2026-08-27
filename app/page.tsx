@@ -75,7 +75,7 @@ export default function Home() {
 
         {/* Solid type; only the large right serif word carries the (subtle)
             difference effect, matching the reference site. */}
-        <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-6 text-[#f0f0f0] sm:p-16">
+        <div className="pointer-events-none fixed inset-0 z-20 flex flex-col p-3 text-[#f0f0f0] sm:p-8">
           {/* Top strip: signature left, the pages centred, the quick
               links right. A 3-column grid so the nav is centred on the
               page, not between its neighbours. */}
@@ -125,11 +125,12 @@ export default function Home() {
 
           <div className="flex-1" />
 
-          {/* Name lockup across the bottom, on the same padding as the strip above. Font-size solves "Kevin" ink
-              width (2.165em measured) == content width, and the negative
+          {/* Name lockup across the bottom, on the same padding as the strip
+              above (12px, 32px at sm). Font-size solves "Kevin" ink width
+              (2.165em measured) == content width, and the negative
               side margins trim measured glyph sidebearings so ink, not the
               em box, is flush with the padding edges. */}
-          <div className="flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]">
+          <div className="flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_24px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_64px)/2.165),72vh),54rem)]">
             {/* One shared baseline, both words the same size (0.58 of the
                 full-width base formula — the largest that keeps a gap
                 between the words on one line). */}
