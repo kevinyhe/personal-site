@@ -5581,8 +5581,10 @@ export default function WeepingCherryTreeCanvas({
       // the tube. Opacity from sceneFx (glassName / glassTagline).
       type GlassTextOptions = {
         text: string;
-        // CSS custom property holding the next/font family name.
-        fontVar: string;
+        // CSS custom property holding the next/font family name — or an
+        // explicit family list (for faces loaded by a <link>, not next/font).
+        fontVar?: string;
+        family?: string;
         fontStyle: string; // e.g. "italic 400"
         fontPx: number;
         canvasW: number;
@@ -5687,9 +5689,11 @@ void main() {
         // names live in CSS variables. Paint once immediately (the fallback
         // face if the real one is still loading) and again when it is in.
         const family =
-          getComputedStyle(document.documentElement)
-            .getPropertyValue(o.fontVar)
-            .trim() || (o.fontVar.includes("serif") ? "serif" : "sans-serif");
+          o.family ??
+          (getComputedStyle(document.documentElement)
+            .getPropertyValue(o.fontVar ?? "")
+            .trim() ||
+            (o.fontVar?.includes("serif") ? "serif" : "sans-serif"));
         paint(family);
         if (typeof document.fonts?.load === "function") {
           document.fonts
@@ -5732,17 +5736,18 @@ void main() {
         haloAlpha: 0.25,
         haloBlurEm: 0.04,
       });
-      // The tagline, in the site's sans, sitting just under the name.
+      // The Chinese name under it, in a CJK serif (Noto Serif SC, linked
+      // from the root layout with only these glyphs), tracked wide.
       const glassTagline = makeGlassText({
-        text: "Designer, developer, and curator of chaos.",
-        fontVar: "--font-inter",
-        fontStyle: "400",
-        fontPx: 64,
+        text: "何雨寒",
+        family: '"Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", serif',
+        fontStyle: "500",
+        fontPx: 110,
         canvasW: 1536,
-        pad: 60,
-        letterSpacing: "0.01em",
-        emFrac: 0.046,
-        centerV: 0.425,
+        pad: 80,
+        letterSpacing: "0.22em",
+        emFrac: 0.075,
+        centerV: 0.405,
         bloomAlpha: 0.03,
         haloAlpha: 0.15,
         haloBlurEm: 0.05,
