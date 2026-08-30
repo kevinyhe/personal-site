@@ -390,17 +390,19 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [revealComplete]);
 
-  // The next page, on scroll: one scrubbed timeline. The top strip fades,
-  // the name sinks out of the bottom of the frame, and the tree sinks out
-  // too while the camera orbits it counter-clockwise through 60% of the
-  // intro's sweep.
+  // The next page, on scroll: one scrubbed timeline over 300vh. The top
+  // strip fades, the name sinks out of the bottom of the frame, and the
+  // tree sinks out too while the camera orbits it counter-clockwise
+  // through 60% of the intro's sweep; once the name has gone, a
+  // viewport-sized panel grows from the centre until it fills the frame.
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
     if (!revealComplete || !root || !scrollSpace) return undefined;
     const strip = root.querySelector<HTMLElement>("[data-hero-strip]");
     const lockup = root.querySelector<HTMLElement>("[data-hero-lockup]");
-    if (!strip || !lockup) return undefined;
+    const panel = root.querySelector<HTMLElement>("[data-hero-panel]");
+    if (!strip || !lockup || !panel) return undefined;
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -421,10 +423,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           trigger: scrollSpace,
         },
       });
-      tl.to(strip, { autoAlpha: 0, duration: 0.3 }, 0)
-        .to(lockup, { y: exitOffset, duration: 0.6, ease: "power1.in" }, 0)
-        .to(sceneFx, { treeDrop: 1, duration: 0.85, ease: "power1.in" }, 0)
-        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 1 }, 0);
+      // Times are fractions of the whole 300vh scroll: the old 200vh
+      // choreography in the first two thirds, the panel after the name
+      // is out (0.4).
+      gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
+      tl.to(strip, { autoAlpha: 0, duration: 0.2 }, 0)
+        .to(lockup, { y: exitOffset, duration: 0.4, ease: "power1.in" }, 0)
+        .to(sceneFx, { treeDrop: 1, duration: 0.57, ease: "power1.in" }, 0)
+        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.67 }, 0)
+        .to(panel, { scale: 1, duration: 0.6, ease: "power2.inOut" }, 0.4);
     }, root);
     return () => {
       ctx.revert();
@@ -469,9 +476,19 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         {children}
       </div>
 
+      {/* The next page's panel: exactly the viewport, grown from the centre
+          by the scroll timeline once the name has left. Above the canvas,
+          below the type layer. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[15] bg-[#0a0a0a]"
+        data-hero-panel
+        style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
+      />
+
       {/* Scroll room for the next page; every visible layer is fixed, so
           this spacer is the only thing giving the document height. */}
-      <div aria-hidden="true" className="h-[200vh]" ref={scrollSpaceRef} />
+      <div aria-hidden="true" className="h-[300vh]" ref={scrollSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
