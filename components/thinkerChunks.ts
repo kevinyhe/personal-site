@@ -63,20 +63,30 @@ function fraction(x: number, y: number, z: number): [number, number, number] {
 }
 
 export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
-  armPieces: 12,
-  bodyPieces: 19,
+  armPieces: 5,
+  bodyPieces: 24,
+  // A guard inside the left knee, which the hand rests against: without
+  // it the hand's cells reach into the knee and take pieces of it along.
+  guardSeeds: [fraction(-1.08, -0.42, 0.22)],
+  // The hand itself: the first two seeds sit either side of the palm's
+  // diagonal fracture — the cut runs from mid-palm up to just below the
+  // thumb — and the third is the small remainder by the wrist.
+  handSeeds: [
+    fraction(-1.22, -0.38, 0.58),
+    fraction(-1.1, -0.2, 0.68),
+    fraction(-1.15, -0.08, 0.7),
+  ],
   // The statue's left arm, traced on the surface from the hand hanging
-  // over the knee, along the forearm on the thigh, round the elbow and up
-  // the upper arm to the shoulder (figure space, measured on the model).
+  // over the knee, up the forearm to about three quarters of the way to
+  // the elbow (figure space, measured on the model). Only this much of
+  // the arm breaks as the opening run; from the path's end the break
+  // grows outward through the rest of the figure.
   breakPath: [
     fraction(-1.157, -0.229, 0.628),
     fraction(-1.14, -0.119, 0.715),
     fraction(-1.026, 0.055, 0.648),
     fraction(-0.75, 0.148, 0.574),
-    fraction(-0.638, 0.299, 0.757),
-    fraction(-0.448, 0.415, 0.838),
-    fraction(-0.326, 0.603, 0.843),
-    fraction(-0.257, 0.849, 0.834),
+    fraction(-0.7, 0.25, 0.66),
   ],
   direction: flightDirectionInFigureSpace(),
   headFrom: 0.84,
@@ -87,14 +97,6 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   pathInset: [0.04, -0.02, -0.1],
   seed: 211,
   spread: 1.5,
-  // Once the arm has gone the body breaks along one sweep (after
-  // lukebaffait.fr): the front leaves the head and the tip of the right
-  // knee together, then moves down and back to the base's rear-left
-  // corner — the figure's 7 o'clock on screen — which goes last
-  // (figure space, measured on the model).
-  sweepHead: fraction(-0.74, 1.42, 0.47),
-  sweepKnee: fraction(-0.55, 0.0, 0.92),
-  sweepTail: fraction(-0.75, -1.54, -0.92),
 };
 
 let pending: Promise<ThinkerChunkBuild> | null = null;
