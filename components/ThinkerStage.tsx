@@ -90,8 +90,8 @@ const LOOK_AT_Y = 0.55;
 const LOOK_AT_Y_BROKEN = -0.05;
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
-const ORBIT_LEFT = -0.55;
-const ORBIT_LEFT_COMPACT = -0.4;
+const ORBIT_LEFT = -0.275;
+const ORBIT_LEFT_COMPACT = -0.2;
 
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
