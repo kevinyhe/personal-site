@@ -27,16 +27,9 @@ const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
 
 // The panel grows over this stretch of the hero's scroll timeline (the
 // name is out by 0.4). The Thinker inside it starts breaking the moment
-// the growing panel reaches this share of the screen's width.
+// the panel starts growing.
 const PANEL_GROW_AT = 0.4;
 const PANEL_GROW_DURATION = 0.6;
-const PANEL_SCALE_AT_BREAK = 0.4;
-
-// Where power2.inOut reaches the given value: the panel's scale tween uses
-// that ease, so this turns "panel at 40% width" into a scroll position.
-function invertPowerInOut(value: number) {
-  return value < 0.5 ? Math.sqrt(value / 2) : 1 - Math.sqrt((1 - value) / 2);
-}
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -479,9 +472,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   }, []);
 
   // The stretch of scroll the statue's stage owns: from the panel starting
-  // to grow to the bottom of the page, with the break where the panel's
-  // growth passes PANEL_SCALE_AT_BREAK of the screen. Read from the layout
-  // each time ScrollTrigger refreshes.
+  // to grow to the bottom of the page, breaking from its very first pixel.
+  // Read from the layout each time ScrollTrigger refreshes.
   const thinkerTiming = useCallback<ThinkerTiming>(() => {
     const scrollSpace = scrollSpaceRef.current;
     const statueSpace = statueSpaceRef.current;
@@ -498,7 +490,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
       : growEnd;
     return {
-      breakAt: growStart + (growEnd - growStart) * invertPowerInOut(PANEL_SCALE_AT_BREAK),
+      breakAt: growStart,
       end,
       start: growStart,
     };
@@ -559,9 +551,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       {/* Scroll room. Every visible layer is fixed, so these spacers are the
           only thing giving the document height: the first drives the hero's
           exit and the panel's growth, the second gives the statue's breakup
-          (which begins during the growth) the rest of its run. */}
+          (which begins with the growth) the rest of its run — kept short on
+          purpose, so the break outpaces the box. */}
       <div aria-hidden="true" className="h-[270vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[390vh]" ref={statueSpaceRef} />
+      <div aria-hidden="true" className="h-[62vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
