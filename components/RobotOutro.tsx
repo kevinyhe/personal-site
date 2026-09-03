@@ -11,10 +11,9 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
  * the right of frame, throws itself past sideways (a reverse entry), slides
  * one full circle and stops centre-left, nose to the camera's 10 o'clock.
  *
- * The scroll only opens and closes the scene (the robot phase, 0..1, from
- * ThinkerStage); the run itself plays on wall-clock time — crossing phase
- * 0.5 upward starts it once, dropping under 0.2 re-arms it, so scrolling
- * away and back replays the drift.
+ * The whole run is scrubbed by the scroll (the robot phase, 0..1, from
+ * ThinkerStage): the long straight, the flick and the half-turn are each
+ * just a stretch of the page, and scrolling back runs the drift backwards.
  *
  * Two sibling branches supply the real content and are imported lazily:
  * components/robotDrift.ts (the physical trajectory) and
@@ -88,12 +87,13 @@ export const ROBOT_GROUND_Y = -1.2;
 // STATUE_FADE_END); only then does the robot scene begin to appear, so the
 // two are never on screen together. Nothing of the robot is drawn before
 // ROBOT_FADE_START, and its lights come up between there and FADE_IN_END.
-const ROBOT_FADE_START = 0.2;
-const FADE_IN_END = 0.34;
-// Run control: crossing this upward starts the drift...
-const RUN_TRIGGER = 0.38;
-// ...and dropping under this re-arms it for a replay.
-const RUN_REARM = 0.2;
+const ROBOT_FADE_START = 0.08;
+const FADE_IN_END = 0.13;
+// Where in the robot phase the drift begins. Below this the robot is
+// still fading in; from here to the end of the page the scroll scrubs the
+// whole run, so the straight, the flick and the half-turn are all just
+// stretches of scroll.
+const RUN_START = 0.15;
 
 type RobotRig = {
   /** World position + heading. */
@@ -104,7 +104,8 @@ type RobotRig = {
   wheels: Array<{ object: THREE.Object3D; side: "left" | "right" }>;
 };
 
-type RunState = { armed: boolean; playing: boolean; time: number };
+/** Where the playhead sits, in seconds along the drift. Scroll sets it. */
+type RunState = { time: number };
 
 // ---------------------------------------------------------------------------
 // Sibling modules, loaded lazily.
@@ -445,7 +446,7 @@ export default function RobotOutro({
   const keyLightRef = useRef<THREE.SpotLight>(null);
   const rimLightRef = useRef<THREE.DirectionalLight>(null);
   const hemisphereRef = useRef<THREE.HemisphereLight>(null);
-  const runRef = useRef<RunState>({ armed: true, playing: false, time: 0 });
+  const runRef = useRef<RunState>({ time: 0 });
   const environmentRef = useRef<{
     active: boolean;
     previous: THREE.Texture | null;
@@ -513,14 +514,9 @@ export default function RobotOutro({
     };
   }, [scene]);
 
-  // Exposed so headless captures can replay the run on demand.
+  // Exposed so headless captures can read where the playhead sits.
   useEffect(() => {
     const debug = {
-      replay: () => {
-        runRef.current.armed = false;
-        runRef.current.playing = true;
-        runRef.current.time = 0;
-      },
       run: runRef.current,
     };
     (window as unknown as Record<string, unknown>).__robotOutro = debug;
@@ -537,7 +533,7 @@ export default function RobotOutro({
     [],
   );
 
-  useFrame((_, delta) => {
+  useFrame(() => {
     const phase = progressRef.current.robot;
     const group = groupRef.current;
     if (!group) return;
@@ -580,21 +576,17 @@ export default function RobotOutro({
 
     if (!frames || !rig) return;
     const run = runRef.current;
-    if (phase < RUN_REARM) {
-      run.armed = true;
-      if (run.playing) {
-        run.playing = false;
-        run.time = 0;
-      }
-    } else if (phase > RUN_TRIGGER && run.armed) {
-      run.armed = false;
-      run.playing = true;
-      run.time = 0;
-    }
-    const dt = Math.min(delta, 0.1);
-    if (run.playing) run.time += dt;
-
     const duration = frames[frames.length - 1].time;
+    // The scroll IS the playhead: the run is scrubbed, not played. Position,
+    // heading and wheel spin all come from where the scroll sits, so the
+    // drift runs backwards when the page does and holds still when it does.
+    const previousTime = run.time;
+    run.time =
+      duration *
+      THREE.MathUtils.clamp((phase - RUN_START) / (1 - RUN_START), 0, 1);
+    // How far the playhead moved this frame, for integrating wheel spin.
+    const dTime = run.time - previousTime;
+
     const sample = sampleDrift(frames, run.time);
     rig.pose.position.set(
       sample.position[0] * ROBOT_LENGTH,
@@ -609,14 +601,15 @@ export default function RobotOutro({
 
     // Wheels integrate their angular speed (left samples on left wheels),
     // so the spin is real rotation, not a pose.
-    if (run.playing) {
-      for (const wheel of rig.wheels) {
-        const omega =
-          wheel.side === "left"
-            ? sample.wheelAngularSpeed[0]
-            : sample.wheelAngularSpeed[1];
-        wheel.object.rotation.x += omega * dt;
-      }
+    for (const wheel of rig.wheels) {
+      const omega =
+        wheel.side === "left"
+          ? sample.wheelAngularSpeed[0]
+          : sample.wheelAngularSpeed[1];
+      // Integrated against the PLAYHEAD, not the clock, so the wheels turn
+      // exactly as far as the ground the scroll has moved them over — and
+      // unwind when the page scrolls back.
+      wheel.object.rotation.x += omega * dTime;
     }
 
     robotState.position.set(
@@ -632,7 +625,7 @@ export default function RobotOutro({
     robotState.speed = robotState.velocity.length();
     robotState.heading = sample.heading;
     robotState.aLat = sample.aLat * ROBOT_LENGTH;
-    robotState.resting = run.playing && run.time >= duration - 0.2;
+    robotState.resting = run.time >= duration - 0.2;
   });
 
   return (
