@@ -172,30 +172,34 @@ type DriverPhase = {
  * clear of that edge. Entry, flick, exit and park keep their old lengths;
  * the whole run is 5.3 s.
  */
+/** How long the reverse run home lasts — tuned so it arrives at the mouth. */
+const RETURN_DURATION = 0.6;
+
 const SCHEDULE: DriverPhase[] = [
-  // Reverse entry: the robot comes into frame from the right already
-  // travelling backwards — nose pointing back the way it came (+x), momentum
-  // carrying it left. Both sides driven in reverse to hold that.
+  // Reverse entry. The robot starts BEHIND the goal, off to one side, and
+  // comes out backwards — nose on -x, momentum carrying it +x across the
+  // frame. Both sides in reverse to hold that.
   { duration: 0.7, left: -4.4, right: -4.4 },
-  // Whip: one side flipped against the other swings the nose round through
-  // half a turn toward the direction of travel, while momentum keeps the
-  // body going left. This is where the entry becomes a drift.
-  { duration: 0.6, left: 4.5, right: -4.5, yawGain: 1.4, yawTarget: -4.0 },
-  // Forward drift, left: the nose is trimmed onto the direction of travel
-  // (-x) and held there while the tail stays hung out, so the robot is
-  // driving forwards and sliding left across the frame at the same time.
-  { duration: 1.0, headingGain: 2.4, headingTarget: -Math.PI / 2, left: 4.5, right: 3.2, yawGain: 2.0 },
-  // The 180: both sides slammed against each other for a hard, short
-  // counter-rotation. Its own beat, not a drift — it should read as a snap.
-  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 6.5 },
-  // Line it up: trim the nose onto the finish heading while the slide dies.
-  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0.4, right: 0.4, yawGain: 2.6 },
-  // Park: sticks to zero, trims settle the tail square into the goal mouth.
-  { duration: 1.4, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
+  // Whip: one side thrown against the other swings the nose round toward
+  // the direction of travel while the body keeps sliding. The entry becomes
+  // a drift here.
+  { duration: 0.6, left: -4.5, right: 4.5, yawGain: 1.4, yawTarget: 4.0 },
+  // The drift curve: carving on across the frame with the tail out. The
+  // balls are collected along this arc.
+  { duration: 1.8, left: 4.5, right: 2.0, yawGain: 2.2, yawTarget: 2.8 },
+  // The flip: a hard, short counter-rotation that puts the nose back on +x
+  // — which points the robot's TAIL at the goal, ready to reverse into it.
+  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.5 },
+  // Run home in reverse: nose stays on the finish heading while the robot
+  // drives backwards the length of the frame toward the goal mouth.
+  { duration: RETURN_DURATION, headingGain: 3.0, headingTarget: FINISH_HEADING, left: -4.4, right: -4.4, yawGain: 2.4 },
+  // Seat the aligner: ease off and let the last of the momentum push the
+  // triangle at the back into the mouth until it stops against it.
+  { duration: 1.1, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -0.6, right: -0.6, yawGain: 2.6 },
 ];
 
-const START_HEADING = Math.PI / 2;
-const START_POSITION: [number, number] = [6.5, -2.8];
+const START_HEADING = -Math.PI / 2;
+const START_POSITION: [number, number] = [-8.6, -4.6];
 const START_SPEED = -4.0;
 
 function clamp(value: number, min: number, max: number) {
@@ -370,7 +374,12 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
  * exit or the park, where a ball vanishing under a nearly stationary robot
  * would read as a glitch.
  */
-const PICKUP_TIMES = [0.3, 0.7, 1.15, 1.7, 2.35];
+// The balls are collected on the DRIFT CURVE, not on the way in. The robot
+// enters backwards, so its intake is pointing the wrong way until the whip
+// brings the nose round at about t = 2.1; from there to the flip it is
+// driving forwards and the mouth leads. Each of these must also leave the
+// ball time to climb the tower (CARRY_DURATION) before the first throw.
+const PICKUP_TIMES = [2.25, 2.6, 2.95, 3.3, 3.65];
 
 // One simulation at module load, shared by the two exports below. Neither
 // depends on the options: wheelRadius only scales the reported wheel speeds,
