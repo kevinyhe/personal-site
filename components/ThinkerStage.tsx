@@ -173,27 +173,32 @@ const cameraProbe: Record<string, unknown> = {};
  * of [time, value] read with `keyed`, which eases between them.
  */
 const CAMERA_AZIMUTH: Array<[number, number]> = [
+  // Held while the robot makes its reverse entry, so the shot opens on the
+  // move rather than swinging during it...
   [0, -45],
-  [1.3, 112],
-  [2.9, 315],
-  [4.4, 400],
-  [6.3, 450],
+  [1.0, -45],
+  // ...and from there it only ever increases, so the camera pans one way —
+  // leftwards — from the first frame of the action to the last.
+  [2.2, 60],
+  [3.4, 200],
+  [4.6, 340],
+  [6.4, 450],
 ];
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [0, 4.6],
-  [2.9, 5.2],
-  [4.4, 6.4],
-  [6.3, 8.6],
+  [3.4, 5.2],
+  [4.6, 6.4],
+  [6.4, 8.6],
 ];
 const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   [0, 1.15],
-  [2.9, 1.35],
-  [6.3, 3.0],
+  [3.4, 1.35],
+  [6.4, 3.0],
 ];
 const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
   [0, 0],
-  [4.4, 0.4],
-  [6.3, 1.8],
+  [4.6, 0.4],
+  [6.4, 1.8],
 ];
 
 /** Smoothstep between [time, value] keys. */
@@ -507,8 +512,8 @@ function CameraRig({
     //   increases, so the camera pans one way (leftwards) the whole run
     //   instead of doubling back.
     //
-    //   -45  it opens on the robot's FRONT RIGHT while the robot is
-    //        travelling backwards
+    //   -45  it opens on the robot's FRONT RIGHT and HOLDS there through
+    //        the reverse entry, so the move is not panned across
     //   +112 through the drift, about midway between its left and its
     //        back left, watching the tail hang out
     //   +315 by the end of the drift, back round to the front right
