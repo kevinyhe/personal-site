@@ -67,7 +67,7 @@ const HERO_POSE = {
 };
 
 // Minimum time the television is on screen before the reveal may start:
-// the lamp coming on (0.3 s), the tube powering up (0.95 s), the name
+// the lamp and tube coming on together (0.3 s), the name
 // warming in by ~1.4 s, plus 3.4 s with the name up. The tree builds
 // behind it; on a slow machine it simply holds the name a little longer —
 // the tree is never shown loading.
@@ -184,8 +184,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     // filament bulb: it flares to several times its steady level in a few frames,
     // sags back below it, then settles with a small wobble — the overshoot
     // is what reads as incandescent rather than a fade. The tube powers up
-    // once the lamp has settled, the name warms onto the phosphor once the
-    // picture is steady.
+    // WITH the lamp — one switch throws both — and the name warms onto the
+    // phosphor once the picture is steady.
     // Headless captures set ?tvDark to hold the room before the lamp, or
     // ?tvFlare to hold it at the lamp's flare.
     const search = window.location.search;
@@ -196,7 +196,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
       .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
       .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
-      .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.95)
+      .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.3)
       .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4);
     if (search.includes("tvFlare")) {
       powerOn.pause(0.37);
