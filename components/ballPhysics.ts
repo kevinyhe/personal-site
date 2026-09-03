@@ -81,22 +81,36 @@ const MOUTH_Z = ROBOT_LENGTH / 2;
 const TROUGH_Y = 1.527;
 
 /**
- * Where the balls the robot STARTS with sit, model space [z, y]. The robot
- * drives on with its indexer already loaded, so these are the last stretch
- * of CARRY_PATH: slot 0 is hard against the exit and the queue backs up the
- * indexer behind it. They are thrown first, in this order.
+ * How many balls the robot drives on already holding. They occupy the front
+ * of the queue and are therefore thrown first — the indexer is a queue, not
+ * a stack, so the first ball in is the first out.
  */
-const PRELOAD_SLOTS: Array<[number, number]> = [
-  [-0.36, 1.57],
-  [-0.12, 1.57],
-  [0.18, 1.56],
-  [0.5, 1.4],
-];
+const PRELOAD_COUNT = 4;
 
 /** Number of balls on the floor. */
 const BALL_COUNT = 5;
-/** Seconds a ball spends between the intake grab and sitting in the indexer. */
+/** Seconds a ball spends between the intake grab and reaching the queue. */
 const CARRY_DURATION = 0.85;
+/**
+ * Straight-line gap to keep between balls queued nose-to-tail inside the
+ * robot, stage units. A ball is 0.312 across; the small extra stops them
+ * touching. Spacing them by distance ALONG the path does not work, because
+ * the path bends hard around the sprockets and the chord across a bend is
+ * much shorter than the arc — balls queued by arc length still overlapped
+ * on the curves.
+ */
+const BALL_GAP = 0.36;
+/**
+ * How much of a true roll the ball shows, 0..1. A ball being dragged up a
+ * tower by flex wheels is gripped, not free-rolling on the floor, so
+ * spinning it at the full distance/radius rate looked frantic. Each ball
+ * also gets its own small factor either side of this so they do not all
+ * turn in lockstep.
+ */
+const ROLL_FACTOR = 0.22;
+/** Per-ball roll multipliers and axis wobble. Fixed, so the run replays. */
+const ROLL_VARIATION = [1.0, 0.86, 1.13, 0.93, 1.07, 0.8, 1.18, 0.9, 1.04];
+const ROLL_WOBBLE = [0.06, -0.1, 0.13, -0.05, 0.09, -0.12, 0.04, 0.11, -0.08];
 /** Seconds of quiet after the robot parks before the first ball is thrown. */
 const EJECT_LEAD_IN = 0.3;
 /** Seconds between one ball leaving the indexer and the next. */
@@ -323,6 +337,106 @@ type BallPlan = {
 let plans: BallPlan[] | null = null;
 let timelineEnd = 0;
 
+/**
+ * How far back along CARRY_PATH each queue place sits, measured from the
+ * exit. Walked backwards from the end, taking whatever arc length is needed
+ * for the STRAIGHT-LINE gap to reach BALL_GAP, so the spacing survives the
+ * bends. All balls share the top of the path, so one table serves them all.
+ */
+let queueBacksets: number[] | null = null;
+function queueBackset(place: number): number {
+  if (!queueBacksets) {
+    const path: Vec3[] = CARRY_PATH.map(([z, y]) => [0, y, z] as Vec3);
+    const arc = arcLengths(path);
+    const total = arc[arc.length - 1];
+    const pointAt = (back: number): Vec3 => {
+      const target = clamp(total - back, 0, total);
+      let i = 1;
+      while (i < arc.length - 1 && arc[i] < target) i += 1;
+      const span = arc[i] - arc[i - 1];
+      const t = span > 1e-9 ? (target - arc[i - 1]) / span : 0;
+      const a = path[i - 1];
+      const b = path[i];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    };
+    queueBacksets = [0];
+    for (let k = 1; k < 16; k += 1) {
+      let back = queueBacksets[k - 1];
+      const previous = pointAt(back);
+      // Creep back along the path until the ball clears the one in front.
+      for (let step = 0; step < 400; step += 1) {
+        back += 0.01;
+        const here = pointAt(back);
+        const gap = Math.hypot(here[0] - previous[0], here[1] - previous[1], here[2] - previous[2]);
+        if (gap >= BALL_GAP || back >= total) break;
+      }
+      queueBacksets.push(Math.min(back, total));
+    }
+  }
+  const whole = Math.floor(place);
+  const blend = place - whole;
+  const a = queueBacksets[Math.min(whole, queueBacksets.length - 1)];
+  const b = queueBacksets[Math.min(whole + 1, queueBacksets.length - 1)];
+  return a + (b - a) * blend;
+}
+
+/** Cumulative arc length along a model-space polyline. */
+function arcLengths(path: Vec3[]): number[] {
+  const arc = [0];
+  for (let i = 1; i < path.length; i += 1) {
+    arc.push(arc[i - 1] + Math.hypot(
+      path[i][0] - path[i - 1][0],
+      path[i][1] - path[i - 1][1],
+      path[i][2] - path[i - 1][2],
+    ));
+  }
+  return arc;
+}
+
+/**
+ * How far the queue has advanced by `time`, in ball positions. Each throw
+ * moves everything still aboard one place closer to the exit; the shift is
+ * eased over the gap between throws rather than snapping, so the balls
+ * visibly shuffle forward instead of teleporting.
+ */
+function queueAdvance(time: number): number {
+  const list = ballPlans();
+  let advance = 0;
+  for (const plan of list) {
+    advance += smoothstep((time - plan.ejectTime) / EJECT_SPACING);
+  }
+  return advance;
+}
+
+/**
+ * How many balls thrown AFTER this one have landed by `time`. Each one
+ * arriving pushes this ball further down the trough, which is what makes
+ * the goal fill nose-to-tail: the first ball in ends up deepest.
+ */
+function pushedBy(index: number, time: number): number {
+  const list = ballPlans();
+  let pushed = 0;
+  for (let i = index + 1; i < list.length; i += 1) {
+    // Timed off the THROW, not the landing, and completing within the
+    // flight: the ball already in the goal has finished shuffling deeper by
+    // the moment the next one arrives, instead of still sitting in the spot
+    // that ball is about to land on.
+    pushed += smoothstep((time - list[i].ejectTime) / FLIGHT_DURATION);
+  }
+  return pushed;
+}
+
+/**
+ * Where a scored ball is sitting at `time`. It lands just inside the mouth
+ * and is shoved further in by every ball thrown after it, so the goal fills
+ * from the back: first in, deepest. A stack would have done the opposite.
+ */
+function troughAt(plan: BallPlan, index: number, time: number): Vec3 {
+  const depth = TROUGH_Z - pushedBy(index, time) * TROUGH_SPACING;
+  const lateral = TROUGH_JITTER[index % TROUGH_JITTER.length];
+  return modelToWorld([lateral, TROUGH_Y, depth], finishPose());
+}
+
 function buildPlans(): BallPlan[] {
   const schedule = pickupSchedule();
   const parked = finishPose();
@@ -332,20 +446,20 @@ function buildPlans(): BallPlan[] {
   const lastArrival = schedule.length ? schedule[schedule.length - 1].time + CARRY_DURATION : 0;
   const firstEject = Math.max(driftEnd(), lastArrival) + EJECT_LEAD_IN;
 
-  // The balls already aboard. Giving them a pickup time a full carry before
-  // zero means the climb has finished before the run starts, so they are
-  // simply held at their slot until they are thrown — no floor phase, and
-  // `carried` is true from the first frame.
-  const preloaded: BallPlan[] = PRELOAD_SLOTS.map(([z, y], index) => {
-    const slot: Vec3 = [0, y, z];
-    const troughPosition = troughSpot(index, parked);
+  // The balls already aboard. Giving them a pickup a full carry before zero
+  // means their climb is finished before the run starts, so they are simply
+  // holding station in the queue from the first frame. They share the same
+  // path as everything else — where they sit is decided by their place in
+  // the queue, not by a fixed slot.
+  const preloaded: BallPlan[] = Array.from({ length: PRELOAD_COUNT }, (ignored, index) => {
+    const path: Vec3[] = CARRY_PATH.map(([z, y]) => [0, y, z] as Vec3);
     return {
-      arc: [0, 0],
+      arc: arcLengths(path),
       ejectTime: firstEject + index * EJECT_SPACING,
-      path: [slot, slot],
+      path,
       pickupTime: -CARRY_DURATION,
-      restPosition: modelToWorld(slot, robotPoseAt(0)),
-      troughPosition,
+      restPosition: modelToWorld(path[path.length - 1], robotPoseAt(0)),
+      troughPosition: [0, 0, 0] as Vec3,
     };
   });
 
@@ -368,7 +482,7 @@ function buildPlans(): BallPlan[] {
       const dz = path[i][2] - path[i - 1][2];
       arc.push(arc[i - 1] + Math.hypot(dx, dy, dz));
     }
-    const order = PRELOAD_SLOTS.length + index;
+    const order = PRELOAD_COUNT + index;
     return {
       arc,
       ejectTime: firstEject + order * EJECT_SPACING,
@@ -412,19 +526,25 @@ function pathPoint(plan: BallPlan, s: number): Vec3 {
 }
 
 /** Where a ball is at time `t`, in world stage units, and whether the robot is holding it. */
-function ballAt(plan: BallPlan, time: number): { carried: boolean; position: Vec3 } {
+function ballAt(plan: BallPlan, time: number, index: number): { carried: boolean; position: Vec3 } {
   if (time <= plan.pickupTime) return { carried: false, position: plan.restPosition };
 
   if (time < plan.ejectTime) {
-    // Inside the robot: climb the path over CARRY_DURATION, then sit at the
-    // indexer. Smoothstep on the arc parameter means the ball leaves the
-    // floor and arrives at the indexer without a velocity step.
-    const s = smoothstep((time - plan.pickupTime) / CARRY_DURATION);
-    const model = pathPoint(plan, s);
+    // Inside the robot. Two things decide where along the path it sits: how
+    // far it has climbed since the grab, and how far back in the queue it
+    // is. It takes whichever is further from the exit, so a ball that has
+    // finished climbing still waits its turn behind the ones in front
+    // instead of piling onto them at the mouth.
+    const total = plan.arc[plan.arc.length - 1];
+    const climbed = smoothstep((time - plan.pickupTime) / CARRY_DURATION) * total;
+    const place = Math.max(0, index - queueAdvance(time));
+    const held = total - queueBackset(place);
+    const model = pathPoint(plan, Math.min(climbed, held) / Math.max(total, 1e-9));
     return { carried: true, position: modelToWorld(model, robotPoseAt(time)) };
   }
 
   const release = modelToWorld(plan.path[plan.path.length - 1], finishPose());
+  const landing = troughAt(plan, index, time);
   const flight = time - plan.ejectTime;
 
   if (flight < FLIGHT_DURATION) {
@@ -437,26 +557,24 @@ function ballAt(plan: BallPlan, time: number): { carried: boolean; position: Vec
     return {
       carried: false,
       position: [
-        release[0] + (plan.troughPosition[0] - release[0]) * u,
+        release[0] + (landing[0] - release[0]) * u,
         release[1] + rise * flight - 0.5 * FLIGHT_GRAVITY * flight * flight,
-        release[2] + (plan.troughPosition[2] - release[2]) * u,
+        release[2] + (landing[2] - release[2]) * u,
       ],
     };
   }
 
+  const rest = troughAt(plan, index, time);
   const settle = time - plan.ejectTime - FLIGHT_DURATION;
   if (settle < BOUNCE_DURATION) {
     // One small damped hop so the ball does not stick to the trough floor
     // the instant it touches it.
     const u = settle / BOUNCE_DURATION;
     const hop = BOUNCE_HEIGHT * Math.sin(Math.PI * u) * (1 - u);
-    return {
-      carried: false,
-      position: [plan.troughPosition[0], plan.troughPosition[1] + hop, plan.troughPosition[2]],
-    };
+    return { carried: false, position: [rest[0], rest[1] + hop, rest[2]] };
   }
 
-  return { carried: false, position: plan.troughPosition };
+  return { carried: false, position: rest };
 }
 
 function quatMultiply(a: Quat, b: Quat): Quat {
@@ -527,11 +645,11 @@ function ballSpin(): Quat[][] {
   if (spinTable) return spinTable;
   const list = ballPlans();
   const steps = Math.max(1, Math.ceil(timelineEnd * SPIN_SAMPLE_RATE));
-  spinTable = list.map((plan) => {
+  spinTable = list.map((plan, ballIndex) => {
     const track: Quat[] = [[0, 0, 0, 1]];
-    let previous = ballAt(plan, 0).position;
+    let previous = ballAt(plan, 0, ballIndex).position;
     for (let i = 1; i <= steps; i += 1) {
-      const current = ballAt(plan, i / SPIN_SAMPLE_RATE).position;
+      const current = ballAt(plan, i / SPIN_SAMPLE_RATE, ballIndex).position;
       const dx = current[0] - previous[0];
       const dy = current[1] - previous[1];
       const dz = current[2] - previous[2];
@@ -541,10 +659,10 @@ function ballSpin(): Quat[][] {
       const axisZ = dx;
       const axisLength = Math.hypot(axisX, axisZ);
       if (distance > 1e-9 && axisLength > 1e-9) {
-        const angle = distance / BALL_RADIUS;
+        const angle = (distance / BALL_RADIUS) * ROLL_FACTOR * ROLL_VARIATION[ballIndex % ROLL_VARIATION.length];
         const half = angle / 2;
         const s = Math.sin(half) / axisLength;
-        const step: Quat = [axisX * s, 0, axisZ * s, Math.cos(half)];
+        const step: Quat = [axisX * s, ROLL_WOBBLE[ballIndex % ROLL_WOBBLE.length] * Math.sin(half), axisZ * s, Math.cos(half)];
         track.push(quatMultiply(step, track[i - 1]));
       } else {
         track.push(track[i - 1]);
@@ -593,7 +711,7 @@ export function ballStatesAt(time: number): BallState[] {
   const clamped = clamp(time, 0, timelineEnd);
   const exact = clamped * SPIN_SAMPLE_RATE;
   return list.map((plan, index) => {
-    const { carried, position } = ballAt(plan, clamped);
+    const { carried, position } = ballAt(plan, clamped, index);
     const track = spin[index];
     const lower = Math.min(track.length - 2, Math.max(0, Math.floor(exact)));
     const blend = clamp(exact - lower, 0, 1);
