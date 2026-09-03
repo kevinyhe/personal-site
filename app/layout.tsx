@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import localFont from "next/font/local";
 import SiteBackground from "@/components/SiteBackground";
+import SmoothScroll from "@/components/SmoothScroll";
 import "./globals.css";
 
 const inter = Inter({
@@ -53,6 +54,7 @@ export default function RootLayout({
       lang="en"
     >
       <body>
+        <SmoothScroll />
         <SiteBackground />
         {children}
 
