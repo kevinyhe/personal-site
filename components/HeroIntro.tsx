@@ -96,6 +96,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const [tvShown, setTvShown] = useState(false);
   const [revealStarted, setRevealStarted] = useState(false);
   const [revealComplete, setRevealComplete] = useState(false);
+  // The statue's chunks are cut and ready (or gave up trying).
+  const [thinkerReady, setThinkerReady] = useState(false);
 
   const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
   const crtProgressRef = useRef(0);
@@ -249,7 +251,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // had its minimum time on screen. Nothing about the tree's loading is
   // shown; the name simply holds until it is ready.
   useEffect(() => {
-    if (!tvShown || !sceneReady || revealStarted) return undefined;
+    if (!tvShown || !sceneReady || !thinkerReady || revealStarted) return undefined;
     let timeout = 0;
     const tryStart = () => {
       const remaining =
@@ -264,7 +266,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
     tryStart();
     return () => window.clearTimeout(timeout);
-  }, [revealStarted, sceneReady, tvShown]);
+  }, [revealStarted, sceneReady, thinkerReady, tvShown]);
 
   useEffect(() => {
     if (!revealStarted || revealComplete) return undefined;
@@ -503,9 +505,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   }, [revealComplete]);
 
   // The Thinker's chunks are cut in a worker from the moment the page
-  // mounts, so the statue is ready by the time the scroll reaches it.
+  // mounts. The television shot then HOLDS until they are ready (see the
+  // reveal gate below): the cut takes a couple of seconds, and the panel
+  // starts growing only 40vh into the scroll, so on a slower machine the
+  // scroll reached the panel before the statue existed and grew over an
+  // empty box. Nothing is ever shown loading — the name simply holds.
   useEffect(() => {
-    void loadThinkerChunks().catch(() => undefined);
+    let live = true;
+    const ready = () => {
+      if (live) setThinkerReady(true);
+    };
+    void loadThinkerChunks().then(ready, ready);
+    // Never strand the page on a fracture that fails or crawls.
+    const timeout = window.setTimeout(ready, 15000);
+    return () => {
+      live = false;
+      window.clearTimeout(timeout);
+    };
   }, []);
 
   // Capture aid: ?robotView jumps the page to its bottom once the reveal is
@@ -617,7 +633,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           (which begins with the growth) its short, deliberately outpaced
           run, and the robot outro the tail beyond it. */}
       <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-      <div aria-hidden="true" className="h-[110vh]" ref={statueSpaceRef} />
+      {/* 50vh of the statue holding the full screen, then 20vh for the robot. */}
+      <div aria-hidden="true" className="h-[70vh]" ref={statueSpaceRef} />
 
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
