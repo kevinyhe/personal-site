@@ -153,12 +153,13 @@ const RUN_START = 0.15;
  * Daylight between the robot's rear and the goal's mouth once it has come
  * to rest, stage units, on top of half a robot length. NEGATIVE: the robot
  * finishes inside the mouth, far enough in that the tip of the triangle
- * aligner on its back is up against the deepest point it can reach. The "two robot lengths in
+ * aligner on its back is just inside it. Only just: at -0.5 the robot sat
+ * far enough forward that the aligner went through the goal's base. The "two robot lengths in
  * front of the alignment position" is where the DRIFT ends — the closing
  * reverse entry covers that gap. Parking the robot short of the goal
  * instead left the scored balls strung across the gap in mid-air.
  */
-const GOAL_GAP = -0.5;
+const GOAL_GAP = -0.12;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -171,6 +172,22 @@ const GOAL_DROP = 0.07;
 // units/s. Faster than the robot drives, which is what makes a ball snap in
 // rather than get nudged along the floor.
 const INTAKE_SURFACE_SPEED = 3.2;
+/**
+ * Model height above which an intake part belongs to the upper two stages
+ * (the 30T/16T pair at y ~1.20 and the indexer flex wheels at y ~1.30).
+ * Those turn against the lower rollers — see the spin loop.
+ */
+const UPPER_STAGE_Y = 1.15;
+/**
+ * How far the indexer lifts out of the ball's way while the robot is
+ * scoring, model units, and how long it takes. It is what holds the balls
+ * back in the tower, so it has to get out of the way or they clip straight
+ * through it on the way out.
+ */
+const INDEXER_LIFT = 0.22;
+const INDEXER_LIFT_TIME = 0.35;
+/** Model height above which an intake part counts as the indexer itself. */
+const INDEXER_Y_MIN = 1.25;
 
 type RobotRig = {
   /** World position + heading. */
@@ -213,6 +230,8 @@ type PropsModule = {
 };
 type BallPhysicsModule = {
   ballCount: () => number;
+  /** When the first ball is thrown; the indexer lifts just before it. */
+  scoringStart?: () => number;
   ballStatesAt: (time: number) => BallState[];
   /** Last moment anything is still moving, including the scoring. */
   ballTimelineEnd?: () => number;
@@ -680,6 +699,13 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
+  // Remember where the indexer sits so it can be lifted clear at scoring
+  // time and put back if the scroll runs backwards.
+  for (const { category, object } of spinners) {
+    if (category === "intake" && object.position.y > INDEXER_Y_MIN) {
+      object.userData.baseY = object.position.y;
+    }
+  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -845,6 +871,8 @@ export default function RobotOutro({
   const ballStatesRef = useRef<((time: number) => BallState[]) | null>(null);
   /** Last moment a ball is still moving; the playhead has to reach it. */
   const ballTimelineRef = useRef(0);
+  /** When the first ball is thrown. */
+  const scoringStartRef = useRef(Infinity);
   // Read by headless captures to check the goal landed and the parts turn.
   const probeRef = useRef({
     balls: 0,
@@ -885,6 +913,7 @@ export default function RobotOutro({
       if (!live) return;
       ballStatesRef.current = physics.ballStatesAt;
       ballTimelineRef.current = physics.ballTimelineEnd?.() ?? 0;
+      scoringStartRef.current = physics.scoringStart?.() ?? Infinity;
       const group = new THREE.Group();
       group.add(goal.object);
       // One mesh per ball; the clones share the source's geometry and
@@ -1094,8 +1123,29 @@ export default function RobotOutro({
         // Radius is in model units; the surface speed is in stage units.
         omega =
           INTAKE_SURFACE_SPEED / Math.max(spinner.radius * rig.scale, 1e-4);
+        // The two upper stages — the indexer flex wheels and the sprockets
+        // feeding them — sit on the far side of the chain run from the
+        // lower rollers, so a ball carried between them is driven by their
+        // opposite faces. Turning them all the same way made the tower look
+        // like it was fighting itself; inverting these keeps the whole path
+        // continuous in one direction.
+        if (spinner.object.position.y > UPPER_STAGE_Y) omega = -omega;
       }
       spinner.object.rotation[spinner.axis] += omega * dTime;
+      // The indexer is what holds the balls back in the tower, so it has to
+      // get out of the way before they are fed out or they pass straight
+      // through it. It lifts just ahead of the first throw and stays up for
+      // the rest of the run. Driven off the playhead, so it lowers again if
+      // the page is scrolled back.
+      const base = spinner.object.userData.baseY as number | undefined;
+      if (base !== undefined) {
+        const opening = THREE.MathUtils.smoothstep(
+          run.time,
+          scoringStartRef.current - INDEXER_LIFT_TIME,
+          scoringStartRef.current,
+        );
+        spinner.object.position.y = base + INDEXER_LIFT * opening;
+      }
       const probe = probeRef.current;
       if (spinner.category === "drive") {
         probe.driveAngle = spinner.object.rotation[spinner.axis];
