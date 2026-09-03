@@ -179,32 +179,45 @@ type DriverPhase = {
  * off, and the yaw rate it is trimmed to. Low yaw against high speed is
  * what makes the arc wide — radius is roughly speed over yaw rate.
  */
-const U_DURATION = 3.0;
-const U_INNER = 2.4;
-const U_YAW = 1.05;
+/**
+ * The U-turn. Radius is speed over yaw rate, so the two are set together
+ * and the sticks matter as much as the yaw target: driving the outside
+ * hard makes a wide arc no matter what the trim asks for. Swept against a
+ * measured radius, these give 1.63 robot lengths — about 27 in, against
+ * the 24 asked for — while still leaving enough rotation in the run for
+ * the U and the 180 after it. Tighter settings hit 24 in exactly but lost
+ * the second half turn.
+ */
+const U_DURATION = 1.7;
+const U_OUTER = 2.2;
+const U_INNER = 1.4;
+const U_YAW = 1.1;
 
 const SCHEDULE: DriverPhase[] = [
-  // Reverse entry, wide of the goal: nose on -x, body carrying +x.
-  { duration: 0.7, left: -4.4, right: -4.4 },
-  // Whip the nose round to the direction of travel — the entry turns into
-  // a drift here.
-  { duration: 0.55, left: -4.5, right: 4.5, yawGain: 1.4, yawTarget: 4.0 },
-  // The U. A long, sustained, gentle turn rather than a flick: held at a
-  // low yaw rate against a high forward speed, which is what makes the arc
-  // wide. The robot carves right around the goal, tail out the whole way,
-  // and this is where the five floor balls are collected.
-  { duration: U_DURATION, left: 4.5, right: U_INNER, yawGain: 2.2, yawTarget: U_YAW },
-  // Out of the U and squared up, still sliding, now pointed back across.
-  { duration: 0.8, headingGain: 2.8, headingTarget: FINISH_HEADING, left: 2.0, right: 2.0, yawGain: 2.4 },
-  // Back it in: reversed gently so the aligner seats into the mouth.
-  { duration: 1.0, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.2, right: -1.2, yawGain: 2.6 },
-  // Stop. Sticks to zero and the trims hold the nose square while the last
-  // of the slide dies under it.
-  { duration: 1.4, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
+  // On backwards from the start: the robot is already rolling when it comes
+  // into frame, nose pointing back the way it came and the body carrying it
+  // left. Both sides driven in reverse to hold that.
+  { duration: 0.7, left: -4.2, right: -4.2 },
+  // Reverse entry into the U. One side thrown against the other breaks the
+  // rear loose and swings the nose round, and the turn is then HELD at a
+  // steady yaw rate against a steady forward speed, which is what makes a
+  // clean constant-radius arc rather than a flick. Tuned for about 24
+  // inches of radius (see U_YAW).
+  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: U_YAW },
+  { duration: U_DURATION, left: U_OUTER, right: U_INNER, yawGain: 2.6, yawTarget: U_YAW },
+  // The 180: a hard, short counter-rotation once the U is done, bringing
+  // the tail round to face the goal.
+  { duration: 0.55, left: 4.5, right: -4.5, yawGain: 1.8, yawTarget: -6.0 },
+  // Line up on the mouth as the slide dies.
+  { duration: 0.8, headingGain: 3.2, headingTarget: FINISH_HEADING, left: 0.6, right: 0.6, yawGain: 2.4 },
+  // Back it in: reversed gently so the aligner seats.
+  { duration: 0.9, headingGain: 3.6, headingTarget: FINISH_HEADING, left: -1.4, right: -1.4, yawGain: 2.6 },
+  // Stop dead.
+  { duration: 1.2, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
-const START_HEADING = -Math.PI / 2;
-const START_POSITION: [number, number] = [-8.6, -4.6];
+const START_HEADING = Math.PI / 2;
+const START_POSITION: [number, number] = [6.2, -3.4];
 const START_SPEED = -4.0;
 
 function clamp(value: number, min: number, max: number) {
