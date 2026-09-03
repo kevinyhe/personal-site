@@ -71,8 +71,6 @@ export const STAGE_PER_ROBOT_LENGTH = 1.6;
 const ROBOT_LENGTH = 1.6;
 /** How far forward the intake mouth reaches, model z, stage units. */
 const MOUTH_Z = ROBOT_LENGTH / 2;
-/** Height of the indexer exit, model y, stage units. */
-const INDEXER_Y = 1.29;
 /**
  * Height a ball comes to rest at inside the goal, model y, stage units. This
  * is NOT the indexer height: the Long Goal's ball channel was measured off the
@@ -81,6 +79,19 @@ const INDEXER_Y = 1.29;
  * which is what a real robot does — it shoots slightly upward into the goal.
  */
 const TROUGH_Y = 1.527;
+
+/**
+ * Where the balls the robot STARTS with sit, model space [z, y]. The robot
+ * drives on with its indexer already loaded, so these are the last stretch
+ * of CARRY_PATH: slot 0 is hard against the exit and the queue backs up the
+ * indexer behind it. They are thrown first, in this order.
+ */
+const PRELOAD_SLOTS: Array<[number, number]> = [
+  [-0.36, 1.57],
+  [-0.12, 1.57],
+  [0.18, 1.56],
+  [0.5, 1.4],
+];
 
 /** Number of balls on the floor. */
 const BALL_COUNT = 5;
@@ -100,7 +111,12 @@ const BOUNCE_DURATION = 0.2;
 const BOUNCE_HEIGHT = 0.05;
 /** Model z the balls come to rest at inside the trough, stage units (behind the robot's rear at -0.8). */
 const TROUGH_Z = -1.2;
-/** Lateral gap between balls resting in the trough, stage units. */
+/**
+ * Gap between balls resting in the trough, stage units. They queue back
+ * ALONG the goal (model -z, receding from the robot's tail), not across it:
+ * the Long Goal is a narrow channel 5.7 long and about 1.1 wide, so a row
+ * spread sideways would not fit inside it.
+ */
 const TROUGH_SPACING = 0.34;
 /**
  * Small fixed lateral offsets so the row in the trough does not look drawn
@@ -119,18 +135,32 @@ const SPIN_SAMPLE_RATE = 120;
  * is threaded onto this after its own floor position, which is prepended
  * per ball so the pick-up is continuous with where the ball was lying.
  *
- * The preroller sits 0.02 below the front lip: the measured geometry pulls
- * the ball down a touch as it takes it off the lip, so the climb is not
- * strictly monotonic over that first pair of points. Everything after is.
+ * These points are NOT the roller axles. An earlier version used the axle
+ * positions straight out of the model, which threaded the ball's centre
+ * through the middle of every sprocket it passed — the ball appeared
+ * impaled on them. Each point here is instead relaxed out of every intake
+ * roller's circle until the ball's surface clears it: solid parts (the 16T,
+ * 24T, 30T, 32T sprockets and the 36T gear) get full clearance of
+ * rollerRadius + BALL_RADIUS, while the flex wheels are allowed to squash
+ * up to 0.05 into the ball, because that is what a compliant wheel
+ * does when it grips one. Ball and roller geometry both come from
+ * public/model/robot/robot-meta.json, so this can be recomputed if the
+ * robot is re-exported.
+ *
+ * The route that falls out: along the floor, under the front lip rollers,
+ * then up the FRONT face of the tower (the sprockets sit behind it), over
+ * the top of the 30T pair, and back along the indexer to the exit.
  */
 const CARRY_PATH: Array<[number, number]> = [
-  [0.72, 0.4], // front lip, half-flex wheels
-  [0.51, 0.38], // preroller
-  [0.24, 0.49], // tower sprocket, bottom
-  [0.14, 0.72], // tower sprocket, middle
-  [0.2, 1.18], // tower sprocket, top
-  [-0.1, INDEXER_Y], // indexer flex wheels, entry
-  [-0.24, INDEXER_Y], // indexer, holding position
+  [0.74, 0.16], // on the floor, just short of the front lip
+  [0.58, 0.2], // drawn under the lip rollers
+  [0.513, 0.286], // off the lip, starting to climb
+  [0.55, 0.7], // up the FRONT face of the tower
+  [0.55, 1.05],
+  [0.5, 1.4], // over the top of the 30T sprockets
+  [0.18, 1.56], // onto the indexer
+  [-0.12, 1.57],
+  [-0.36, 1.57], // the exit, level with the goal trough
 ];
 
 /**
@@ -289,12 +319,28 @@ let timelineEnd = 0;
 function buildPlans(): BallPlan[] {
   const schedule = pickupSchedule();
   const parked = finishPose();
-  const count = schedule.length;
 
   // The first throw waits for both the robot to park and the last ball to
   // finish climbing, so nothing is fired out of an empty indexer.
   const lastArrival = schedule.length ? schedule[schedule.length - 1].time + CARRY_DURATION : 0;
   const firstEject = Math.max(driftEnd(), lastArrival) + EJECT_LEAD_IN;
+
+  // The balls already aboard. Giving them a pickup time a full carry before
+  // zero means the climb has finished before the run starts, so they are
+  // simply held at their slot until they are thrown — no floor phase, and
+  // `carried` is true from the first frame.
+  const preloaded: BallPlan[] = PRELOAD_SLOTS.map(([z, y], index) => {
+    const slot: Vec3 = [0, y, z];
+    const troughPosition = troughSpot(index, parked);
+    return {
+      arc: [0, 0],
+      ejectTime: firstEject + index * EJECT_SPACING,
+      path: [slot, slot],
+      pickupTime: -CARRY_DURATION,
+      restPosition: modelToWorld(slot, robotPoseAt(0)),
+      troughPosition,
+    };
+  });
 
   const built = schedule.map((entry, index) => {
     const restPosition: Vec3 = [
@@ -315,22 +361,29 @@ function buildPlans(): BallPlan[] {
       const dz = path[i][2] - path[i - 1][2];
       arc.push(arc[i - 1] + Math.hypot(dx, dy, dz));
     }
-    // Balls line up across the trough in the order they were thrown.
-    const lateral = (index - (count - 1) / 2) * TROUGH_SPACING + TROUGH_JITTER[index % TROUGH_JITTER.length];
+    const order = PRELOAD_SLOTS.length + index;
     return {
       arc,
-      ejectTime: firstEject + index * EJECT_SPACING,
+      ejectTime: firstEject + order * EJECT_SPACING,
       path,
       pickupTime: entry.time,
       restPosition,
-      troughPosition: modelToWorld([lateral, TROUGH_Y, TROUGH_Z], parked),
+      troughPosition: troughSpot(order, parked),
     };
   });
 
-  timelineEnd = built.length
-    ? built[built.length - 1].ejectTime + FLIGHT_DURATION + BOUNCE_DURATION
+  const all = [...preloaded, ...built];
+  timelineEnd = all.length
+    ? all[all.length - 1].ejectTime + FLIGHT_DURATION + BOUNCE_DURATION
     : driftEnd();
-  return built;
+  return all;
+}
+
+/** Resting spot for the `order`-th ball thrown, queued back along the goal. */
+function troughSpot(order: number, parked: RobotPose): Vec3 {
+  const back = TROUGH_Z - order * TROUGH_SPACING;
+  const lateral = TROUGH_JITTER[order % TROUGH_JITTER.length];
+  return modelToWorld([lateral, TROUGH_Y, back], parked);
 }
 
 function ballPlans(): BallPlan[] {
