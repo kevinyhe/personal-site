@@ -23,6 +23,11 @@ import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
+import RobotOutro, {
+  createRobotCameraState,
+  ROBOT_GROUND_Y,
+  type RobotCameraState,
+} from "@/components/RobotOutro";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -41,25 +46,43 @@ gsap.registerPlugin(ScrollTrigger);
  * the camera backs off and follows to keep the cloud in view; the last few
  * percent are a settle.
  *
+ * After the statue's stretch (start..statueEnd) the page's last scroll room
+ * (statueEnd..end) belongs to the robot outro (see RobotOutro): the chunks
+ * and the statue's lights fade out over its first 0.3, the robot scene
+ * fades in, and the camera hands over to a rally-style chase.
+ *
  * Model: "The Thinker by Auguste Rodin" by Rigsters (Sketchfab), CC-BY-4.0 —
  * see public/model/thinker/license.txt. Geometry only; the textures are
  * not used.
  */
 
 /**
- * Where the scroll is, 0..1 across the stage's stretch, and where in that
- * stretch the break begins (set from the page's layout on every refresh).
+ * Where the scroll is: `value` runs 0..1 across the statue's stretch (start
+ * to statueEnd, so the statue's sequence is untouched by the scroll room
+ * added after it), `robot` runs 0..1 across the robot outro's stretch
+ * (statueEnd to end), and `breakStart` is where in the statue's stretch the
+ * break begins (set from the page's layout on every refresh).
  */
-type ProgressRef = MutableRefObject<{ breakStart: number; value: number }>;
+type ProgressRef = MutableRefObject<{
+  breakStart: number;
+  robot: number;
+  value: number;
+}>;
 
 /** The stage's stretch of the page, in scroll pixels; re-read on refresh. */
 export type ThinkerTiming = () => {
   /** Scroll position at which the break begins. */
   breakAt: number;
-  /** Scroll position at which the stage's progress reaches 1. */
+  /** Scroll position at which the robot outro's progress reaches 1. */
   end: number;
   /** Scroll position at which the stage's progress starts (0). */
   start: number;
+  /**
+   * Scroll position at which the statue's progress reaches 1 and the robot
+   * outro's begins. The scroll room from statueEnd to end belongs to the
+   * robot alone.
+   */
+  statueEnd: number;
 };
 type DragRotation = {
   active: boolean;
@@ -96,6 +119,16 @@ const ORBIT_LEFT_COMPACT = -0.2;
 
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
+
+// The robot outro's first stretch: the statue's materials (and its lights
+// and floor shadow) fade out over robot phase 0..0.3 while the robot
+// scene's lights fade in; scrolling back restores everything.
+const STATUE_FADE_END = 0.3;
+// The statue camera blends into the rally chase over about a second of
+// wall time once the robot phase opens.
+const CAMERA_BLEND_SECONDS = 1;
+const STATUE_FOV = 34;
+const CAMERA_ROLL_MAX = (4 * Math.PI) / 180;
 
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
@@ -154,22 +187,27 @@ function useThinkerScrollProgress({
   timing: ThinkerTiming;
 }) {
   useEffect(() => {
+    progressRef.current.robot = 0;
     progressRef.current.value = 0;
     const readBreakStart = () => {
-      const { breakAt, end, start } = timing();
+      const { breakAt, start, statueEnd } = timing();
       progressRef.current.breakStart = THREE.MathUtils.clamp(
-        (breakAt - start) / Math.max(end - start, 1),
+        (breakAt - start) / Math.max(statueEnd - start, 1),
         0,
         BREAK_END - 0.05,
       );
     };
     readBreakStart();
-    // Marker mode (see DebugMarkers) holds the figure whole.
+    // Marker mode (see DebugMarkers) holds the figure whole. Reduced motion
+    // keeps the statue standing and never opens the robot outro.
     if (reducedMotion || window.location.search.includes("thinkerMarkers")) return undefined;
+    // The statue's stretch ends at statueEnd, not the bottom of the page:
+    // the scroll room after it belongs to the robot outro, scrubbed the
+    // same way on its own tween.
     const tween = gsap.to(progressRef.current, {
       ease: "none",
       scrollTrigger: {
-        end: () => timing().end,
+        end: () => timing().statueEnd,
         invalidateOnRefresh: true,
         onRefresh: readBreakStart,
         scrub: 0.9,
@@ -177,11 +215,23 @@ function useThinkerScrollProgress({
       },
       value: 1,
     });
+    const robotTween = gsap.to(progressRef.current, {
+      ease: "none",
+      robot: 1,
+      scrollTrigger: {
+        end: () => timing().end,
+        invalidateOnRefresh: true,
+        scrub: 0.9,
+        start: () => timing().statueEnd,
+      },
+    });
     const refresh = window.setTimeout(() => ScrollTrigger.refresh(), 250);
     return () => {
       window.clearTimeout(refresh);
       tween.scrollTrigger?.kill();
       tween.kill();
+      robotTween.scrollTrigger?.kill();
+      robotTween.kill();
     };
   }, [progressRef, reducedMotion, timing]);
 }
@@ -209,18 +259,64 @@ function useThinkerChunks() {
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Critically damped spring: velocity decays at exactly the rate that kills
+// overshoot for the given stiffness. Semi-implicit Euler; dt is clamped by
+// the caller so 2*omega*dt stays under 1.
+const SPRING_SCRATCH = new THREE.Vector3();
+function dampSpring(
+  position: THREE.Vector3,
+  velocity: THREE.Vector3,
+  target: THREE.Vector3,
+  omega: number,
+  dt: number,
+) {
+  velocity.multiplyScalar(Math.max(1 - 2 * omega * dt, 0));
+  velocity.addScaledVector(
+    SPRING_SCRATCH.subVectors(target, position),
+    omega * omega * dt,
+  );
+  position.addScaledVector(velocity, dt);
+}
+
 function CameraRig({
   progressRef,
   reducedMotion,
+  robotState,
 }: {
   progressRef: ProgressRef;
   reducedMotion: boolean;
+  robotState: RobotCameraState;
 }) {
   const { camera, scene, size } = useThree();
   const lookAt = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const target = useMemo(() => new THREE.Vector3(), []);
+  // The rally chase: position and look-target on their own critically
+  // damped springs (different stiffness), blended over the statue camera
+  // by wall time while the robot phase is open.
+  const chase = useMemo(
+    () => ({
+      blend: 0,
+      fov: STATUE_FOV,
+      lookPosition: new THREE.Vector3(),
+      lookVelocity: new THREE.Vector3(),
+      position: new THREE.Vector3(),
+      roll: 0,
+      seeded: false,
+      velocity: new THREE.Vector3(),
+    }),
+    [],
+  );
+  const scratch = useMemo(
+    () => ({
+      forward: new THREE.Vector3(),
+      look: new THREE.Vector3(),
+      lookTarget: new THREE.Vector3(),
+      positionTarget: new THREE.Vector3(),
+    }),
+    [],
+  );
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const compact = size.width < 720;
@@ -236,15 +332,142 @@ function CameraRig({
       .applyAxisAngle(UP, (compact ? ORBIT_LEFT_COMPACT : ORBIT_LEFT) * breakup)
       .multiplyScalar(distance)
       .add(lookAt);
-    if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
-    camera.position.lerp(target, 0.08);
-    camera.lookAt(lookAt);
-    // The fog follows the camera so the figure stays clear and only the
-    // far side of the cloud sinks into the black.
+
+    const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
+    const dt = Math.min(delta, 0.05);
+    chase.blend = THREE.MathUtils.clamp(
+      chase.blend + (robotPhase > 0 ? dt / CAMERA_BLEND_SECONDS : -dt * 2),
+      0,
+      1,
+    );
+
+    const persp = camera as THREE.PerspectiveCamera;
+    if (chase.blend <= 0) {
+      // The statue's camera, untouched.
+      chase.seeded = false;
+      if (!reducedMotion) target.x += Math.sin(clock.elapsedTime * 0.18) * 0.028;
+      camera.position.lerp(target, 0.08);
+      camera.lookAt(lookAt);
+      if (persp.isPerspectiveCamera && Math.abs(persp.fov - STATUE_FOV) > 0.01) {
+        persp.fov = STATUE_FOV;
+        persp.updateProjectionMatrix();
+      }
+      // The fog follows the camera so the figure stays clear and only the
+      // far side of the cloud sinks into the black.
+      if (scene.fog instanceof THREE.Fog) {
+        const reach = camera.position.distanceTo(lookAt);
+        scene.fog.near = reach + 0.8;
+        scene.fog.far = reach + 5.2;
+      }
+      return;
+    }
+
+    // Seed the springs from wherever the statue camera actually is, so the
+    // hand-over starts without a jump.
+    if (!chase.seeded) {
+      chase.seeded = true;
+      chase.position.copy(camera.position);
+      chase.velocity.set(0, 0, 0);
+      chase.lookPosition.copy(lookAt);
+      chase.lookVelocity.set(0, 0, 0);
+      chase.roll = 0;
+      chase.fov = STATUE_FOV;
+    }
+
+    const speed = robotState.speed;
+    const moving = speed > 0.4;
+    // Chase along the travel direction; at rest, along the robot's nose.
+    scratch.forward.copy(robotState.velocity);
+    if (moving) scratch.forward.normalize();
+    else
+      scratch.forward.set(
+        Math.sin(robotState.heading),
+        0,
+        Math.cos(robotState.heading),
+      );
+
+    if (robotState.resting) {
+      // The run is over: settle into a three-quarter hero shot of the
+      // robot in its 10-o'clock pose, softer springs so it eases in.
+      const fx = Math.sin(robotState.heading);
+      const fz = Math.cos(robotState.heading);
+      scratch.positionTarget.set(
+        robotState.position.x + fx * 3.0 + Math.cos(robotState.heading) * 2.0,
+        ROBOT_GROUND_Y + 1.55,
+        robotState.position.z + fz * 3.0 - Math.sin(robotState.heading) * 2.0,
+      );
+      scratch.lookTarget.set(
+        robotState.position.x,
+        ROBOT_GROUND_Y + 0.5,
+        robotState.position.z,
+      );
+    } else {
+      // Low, behind-left of the motion, ~2.5 robot lengths back, looking
+      // ahead of the robot along its velocity.
+      scratch.positionTarget
+        .copy(robotState.position)
+        .addScaledVector(scratch.forward, -4.0);
+      scratch.positionTarget.x += scratch.forward.z * 1.1;
+      scratch.positionTarget.z += -scratch.forward.x * 1.1;
+      scratch.positionTarget.y = ROBOT_GROUND_Y + 0.9;
+      scratch.lookTarget
+        .copy(robotState.position)
+        .addScaledVector(scratch.forward, Math.min(speed * 0.45, 2.4));
+      scratch.lookTarget.y = ROBOT_GROUND_Y + 0.35;
+    }
+    dampSpring(
+      chase.position,
+      chase.velocity,
+      scratch.positionTarget,
+      robotState.resting ? 1.6 : 4.2,
+      dt,
+    );
+    dampSpring(
+      chase.lookPosition,
+      chase.lookVelocity,
+      scratch.lookTarget,
+      robotState.resting ? 2.2 : 7.0,
+      dt,
+    );
+
+    // A small roll out of the lateral acceleration, FOV widening with
+    // speed, and a light two-sine handheld wobble.
+    const rollTarget = moving
+      ? THREE.MathUtils.clamp(
+          -0.006 * robotState.aLat,
+          -CAMERA_ROLL_MAX,
+          CAMERA_ROLL_MAX,
+        )
+      : 0;
+    chase.roll += (rollTarget - chase.roll) * Math.min(1, 5 * dt);
+    const fovTarget = robotState.resting
+      ? 36
+      : STATUE_FOV + 8 * THREE.MathUtils.clamp(speed / 6, 0, 1);
+    chase.fov += (fovTarget - chase.fov) * Math.min(1, 3 * dt);
+    const time = clock.elapsedTime;
+    const noiseX = (Math.sin(time * 1.31) + Math.sin(time * 2.17)) * 0.01;
+    const noiseY = (Math.sin(time * 1.73) + Math.sin(time * 2.93)) * 0.01;
+
+    const mix = chase.blend * chase.blend * (3 - 2 * chase.blend);
+    camera.position.lerpVectors(target, chase.position, mix);
+    camera.position.x += noiseX * mix;
+    camera.position.y += noiseY * mix;
+    scratch.look.lerpVectors(lookAt, chase.lookPosition, mix);
+    camera.lookAt(scratch.look);
+    camera.rotateZ(chase.roll * mix);
+    if (persp.isPerspectiveCamera) {
+      const fovNow = THREE.MathUtils.lerp(STATUE_FOV, chase.fov, mix);
+      if (Math.abs(persp.fov - fovNow) > 0.01) {
+        persp.fov = fovNow;
+        persp.updateProjectionMatrix();
+      }
+    }
+    // Wider fog than the statue's: the asphalt has to stay readable out to
+    // the entry mark while the far edge still sinks into the black.
     if (scene.fog instanceof THREE.Fog) {
-      const reach = camera.position.distanceTo(lookAt);
-      scene.fog.near = reach + 0.8;
-      scene.fog.far = reach + 5.2;
+      const reach = camera.position.distanceTo(scratch.look);
+      scene.fog.near = reach + THREE.MathUtils.lerp(0.8, 3.5, mix);
+      scene.fog.far = reach + THREE.MathUtils.lerp(5.2, 20, mix);
     }
   });
   return null;
@@ -257,28 +480,41 @@ function StageLights({
   progressRef: ProgressRef;
   reducedMotion: boolean;
 }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const ambientRef = useRef<THREE.AmbientLight>(null);
   const keyLightRef = useRef<THREE.SpotLight>(null);
+  const fillLightRef = useRef<THREE.SpotLight>(null);
   const rimLightRef = useRef<THREE.DirectionalLight>(null);
+  const bounceLightRef = useRef<THREE.PointLight>(null);
 
   useFrame(({ clock }) => {
     const breakup = reducedMotion ? 0 : travelAt(breakupAt(progressRef.current));
+    // The robot outro brings its own lighting; the statue's rig dims out
+    // with the statue over the robot phase's first stretch.
+    const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
+    const statueLight = 1 - smoothPhase(0, STATUE_FADE_END, robotPhase);
+    if (groupRef.current) groupRef.current.visible = statueLight > 0.001;
+    if (statueLight <= 0.001) return;
     const pulse = reducedMotion
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
+    if (ambientRef.current) ambientRef.current.intensity = 0.035 * statueLight;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
-      keyLightRef.current.intensity = 15.5 + breakup * 5.5 + pulse;
+      keyLightRef.current.intensity = (15.5 + breakup * 5.5 + pulse) * statueLight;
       // The cone opens as the pieces spread, so none fly out of the light.
       keyLightRef.current.angle = 0.36 + breakup * 0.3;
     }
+    if (fillLightRef.current) fillLightRef.current.intensity = 5 * statueLight;
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = 3.2 + breakup * 2.8;
+      rimLightRef.current.intensity = (3.2 + breakup * 2.8) * statueLight;
     }
+    if (bounceLightRef.current) bounceLightRef.current.intensity = 1.65 * statueLight;
   });
 
   return (
-    <>
-      <ambientLight intensity={0.035} />
+    <group ref={groupRef}>
+      <ambientLight ref={ambientRef} intensity={0.035} />
       <spotLight
         ref={keyLightRef}
         angle={0.36}
@@ -294,6 +530,7 @@ function StageLights({
         shadow-mapSize-width={2048}
       />
       <spotLight
+        ref={fillLightRef}
         angle={0.26}
         color="#f4f5ff"
         decay={1.2}
@@ -308,8 +545,13 @@ function StageLights({
         intensity={3.2}
         position={[2.7, 1.8, -3.8]}
       />
-      <pointLight color="#ffffff" intensity={1.65} position={[-1.45, -1.05, 2.4]} />
-    </>
+      <pointLight
+        ref={bounceLightRef}
+        color="#ffffff"
+        intensity={1.65}
+        position={[-1.45, -1.05, 2.4]}
+      />
+    </group>
   );
 }
 
@@ -328,6 +570,8 @@ function ChunkedThinker({
   const chunkRefs = useRef<Array<THREE.Group | null>>([]);
   // Per chunk, how long it has been adrift (seconds of wall time).
   const adriftRef = useRef<Float32Array>(new Float32Array(0));
+  // The opacity last written into the chunks' materials (1 = untouched).
+  const appliedFadeRef = useRef(1);
   const chunks = useMemo(
     () =>
       build.chunks.map((chunk) => ({
@@ -354,6 +598,28 @@ function ChunkedThinker({
   useFrame(({ clock, size }, delta) => {
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
+
+    // The robot outro takes the stage: over its first stretch the chunks'
+    // materials (surface and interior alike) fade to nothing; scrolling
+    // back up restores them to their opaque selves.
+    const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
+    const statueFade = 1 - smoothPhase(0, STATUE_FADE_END, robotPhase);
+    if (statueFade !== appliedFadeRef.current) {
+      appliedFadeRef.current = statueFade;
+      const fading = statueFade < 1;
+      for (const group of chunkRefs.current) {
+        if (!group) continue;
+        for (const child of group.children) {
+          const material = (child as THREE.Mesh)
+            .material as THREE.MeshStandardMaterial;
+          material.opacity = statueFade;
+          material.transparent = fading;
+        }
+      }
+    }
+    if (stageRef.current) stageRef.current.visible = statueFade > 0.001;
+    // Fully faded: skip the flight work, the stage is the robot's now.
+    if (statueFade <= 0.001) return;
 
     if (adriftRef.current.length !== chunks.length) {
       adriftRef.current = new Float32Array(chunks.length);
@@ -491,8 +757,12 @@ function StageFloor({
 
   useFrame(() => {
     const spread = reducedMotion ? 0 : travelAt(breakupAt(progressRef.current));
+    const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     if (materialRef.current) {
-      materialRef.current.opacity = 0.82 * (1 - spread);
+      // Faded by the spread as before, and gone entirely with the statue
+      // once the robot outro opens.
+      materialRef.current.opacity =
+        0.82 * (1 - spread) * (1 - smoothPhase(0, STATUE_FADE_END, robotPhase));
     }
   });
 
@@ -516,6 +786,8 @@ function ThinkerCanvas({
   reducedMotion: boolean;
 }) {
   const build = useThinkerChunks();
+  // Written by RobotOutro every frame, read by CameraRig for the chase.
+  const robotState = useMemo(createRobotCameraState, []);
   return (
     <Canvas
       camera={{
@@ -547,9 +819,14 @@ function ThinkerCanvas({
     >
       <color args={[STAGE_BLACK]} attach="background" />
       <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
-      <CameraRig progressRef={progressRef} reducedMotion={reducedMotion} />
+      <CameraRig
+        progressRef={progressRef}
+        reducedMotion={reducedMotion}
+        robotState={robotState}
+      />
       <StageLights progressRef={progressRef} reducedMotion={reducedMotion} />
       <StageFloor progressRef={progressRef} reducedMotion={reducedMotion} />
+      <RobotOutro progressRef={progressRef} robotState={robotState} />
       {build ? (
         <ChunkedThinker
           build={build}
@@ -571,7 +848,7 @@ export default function ThinkerStage({
   /** The stretch of the page's scroll the stage owns, and its break point. */
   timing: ThinkerTiming;
 }) {
-  const progressRef = useRef({ breakStart: 0.05, value: 0 });
+  const progressRef = useRef({ breakStart: 0.05, robot: 0, value: 0 });
   const dragRotationRef = useRef<DragRotation>({
     active: false,
     lastX: 0,
