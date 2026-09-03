@@ -197,10 +197,18 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       .to(sceneFx, { roomLight: 1.1, duration: 0.16, ease: "sine.inOut" }, 0.57)
       .to(sceneFx, { roomLight: 0.95, duration: 0.14, ease: "sine.inOut" }, 0.73)
       .to(sceneFx, { roomLight: 1, duration: 0.3, ease: "sine.out" }, 0.87)
-      .to(sceneFx, { screenPower: 1, duration: 0.175, ease: "power1.inOut" }, 0.3)
+      // Fast and front-loaded: the tube's first light lands with the
+      // lamp's flare, not a beat after it. The shader spends its own
+      // ramp (dot -> line -> opening raster) inside this, so a slow
+      // symmetric ease here made the picture read as switching on late.
+      .to(sceneFx, { screenPower: 1, duration: 0.12, ease: "power1.out" }, 0.3)
       .to(sceneFx, { glassName: 1, duration: 0.8, ease: "power2.out" }, 1.4);
     if (search.includes("tvFlare")) {
       powerOn.pause(0.37);
+    }
+    // Holds the raster mid-opening (the band about two thirds grown).
+    if (search.includes("tvOpen")) {
+      powerOn.pause(0.345);
     }
     tweens.push(powerOn as unknown as gsap.core.Tween);
     return () => {
