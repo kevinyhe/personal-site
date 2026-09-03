@@ -1089,7 +1089,16 @@ export default function RobotOutro({
     robotState.speed = robotState.velocity.length();
     robotState.heading = sample.heading;
     robotState.aLat = sample.aLat * ROBOT_LENGTH;
-    robotState.resting = run.time >= duration - 0.2;
+    // Resting means "has stopped", not "is nearly out of timeline". The run
+    // parks well before its last frame — the drift ends around 2.6 s of 5.3 s
+    // and the park phase just holds it still — and a fixed 0.2 s tail left the
+    // camera on its MOVING framing for over a second while the robot sat
+    // motionless. That framing sits 3.4 units behind a robot 1.77 tall, which
+    // filled the entire frame. Once it has genuinely stopped, hand over to the
+    // wider three-quarter shot that can also see the goal it just scored into.
+    robotState.resting =
+      run.time >= duration - 0.2 ||
+      (robotState.speed < 0.25 && run.time > duration * 0.45);
   });
 
   return (

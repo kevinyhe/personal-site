@@ -142,6 +142,9 @@ function clampLag(value: THREE.Vector3, target: THREE.Vector3, maxDistance: numb
   value.copy(target).addScaledVector(lagScratch, maxDistance / distance);
 }
 
+/** Last frame's camera framing, read by headless captures. */
+const cameraProbe: Record<string, unknown> = {};
+
 function smoothPhase(start: number, end: number, value: number) {
   const x = THREE.MathUtils.clamp((value - start) / (end - start), 0, 1);
   return x * x * x * (x * (x * 6 - 15) + 10);
@@ -485,6 +488,12 @@ function CameraRig({
     camera.position.y += noiseY * mix;
     scratch.look.lerpVectors(lookAt, chase.lookPosition, mix);
     camera.lookAt(scratch.look);
+    // Headless captures read these to check the framing numerically.
+    cameraProbe.camera = camera.position.toArray();
+    cameraProbe.look = scratch.look.toArray();
+    cameraProbe.robot = robotState.position.toArray();
+    cameraProbe.resting = robotState.resting;
+    cameraProbe.speed = robotState.speed;
     camera.rotateZ(chase.roll * mix);
     if (persp.isPerspectiveCamera) {
       const fovNow = THREE.MathUtils.lerp(STATUE_FOV, chase.fov, mix);
@@ -895,7 +904,7 @@ export default function ThinkerStage({
 
   // Exposed so headless captures can read the scrubbed state.
   useEffect(() => {
-    const debug = { progress: progressRef.current };
+    const debug = { camera: cameraProbe, progress: progressRef.current };
     (window as unknown as Record<string, unknown>).__thinkerStage = debug;
     return () => {
       delete (window as unknown as Record<string, unknown>).__thinkerStage;
