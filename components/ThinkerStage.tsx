@@ -133,11 +133,12 @@ const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
 // than a straight dolly back. Both this and CAMERA_OFFSET sit well to the
 // right, and the swing below runs leftward, so the whole move reads
 // right-to-left.
-const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.45, 1).normalize();
-// The blow lands on the floor, so aiming straight at it puts half the frame
-// below the ground and empty. The opening aim is lifted this far above it,
-// which fills the frame with the base and the legs standing out of it.
-const IMPACT_AIM_LIFT = 0.45;
+const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.18, 1).normalize();
+// The opening aim sits a little above the blow rather than straight at it,
+// so the arms have headroom in the frame instead of sitting on its centre
+// line. It was 0.45 when the blow was on the floor and half the frame would
+// otherwise have been bare ground.
+const IMPACT_AIM_LIFT = 0.2;
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
 // The swing rides the RAW breakup while the zoom rides its smoothstep, so
@@ -148,12 +149,14 @@ const ORBIT_LEFT_COMPACT = -0.7;
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
-// The robot outro's first stretch: the statue's materials (and its lights
-// and floor shadow) fade out over robot phase 0..0.08; scrolling back
-// restores everything. The robot does not begin to appear until this is
-// finished (RobotOutro's ROBOT_FADE_START matches), so the two scenes never
-// share the screen — the hand-off reads as a cut, not a dissolve.
-const STATUE_FADE_END = 0.08;
+// The hand-off to the robot is a CLIP, not a dissolve: on the frame the
+// robot phase opens, the statue and everything lighting it are simply gone
+// and the robot is simply there. No fade window at either end — this used
+// to cross-fade over robot phase 0..0.08 with the robot coming up over
+// 0.08..0.13 behind it. `statueOn` is that switch, and RobotOutro's
+// ROBOT_FADE_START is its other half. Scrolling back up restores the
+// statue just as sharply.
+const statueOn = (robotPhase: number) => (robotPhase > 0 ? 0 : 1);
 const STATUE_FOV = 34;
 
 /** Pull `value` to within `maxDistance` of `target`, in place. */
@@ -177,13 +180,16 @@ const CAMERA_AZIMUTH: Array<[number, number]> = [
   // move rather than swinging during it...
   [0, -45],
   [1.0, -45],
-  // ...and from there it only ever increases, so the camera pans one way —
-  // leftwards — from the first frame of the action to the last.
-  [2.2, 60],
-  [3.4, 200],
-  [4.6, 340],
-  [6.4, 450],
+  // ...and from there it only ever DECREASES, so the camera swings one way
+  // for the whole run and never doubles back. It lands on -270, which is
+  // the same bearing as +90 — off the robot's left — after three quarters
+  // of a turn the other way round.
+  [2.2, -110],
+  [3.4, -180],
+  [4.6, -240],
+  [6.4, -270],
 ];
+
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [0, 4.6],
   [3.4, 5.2],
@@ -650,7 +656,7 @@ function StageLights({
     // The robot outro brings its own lighting; the statue's rig dims out
     // with the statue over the robot phase's first stretch.
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
-    const statueLight = 1 - smoothPhase(0, STATUE_FADE_END, robotPhase);
+    const statueLight = statueOn(robotPhase);
     if (groupRef.current) groupRef.current.visible = statueLight > 0.001;
     if (statueLight <= 0.001) return;
     const pulse = reducedMotion
@@ -761,7 +767,7 @@ function ChunkedThinker({
     // materials (surface and interior alike) fade to nothing; scrolling
     // back up restores them to their opaque selves.
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
-    const statueFade = 1 - smoothPhase(0, STATUE_FADE_END, robotPhase);
+    const statueFade = statueOn(robotPhase);
     if (statueFade !== appliedFadeRef.current) {
       appliedFadeRef.current = statueFade;
       const fading = statueFade < 1;
@@ -920,7 +926,7 @@ function StageFloor({
       // Faded by the spread as before, and gone entirely with the statue
       // once the robot outro opens.
       materialRef.current.opacity =
-        0.82 * (1 - spread) * (1 - smoothPhase(0, STATUE_FADE_END, robotPhase));
+        0.82 * (1 - spread) * statueOn(robotPhase);
     }
   });
 
