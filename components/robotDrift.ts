@@ -100,7 +100,7 @@ export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
  * centre of the arc traced between t = 2.0 and 5.3, which is where the goal
  * belongs; recompute it if the U is retuned.
  */
-const FINISH_HEADING = Math.PI;
+const FINISH_HEADING = 0;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
@@ -249,14 +249,15 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
   return times;
 }
 
-const START_HEADING = 0;
+const START_HEADING = Math.PI;
 /**
- * Driving in FORWARDS on heading 0 carries the robot along +z, so it starts
- * downstage and works back toward the middle of the 46 x 32 ground plane.
- * Move this with U_DURATION: a longer drift covers more ground, and the
- * start has to give it room or the run finishes off the floor.
+ * The robot enters from the FAR end and drives toward the camera: heading PI
+ * with forward drive carries it along -z, so it comes in upstage of the
+ * balls and works down through them. Move this with U_DURATION — a longer
+ * drift covers more ground and the start has to give it room, or the run
+ * finishes off the 46 x 32 floor.
  */
-const START_POSITION: [number, number] = [-2.0, -8.4];
+const START_POSITION: [number, number] = [-1.0, 8.4];
 const START_SPEED = 4.0;
 
 function clamp(value: number, min: number, max: number) {
@@ -440,7 +441,7 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 // the last two pickups where the robot had slowed almost to a stop, so the
 // balls they call for ended up 0.39 robot lengths apart on the floor — less
 // than a ball diameter, and they intersected.
-const PICKUP_WINDOW: [number, number] = [1.0, 4.0];
+const PICKUP_WINDOW: [number, number] = [0.9, 5.0];
 const PICKUP_COUNT = 5;
 /** Ground between one ball and the next, robot lengths. A ball is 0.2 of
  *  one across, so this is comfortably clear of the one in front. */
