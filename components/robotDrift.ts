@@ -440,7 +440,7 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
 // the last two pickups where the robot had slowed almost to a stop, so the
 // balls they call for ended up 0.39 robot lengths apart on the floor — less
 // than a ball diameter, and they intersected.
-const PICKUP_WINDOW: [number, number] = [1.2, 4.4];
+const PICKUP_WINDOW: [number, number] = [1.0, 4.0];
 const PICKUP_COUNT = 5;
 /** Ground between one ball and the next, robot lengths. A ball is 0.2 of
  *  one across, so this is comfortably clear of the one in front. */
