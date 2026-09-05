@@ -159,7 +159,7 @@ const RUN_START = 0.15;
  * reverse entry covers that gap. Parking the robot short of the goal
  * instead left the scored balls strung across the gap in mid-air.
  */
-const GOAL_GAP = -0.12;
+const GOAL_GAP = -0.34;
 /**
  * How far the goal is sunk below the floor plane, stage units. The balls
  * come to rest at the channel height measured off the asset, but the model
@@ -178,16 +178,6 @@ const INTAKE_SURFACE_SPEED = 3.2;
  * Those turn against the lower rollers — see the spin loop.
  */
 const UPPER_STAGE_Y = 1.15;
-/**
- * How far the indexer lifts out of the ball's way while the robot is
- * scoring, model units, and how long it takes. It is what holds the balls
- * back in the tower, so it has to get out of the way or they clip straight
- * through it on the way out.
- */
-const INDEXER_LIFT = 0.22;
-const INDEXER_LIFT_TIME = 0.35;
-/** Model height above which an intake part counts as the indexer itself. */
-const INDEXER_Y_MIN = 1.25;
 
 type RobotRig = {
   /** World position + heading. */
@@ -230,8 +220,6 @@ type PropsModule = {
 };
 type BallPhysicsModule = {
   ballCount: () => number;
-  /** When the first ball is thrown; the indexer lifts just before it. */
-  scoringStart?: () => number;
   ballStatesAt: (time: number) => BallState[];
   /** Last moment anything is still moving, including the scoring. */
   ballTimelineEnd?: () => number;
@@ -699,13 +687,6 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
-  // Remember where the indexer sits so it can be lifted clear at scoring
-  // time and put back if the scroll runs backwards.
-  for (const { category, object } of spinners) {
-    if (category === "intake" && object.position.y > INDEXER_Y_MIN) {
-      object.userData.baseY = object.position.y;
-    }
-  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -871,8 +852,6 @@ export default function RobotOutro({
   const ballStatesRef = useRef<((time: number) => BallState[]) | null>(null);
   /** Last moment a ball is still moving; the playhead has to reach it. */
   const ballTimelineRef = useRef(0);
-  /** When the first ball is thrown. */
-  const scoringStartRef = useRef(Infinity);
   // Read by headless captures to check the goal landed and the parts turn.
   const probeRef = useRef({
     balls: 0,
@@ -913,7 +892,6 @@ export default function RobotOutro({
       if (!live) return;
       ballStatesRef.current = physics.ballStatesAt;
       ballTimelineRef.current = physics.ballTimelineEnd?.() ?? 0;
-      scoringStartRef.current = physics.scoringStart?.() ?? Infinity;
       const group = new THREE.Group();
       group.add(goal.object);
       // One mesh per ball; the clones share the source's geometry and
@@ -1132,20 +1110,14 @@ export default function RobotOutro({
         if (spinner.object.position.y > UPPER_STAGE_Y) omega = -omega;
       }
       spinner.object.rotation[spinner.axis] += omega * dTime;
-      // The indexer is what holds the balls back in the tower, so it has to
-      // get out of the way before they are fed out or they pass straight
-      // through it. It lifts just ahead of the first throw and stays up for
-      // the rest of the run. Driven off the playhead, so it lowers again if
-      // the page is scrolled back.
-      const base = spinner.object.userData.baseY as number | undefined;
-      if (base !== undefined) {
-        const opening = THREE.MathUtils.smoothstep(
-          run.time,
-          scoringStartRef.current - INDEXER_LIFT_TIME,
-          scoringStartRef.current,
-        );
-        spinner.object.position.y = base + INDEXER_LIFT * opening;
-      }
+      // NOTE: nothing is lifted here any more. The lift was picking parts
+      // by height, which caught the indexer FLEX WHEELS — they are meant to
+      // turn, not rise, and watching them float up was wrong. The piece that
+      // actually stops the balls is not a separate node in the GLB at all:
+      // it is welded into the chassis mesh, because the extractor only pulls
+      // out parts it can find by Fusion component name and nothing in the
+      // tree is named for it. Lifting it needs that part named and added to
+      // PART_TYPES in scripts/robot-from-fbx.mjs first.
       const probe = probeRef.current;
       if (spinner.category === "drive") {
         probe.driveAngle = spinner.object.rotation[spinner.axis];
