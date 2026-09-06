@@ -22,6 +22,7 @@ import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
+import { addSeamAttribute, useMarbleMaterials } from "@/components/marbleSeams";
 import { sceneFx } from "@/components/sceneFx";
 import { DRIFT_FINISH } from "@/components/robotDrift";
 // RobotOutro itself is deliberately not imported: it is no longer mounted
@@ -1175,17 +1176,24 @@ function ChunkedThinker({
   const adriftRef = useRef<Float32Array>(new Float32Array(0));
   // The opacity last written into the chunks' materials (1 = untouched).
   const appliedFadeRef = useRef(1);
+  // One surface and one cut-face material for all the chunks; the surface
+  // one draws the glue seams from each chunk's `seam` attribute.
+  const marble = useMarbleMaterials();
   const chunks = useMemo(
     () =>
-      build.chunks.map((chunk) => ({
-        ...makeChunkGeometries(chunk),
-        center: new THREE.Vector3(...chunk.center),
-        offset: new THREE.Vector3(...chunk.offset),
-        releaseAt: chunk.releaseAt,
-        scale: chunk.scale,
-        spin: new THREE.Vector3(...chunk.spin),
-        travelWindow: chunk.travel,
-      })),
+      build.chunks.map((chunk) => {
+        const geometries = makeChunkGeometries(chunk);
+        addSeamAttribute(geometries.surfaceGeometry, geometries.interiorGeometry);
+        return {
+          ...geometries,
+          center: new THREE.Vector3(...chunk.center),
+          offset: new THREE.Vector3(...chunk.offset),
+          releaseAt: chunk.releaseAt,
+          scale: chunk.scale,
+          spin: new THREE.Vector3(...chunk.spin),
+          travelWindow: chunk.travel,
+        };
+      }),
     [build],
   );
 
@@ -1226,16 +1234,15 @@ function ChunkedThinker({
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     const statueFade = statueOn(robotPhase);
     if (statueFade !== appliedFadeRef.current) {
+      const wasFading = appliedFadeRef.current < 1;
       appliedFadeRef.current = statueFade;
       const fading = statueFade < 1;
-      for (const group of chunkRefs.current) {
-        if (!group) continue;
-        for (const child of group.children) {
-          const material = (child as THREE.Mesh)
-            .material as THREE.MeshStandardMaterial;
-          material.opacity = statueFade;
-          material.transparent = fading;
-        }
+      for (const material of [marble.surface, marble.interior]) {
+        material.opacity = statueFade;
+        material.transparent = fading;
+        // `transparent` is baked into the compiled program (an opaque one
+        // writes alpha 1 whatever the opacity), so a flip needs a rebuild.
+        if (fading !== wasFading) material.needsUpdate = true;
       }
     }
     if (stageRef.current) stageRef.current.visible = statueFade > 0.001;
@@ -1303,26 +1310,17 @@ function ChunkedThinker({
           }}
           position={chunk.center}
         >
-          <mesh castShadow frustumCulled={false} geometry={chunk.surfaceGeometry}>
-            <meshStandardMaterial
-              color="#f1f1eb"
-              emissive="#ffffff"
-              emissiveIntensity={0.02}
-              metalness={0}
-              roughness={0.88}
-              side={THREE.FrontSide}
-            />
-          </mesh>
-          <mesh frustumCulled={false} geometry={chunk.interiorGeometry}>
-            <meshStandardMaterial
-              color="#d8d8d0"
-              emissive="#ffffff"
-              emissiveIntensity={0.018}
-              metalness={0}
-              roughness={0.94}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
+          <mesh
+            castShadow
+            frustumCulled={false}
+            geometry={chunk.surfaceGeometry}
+            material={marble.surface}
+          />
+          <mesh
+            frustumCulled={false}
+            geometry={chunk.interiorGeometry}
+            material={marble.interior}
+          />
         </group>
       ))}
     </group>
