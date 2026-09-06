@@ -42,12 +42,22 @@
  *   drift); the smaller value keeps the same dynamics but lets the slide
  *   live long enough to read on camera.
  *
- * Choreography: enter from off-screen right driving hard leftward; snap one
- * side into reverse so the nose whips past the direction of travel and the
- * robot rides backwards on its momentum (the reverse entry); hold a short
- * power slide with the outside wheels overspun; then straighten,
- * counter-steer, and roll to rest with the robot's BACK pointed at the goal,
- * which is where it scores from.
+ * Choreography: come down the field past the goal on its right, picking up
+ * the ball run; flick one side into reverse so the nose swings LEFT while
+ * the body keeps sliding down the field (the drift); then keep turning the
+ * SAME way — never unwinding — through a full circle, which brings the tail
+ * round to the mouth, and reverse the last robot length into it.
+ *
+ * Two things that shape the schedule and are easy to undo by accident:
+ * - The run must not sail past the goal on the way round. It has to end up
+ *   in front of the mouth to back in, but only about 1.5 robot lengths in
+ *   front; the earlier version ran 2.6 past, which read as the robot
+ *   missing the goal and coming back for it. APPROACH is that distance.
+ * - The closing rotation carries on counter-clockwise (`forceTurn: 1`).
+ *   Reaching the same finish heading by unwinding clockwise is the same
+ *   pose and looks completely different — the nose scrubs back through
+ *   where it came from and the camera, which pans one way the whole run,
+ *   ends up chasing it.
  */
 
 export type RobotDriftFrame = {
@@ -90,17 +100,6 @@ export type RobotDriftOptions = {
  * (-150 degrees).
  */
 export const TEN_OCLOCK_HEADING = Math.atan2(-0.5, -0.87);
-
-
-/**
- * Where the run ends, in radians. The goal is placed off the robot's REAR,
- * so this heading decides where the goal sits — and it has to sit INSIDE
- * the U the robot drifts around, not out along the exit path, or the robot
- * would drive through it on the way round. 1.135 rad aims the tail at the
- * centre of the arc traced between t = 2.0 and 5.3, which is where the goal
- * belongs; recompute it if the U is retuned.
- */
-const FINISH_HEADING = Math.PI;
 
 /** Front/back axle distance from the robot centre, robot lengths. */
 const AXLE_OFFSET = 0.35;
@@ -159,6 +158,16 @@ type DriverPhase = {
   left: number;
   /** Base stick input: commanded right-side wheel surface speed, rl/s. */
   right: number;
+  /**
+   * Force the nose to turn this way — +1 counter-clockwise, -1 clockwise —
+   * however far round the target is. Without it the driver always takes the
+   * shorter way about, which is why the run used to swing the nose left
+   * through the drift and then unwind it back the way it came: two
+   * rotations in opposite directions with a wobble between them. Setting
+   * this on the closing phases keeps the whole run turning ONE way, so the
+   * tail swings round into the goal instead of the nose scrubbing back.
+   */
+  forceTurn?: 1 | -1;
   /** Gain from yaw-rate error (rad/s) to stick differential. */
   yawGain?: number;
   /** Hold this yaw rate, rad/s (ignored when headingTarget is set). */
@@ -198,12 +207,28 @@ type DriverPhase = {
  * These mirror GOAL_MOUTH in components/RobotOutro.tsx, which is in stage
  * units — one robot length is 1.6 of those. Keep the two in step.
  */
+const START_HEADING = Math.PI;
 const GOAL_MOUTH_RL: [number, number] = [-3.6 / 1.6, -3.4 / 1.6];
-/** A point beyond the mouth, on the far side from the goal's body, that the
- *  robot crosses to before turning in. */
-const ABOVE_MOUTH: [number, number] = [-3.6 / 1.6, -6.0 / 1.6];
+/**
+ * Where the robot lines up before it reverses in: straight out in front of
+ * the mouth, far enough to have room to back in and no further. The old
+ * staging point sat 2.6 robot lengths past the mouth plane, which on screen
+ * read as the robot blowing straight past the goal and then coming back for
+ * it. 1.4 is about the shortest that still leaves the tail room to swing.
+ */
+const APPROACH: [number, number] = [GOAL_MOUTH_RL[0], GOAL_MOUTH_RL[1] - 1.4];
 /** Nose across the field during the slide: a quarter turn left of entry. */
 const DRIFT_HEADING = Math.PI + Math.PI / 2;
+/**
+ * The finish heading expressed in the CONTINUOUS domain — one whole turn
+ * past the start. The run begins at PI and the drift swings the nose left
+ * (counter-clockwise); carrying on the same way brings it back to PI having
+ * turned 360, with the tail arriving at the mouth. Reaching the same
+ * heading by unwinding clockwise is the same pose and looks nothing like
+ * it: the nose scrubs back through where it came from and the camera, which
+ * pans one way the whole run, ends up chasing it.
+ */
+const FINISH_HEADING_CONTINUOUS = START_HEADING + 2 * Math.PI;
 
 const SCHEDULE: DriverPhase[] = [
   // 1. Up the field, driving forwards, passing the goal on its right. The
@@ -214,15 +239,58 @@ const SCHEDULE: DriverPhase[] = [
   //    pointing one way and travelling another, which is the whole move.
   { duration: 0.6, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: 3.5 },
   // 3. Hold it there and let it slide, nose across, still going up.
-  { duration: 1.1, headingGain: 2.0, headingTarget: DRIFT_HEADING, left: 3.2, right: 3.2, yawGain: 1.8 },
-  // 4. Out of the slide and across to a point above the goal's mouth.
-  { duration: 1.1, driveTo: ABOVE_MOUTH, headingGain: 2.6, left: 3.8, right: 3.8, yawGain: 2.2 },
-  // 5. Swing the tail down toward the mouth.
-  { duration: 1.2, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: 0.5, right: 0.5, yawGain: 2.4 },
-  // 6. Back down into it.
-  { duration: 2.2, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: -3.0, right: -3.0, yawGain: 2.4 },
+  {
+    duration: 0.8,
+    forceTurn: 1,
+    headingGain: 2.0,
+    headingTarget: DRIFT_HEADING,
+    left: 2.6,
+    right: 2.6,
+    yawGain: 1.8,
+  },
+  // 4. Still turning the same way, now steering the body at the staging
+  //    point in front of the mouth so the slide ends somewhere useful
+  //    rather than wherever the tyres ran out.
+  {
+    duration: 1.1,
+    driveTo: APPROACH,
+    forceTurn: 1,
+    headingGain: 1.6,
+    left: 2.2,
+    right: 2.2,
+    yawGain: 2.0,
+  },
+  // 5. Carry the rotation the rest of the way round, so the tail comes to
+  //    point at the mouth. The nose passes through a full turn here; it
+  //    never doubles back.
+  {
+    duration: 1.2,
+    forceTurn: 1,
+    headingGain: 2.4,
+    headingTarget: FINISH_HEADING_CONTINUOUS,
+    left: 1.0,
+    right: 1.0,
+    yawGain: 2.4,
+  },
+  // 6. Back down into it, tail first, squaring up on the way.
+  {
+    duration: 1.75,
+    driveTo: GOAL_MOUTH_RL,
+    driveToBackwards: true,
+    headingGain: 3.0,
+    left: -3.0,
+    right: -3.0,
+    yawGain: 2.4,
+  },
   // 7. Stop dead, square in the mouth.
-  { duration: 1.0, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
+  {
+    duration: 1.0,
+    headingGain: 3.6,
+    headingTarget: FINISH_HEADING_CONTINUOUS,
+    left: 0,
+    right: 0,
+    yawGain: 2.6,
+  },
 ];
 
 /**
@@ -257,15 +325,23 @@ function pickupTimes(frames: RobotDriftFrame[]): number[] {
   return times;
 }
 
-const START_HEADING = Math.PI;
 /**
  * The robot enters from the FAR end and drives toward the camera: heading PI
  * with forward drive carries it along -z, so it comes in upstage of the
  * balls and works down through them. Move this with the drift phases — a
  * longer slide covers more ground and the start has to give it room, or
  * the run finishes off the 46 x 32 floor.
+ *
+ * BOTH numbers matter to the goal, not just the second one. The whole path
+ * is a rigid translation of this point until the closing phases start
+ * steering at the mouth, so the x sets how close the slide passes the
+ * goal's open end. At -1.0 the robot's front-left corner went 0.42 stage
+ * units into the goal's footprint on the way past; -0.65 clears it (0.04
+ * of overlap on a conservative square-box test) and, because the closing
+ * phases correct for position anyway, it lands the finish dead on the
+ * mouth's centreline instead of 0.14 off it.
  */
-const START_POSITION: [number, number] = [-1.0, 8.4];
+const START_POSITION: [number, number] = [-0.65, 9.4];
 const START_SPEED = 4.0;
 
 function clamp(value: number, min: number, max: number) {
@@ -278,6 +354,19 @@ function wrapAngle(angle: number) {
   if (a <= -Math.PI) a += 2 * Math.PI;
   if (a > Math.PI) a -= 2 * Math.PI;
   return a;
+}
+
+/**
+ * Nose error, taking the short way about by default. With `direction` set
+ * the error is pushed onto that side instead, so a target a few degrees
+ * clockwise is reached by turning almost all the way round the other way —
+ * which is what keeps the closing rotation going the same way as the drift.
+ */
+function turnError(raw: number, direction?: 1 | -1) {
+  const wrapped = wrapAngle(raw);
+  if (direction === 1 && wrapped < 0) return wrapped + 2 * Math.PI;
+  if (direction === -1 && wrapped > 0) return wrapped - 2 * Math.PI;
+  return wrapped;
 }
 
 /** Friction coefficient as a function of combined slip speed. */
@@ -370,10 +459,10 @@ export function buildDriftPath(options: RobotDriftOptions = {}): RobotDriftFrame
       // point is atan2 of its offset the same way round.
       let bearing = Math.atan2(toX, toZ);
       if (phase.driveToBackwards) bearing += Math.PI;
-      const noseError = wrapAngle(bearing - heading);
+      const noseError = turnError(bearing - heading, phase.forceTurn);
       yawTarget = clamp((phase.headingGain ?? 2) * noseError, -2.5, 2.5);
     } else if (phase.headingTarget !== undefined) {
-      const noseError = wrapAngle(phase.headingTarget - heading);
+      const noseError = turnError(phase.headingTarget - heading, phase.forceTurn);
       // Close enough: stop chasing the target and just kill the rotation,
       // so the robot actually comes to rest instead of creeping forever on
       // an exponential approach.
@@ -499,14 +588,15 @@ const RUN = (() => {
 })();
 
 /**
- * Where the run ends — the resting pose, and the pose the goal is placed
- * against. The heading is the final frame's CONTINUOUS heading; the run now
- * stays inside one turn, so it is also within a few degrees of
- * FINISH_HEADING, but wrap it before comparing if that ever changes.
+ * Where the run ends. The heading is the final frame's CONTINUOUS heading,
+ * which is now a full turn past the start (FINISH_HEADING_CONTINUOUS) —
+ * wrap it before comparing it with anything.
  *
- * The goal sits just off the robot's REAR, along -(sin h, 0, cos h) from
- * this position — see FINISH_HEADING for why the robot finishes reversed
- * into it.
+ * The goal does NOT hang off this: it sits at a fixed GOAL_MOUTH in
+ * RobotOutro, and the last phases of the schedule steer the robot's tail
+ * into it. The audit that matters is how squarely the robot arrives —
+ * currently 0.09 robot lengths off the mouth's centreline and 2 degrees
+ * off square, at a dead stop.
  */
 export const DRIFT_FINISH: { heading: number; position: [number, number] } = RUN.finish;
 
