@@ -12,10 +12,15 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
-import ThinkerStage, { type ThinkerTiming } from "@/components/ThinkerStage";
+import ThinkerStage, {
+  STAGE_CUT_AT,
+  TREE_BREAK,
+  type ThinkerTiming,
+} from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
+import { loadCherryChunks } from "@/components/cherryChunks";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -69,12 +74,6 @@ const NARRATION_DRIFT_NARROW = 0.01;
 const narrationDrift = () =>
   window.innerWidth *
   (window.innerWidth < 700 ? NARRATION_DRIFT_NARROW : NARRATION_DRIFT);
-
-// How far past the em box the letters' ink can reach on the side that
-// faces the box, as a fraction of the word's height. Tracking pulls the
-// last letter's box in over its own ink, so the box is not where the ink
-// ends; this is what the "text gone" cue waits for on top of the box.
-const INK_OVERHANG = 0.1;
 
 // When the statue's canvas starts drawing, as a fraction of the same
 // timeline. It MUST lead PANEL_GROW_AT: the canvas is frozen while the
@@ -567,20 +566,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // away, which leaves it half a gap past the side of the frame.
       const outLeft = () => -gapCentre();
       const outRight = () => window.innerWidth - gapCentre();
-      // The fraction of the growth by which the last of the ink has left
-      // the frame, moving at those rates. Under 1 on any layout where the
-      // words fit on the line, so the cut fires while the box is still
-      // opening — later than it used to (about 0.9 of the growth rather
-      // than 0.6), because the words now ride the box out instead of
-      // racing ahead of it.
-      const wordsClearAt = () => {
-        const overhang = INK_OVERHANG * words[0].offsetHeight;
-        const leftClear = (wordRight() + overhang) / gapCentre();
-        const rightClear =
-          (window.innerWidth - wordLeft() + overhang) /
-          (window.innerWidth - gapCentre());
-        return Math.min(Math.max(leftClear, rightClear), 1);
-      };
       const tl = gsap.timeline({
         defaults: { ease: "none" },
         onUpdate: () => {
@@ -671,20 +656,34 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { x: outRight, duration: PANEL_GROW_DURATION, ease: "none" },
           PANEL_GROW_AT,
         )
-        // The exit as a number the statue's camera can cut on. It runs on
-        // the words' own tween — same start, same length, same ease — and
-        // is scaled so it reaches exactly 1 on the frame the last of the
-        // ink leaves the sides (wordsClearAt), whatever the scrub is doing.
-        // Reading the scroll position instead fired the cut about a third
-        // of a second early, with the "n" still on screen.
+        // The box's growth as a number the stage can cut on: the same
+        // start and the same linear ease as the box's own tween, over the
+        // first 60% of its length (STAGE_CUT_AT), so this reaches exactly
+        // 1 on the frame the box is 60% grown — whatever the scrub is
+        // doing. (It used to cut on the name clearing the sides, about 90%
+        // of the way; the words still ride the box out, the cut no longer
+        // waits for them.)
         .to(
           sceneFx,
           {
-            textGone: () => 1 / wordsClearAt(),
-            duration: PANEL_GROW_DURATION,
+            stageCut: 1,
+            duration: PANEL_GROW_DURATION * STAGE_CUT_AT,
             ease: "none",
           },
           PANEL_GROW_AT,
+        )
+        // And the tree's break, on the same clock: from a beat after the
+        // cut to where the statue's break ends, both as fractions of the
+        // growth (TREE_BREAK). Tweened here rather than read off the scroll
+        // in the stage so that it cannot run ahead of the cut it follows.
+        .to(
+          sceneFx,
+          {
+            treeBreak: 1,
+            duration: PANEL_GROW_DURATION * (TREE_BREAK.end - TREE_BREAK.start),
+            ease: "none",
+          },
+          PANEL_GROW_AT + PANEL_GROW_DURATION * TREE_BREAK.start,
         );
 
       // ------------------------------------------------------------------
@@ -765,31 +764,40 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       sceneFx.treeDrop = 0;
       sceneFx.orbit = 0;
       sceneFx.halftone = 1;
-      sceneFx.textGone = 0;
+      sceneFx.stageCut = 0;
+      sceneFx.treeBreak = 0;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
   }, [revealComplete]);
 
   // The Thinker's chunks are cut in a worker from the moment the page
-  // mounts. The television shot then HOLDS until they are ready (see the
-  // reveal gate below): the cut takes a couple of seconds, and the panel
-  // starts growing only 40vh into the scroll, so on a slower machine the
-  // scroll reached the panel before the statue existed and grew over an
-  // empty box. Nothing is ever shown loading — the name simply holds.
+  // mounts, and the tree's straight after them in the same worker. The
+  // television shot then HOLDS until both are ready (see the reveal gate
+  // below): the cuts take a few seconds, and the panel starts growing only
+  // 40vh into the scroll, so on a slower machine the scroll reached the
+  // panel before the statue existed and grew over an empty box. Nothing is
+  // ever shown loading — the name simply holds. A figure that FAILS to
+  // build (the model missing, a parse error) is logged once, by the
+  // loader, and not waited for: without the tree the stage keeps the
+  // statue past the cut (see ThinkerStage).
   useEffect(() => {
     let live = true;
     const ready = () => {
       if (live) setThinkerReady(true);
     };
-    void loadThinkerChunks().then(ready, ready);
+    const settled = (build: Promise<unknown>) => build.catch(() => undefined);
+    void Promise.all([settled(loadThinkerChunks()), settled(loadCherryChunks())]).then(ready);
     // Never strand the page on a fracture that FAILS — but this must not be
-    // reachable by one that is merely slow. It was 15 s, and the cut is now
+    // reachable by one that is merely slow. It was 15 s, and the cut is
     // ~115 seeds with the size variation on, which measures 12.5 s in the
     // worker: slower machines crossed the line, the reveal went ahead
     // without the chunks, and the box opened on an empty stage (nothing is
-    // drawn at all while `build` is null). This is the failure net, not a
-    // deadline — the fracture should always win the race.
-    const timeout = window.setTimeout(ready, 45000);
+    // drawn at all while `build` is null). Then 45 s, three and a half
+    // times that. There are two builds now, the tree's after the statue's
+    // (about 10 s more, measured on the same machine), so the net is the
+    // same margin over both. This is the failure net, not a deadline — the
+    // fractures should always win the race.
+    const timeout = window.setTimeout(ready, 80000);
     return () => {
       live = false;
       window.clearTimeout(timeout);

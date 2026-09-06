@@ -8,11 +8,13 @@ import {
 } from "@/components/thinkerFragments";
 
 /**
- * One build of The Thinker's chunks per page, started early and shared:
- * the page kicks it off as it mounts (the fracture runs in a worker while
- * the television plays), and the stage picks up the same promise when it
- * appears. Falls back to building on the main thread if the worker cannot
- * start.
+ * One build of each figure's chunks per page, started early and shared:
+ * the page kicks the builds off as it mounts (the fracture runs in a worker
+ * while the television plays), and the stage picks up the same promises
+ * when it appears. Builds are keyed by figure name — "thinker" for the
+ * statue, "cherry" for the tree (see cherryChunks) — and run one after
+ * another in a single worker, so a second figure never slows the first.
+ * Falls back to building on the main thread if the worker cannot start.
  */
 
 /** The figure's resting turn on the stage, about the vertical. */
@@ -40,17 +42,23 @@ export const CAMERA_OFFSET = new THREE.Vector3(0.85, 0.3, 1).normalize();
 // space, is unchanged to 0.0000 degrees.
 const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, -0.216, 0.146);
 
-function inFigureSpace(view: THREE.Vector3): [number, number, number] {
+function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
     .clone()
     .normalize()
-    .applyAxisAngle(new THREE.Vector3(0, 1, 0), -THINKER_BASE_YAW);
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
 
   return [direction.x, direction.y, direction.z];
 }
 
-function flightDirectionInFigureSpace() {
-  return inFigureSpace(CAMERA_OFFSET.clone().add(FLIGHT_DRIFT_VIEW));
+/**
+ * The pieces' flight in a figure's own space, for a figure standing on the
+ * stage at `yaw`. The same direction in the WORLD for every figure — it is
+ * the stage's flight, not the statue's — so the tree's pieces stream the
+ * way the statue's did.
+ */
+export function flightDirectionInFigureSpace(yaw = THINKER_BASE_YAW) {
+  return inFigureSpace(CAMERA_OFFSET.clone().add(FLIGHT_DRIFT_VIEW), yaw);
 }
 
 
@@ -127,10 +135,17 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
 };
 
 
-let pending: Promise<ThinkerChunkBuild> | null = null;
+/**
+ * A build that ran and failed — the model missing, a parse error, the
+ * fracture throwing — as opposed to the worker itself failing to start.
+ * The main-thread fallback is for the latter only: the same build on the
+ * main thread would fail the same way, after a fetch and a multi-second
+ * freeze.
+ */
+class ChunkBuildError extends Error {}
 
 async function buildOnMainThread(options: BuildSolidChunkOptions) {
-  const geometry = await loadThinkerGeometry();
+  const geometry = await loadThinkerGeometry(options.modelPath, options.normalizeHeight);
   const build = buildSolidThinkerChunks(geometry, options);
 
   geometry.dispose();
@@ -138,41 +153,87 @@ async function buildOnMainThread(options: BuildSolidChunkOptions) {
   return build;
 }
 
-function buildInWorker(options: BuildSolidChunkOptions) {
-  return new Promise<ThinkerChunkBuild>((resolve, reject) => {
-    const worker = new Worker(
-      new URL("./thinkerFragments.worker.ts", import.meta.url),
-    );
-    const finish = () => worker.terminate();
+// One worker for every figure. It is made on the first request, handles the
+// requests one at a time in the order they arrived (the fracture is CPU
+// bound, so two at once would only slow each other down — and the statue
+// is the one the reveal is waiting on), and is dropped once the last one
+// has been answered, so nothing idles in the background on the page.
+let worker: Worker | null = null;
+let queued = 0;
+let queue: Promise<unknown> = Promise.resolve();
 
-    worker.onmessage = (event: MessageEvent<{ build?: ThinkerChunkBuild; error?: string }>) => {
-      finish();
+function runInWorker(options: BuildSolidChunkOptions) {
+  return new Promise<ThinkerChunkBuild>((resolve, reject) => {
+    const instance =
+      worker ??
+      (worker = new Worker(new URL("./thinkerFragments.worker.ts", import.meta.url)));
+
+    instance.onmessage = (event: MessageEvent<{ build?: ThinkerChunkBuild; error?: string }>) => {
       if (event.data.build) resolve(event.data.build);
-      else reject(new Error(event.data.error ?? "Thinker chunk worker returned nothing."));
+      else reject(new ChunkBuildError(event.data.error ?? "Chunk worker returned nothing."));
     };
-    worker.onerror = (event) => {
-      finish();
+    instance.onerror = (event) => {
+      // The worker itself is broken — its script failed to load, or it
+      // crashed — rather than one build having failed. Throw it away so the
+      // next request starts a fresh one instead of posting into the void.
+      instance.terminate();
+      if (worker === instance) worker = null;
       reject(event.error instanceof Error ? event.error : new Error(event.message));
     };
-    worker.postMessage(options);
+    instance.postMessage(options);
   });
 }
 
-export function loadThinkerChunks(options = THINKER_CHUNK_OPTIONS) {
-  if (!pending) {
+function buildInWorker(options: BuildSolidChunkOptions) {
+  queued += 1;
+  const run = queue
+    .then(() => runInWorker(options))
+    .finally(() => {
+      queued -= 1;
+      if (queued === 0 && worker) {
+        worker.terminate();
+        worker = null;
+      }
+    });
+
+  queue = run.catch(() => undefined);
+
+  return run;
+}
+
+const pending = new Map<string, Promise<ThinkerChunkBuild>>();
+
+/**
+ * The chunks for one figure, built once per page under `key` and shared by
+ * everyone who asks for that key. A failed build is remembered as failed —
+ * logged once, here — rather than retried: the page asks for each figure
+ * as it mounts and the stage asks again when it appears, and a model that
+ * is missing is still missing the second time.
+ */
+export function loadChunks(key: string, options: BuildSolidChunkOptions) {
+  let promise = pending.get(key);
+
+  if (!promise) {
     const attempt =
       typeof Worker === "undefined"
         ? buildOnMainThread(options)
         : buildInWorker(options).catch((error: unknown) => {
-            console.warn("Thinker chunk worker failed; building on the main thread.", error);
+            if (error instanceof ChunkBuildError) throw error;
+            console.warn(`Chunk worker failed for "${key}"; building on the main thread.`, error);
             return buildOnMainThread(options);
           });
 
-    pending = attempt.catch((error: unknown) => {
-      pending = null;
+    promise = attempt.catch((error: unknown) => {
+      console.error(`Unable to build the "${key}" chunks.`, error);
       throw error;
     });
+    pending.set(key, promise);
   }
 
-  return pending;
+  return promise;
+}
+
+/** The statue's chunks. */
+export function loadThinkerChunks(options = THINKER_CHUNK_OPTIONS) {
+  return loadChunks("thinker", options);
 }
