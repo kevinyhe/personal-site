@@ -63,7 +63,13 @@ export type RobotModel = {
  */
 export type RobotSpinner = {
   axis: "x" | "y" | "z";
-  category: "drive" | "intake";
+  /**
+   * "drive" is geared to the wheels, "intake" runs whenever the intake
+   * does, and "indexer" does not turn at all — those are the plates that
+   * hold a ball back at the top of the tower, and they LIFT out of the way
+   * so it can be scored.
+   */
+  category: "drive" | "intake" | "indexer";
   object: THREE.Object3D;
   radius: number;
   side: "left" | "right" | "center";
@@ -178,6 +184,14 @@ const INTAKE_SURFACE_SPEED = 3.2;
  * Those turn against the lower rollers — see the spin loop.
  */
 const UPPER_STAGE_Y = 1.15;
+/**
+ * How far the indexer plates rise out of the ball's way while the robot is
+ * scoring, model units, and how long they take. They are named parts now
+ * (see PART_TYPES in scripts/robot-from-fbx.mjs), so this moves the pieces
+ * that actually stop the balls rather than guessing at them by height.
+ */
+const INDEXER_LIFT = 0.3;
+const INDEXER_LIFT_TIME = 0.35;
 
 type RobotRig = {
   /** World position + heading. */
@@ -220,6 +234,8 @@ type PropsModule = {
 };
 type BallPhysicsModule = {
   ballCount: () => number;
+  /** When the first ball is thrown; the indexer lifts just before it. */
+  scoringStart?: () => number;
   ballStatesAt: (time: number) => BallState[];
   /** Last moment anything is still moving, including the scoring. */
   ballTimelineEnd?: () => number;
@@ -687,6 +703,11 @@ function assembleRig(model: RobotModel | null): RobotRig {
   for (const { object } of [...resolved.wheels, ...spinners]) {
     if (!isUnder(object, resolved.chassis)) body.add(object);
   }
+  // Remember where the indexer rests so it can lift at scoring time and
+  // drop back when the scroll runs backwards.
+  for (const { category, object } of spinners) {
+    if (category === "indexer") object.userData.baseY = object.position.y;
+  }
   const scale = ROBOT_LENGTH / Math.max(resolved.length, 1e-3);
   body.scale.setScalar(scale);
   pose.add(body);
@@ -852,6 +873,8 @@ export default function RobotOutro({
   const ballStatesRef = useRef<((time: number) => BallState[]) | null>(null);
   /** Last moment a ball is still moving; the playhead has to reach it. */
   const ballTimelineRef = useRef(0);
+  /** When the first ball is thrown; the indexer lifts just before it. */
+  const scoringStartRef = useRef(Infinity);
   // Read by headless captures to check the goal landed and the parts turn.
   const probeRef = useRef({
     balls: 0,
@@ -892,6 +915,7 @@ export default function RobotOutro({
       if (!live) return;
       ballStatesRef.current = physics.ballStatesAt;
       ballTimelineRef.current = physics.ballTimelineEnd?.() ?? 0;
+      scoringStartRef.current = physics.scoringStart?.() ?? Infinity;
       const group = new THREE.Group();
       group.add(goal.object);
       // One mesh per ball; the clones share the source's geometry and
@@ -1086,6 +1110,23 @@ export default function RobotOutro({
     // pickups and still feeding at the goal, so it never idles mid-run.
     const intakeRunning = run.time > 0 && run.time < duration;
     for (const spinner of rig.spinners) {
+      if (spinner.category === "indexer") {
+        // The indexer holds the balls in the tower, so it has to get out of
+        // the way before they are fed out or they pass straight through it.
+        // It rises just ahead of the first throw and stays up for the rest
+        // of the run; driven off the playhead, so it drops again when the
+        // page scrolls back.
+        const base = spinner.object.userData.baseY as number | undefined;
+        if (base !== undefined) {
+          const opening = THREE.MathUtils.smoothstep(
+            run.time,
+            scoringStartRef.current - INDEXER_LIFT_TIME,
+            scoringStartRef.current,
+          );
+          spinner.object.position.y = base + INDEXER_LIFT * opening;
+        }
+        continue;
+      }
       let omega = 0;
       if (spinner.category === "drive") {
         const wheelOmega =
