@@ -22,8 +22,13 @@ import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
+import { sceneFx } from "@/components/sceneFx";
 import { DRIFT_FINISH } from "@/components/robotDrift";
-import RobotOutro, {
+// RobotOutro itself is deliberately not imported: it is no longer mounted
+// here (see ThinkerCanvas). Its constants and its camera-state type still
+// are, because the dormant chase branch in CameraRig is written against
+// them and comes back with one line when the robot gets its own section.
+import {
   createRobotCameraState,
   ROBOT_GROUND_Y,
   ROBOT_LENGTH,
@@ -47,10 +52,14 @@ gsap.registerPlugin(ScrollTrigger);
  * the camera backs off and follows to keep the cloud in view; the last few
  * percent are a settle.
  *
- * After the statue's stretch (start..statueEnd) the page's last scroll room
- * (statueEnd..end) belongs to the robot outro (see RobotOutro): the chunks
- * and the statue's lights fade out over its first 0.3, the robot scene
- * fades in, and the camera hands over to a rally-style chase.
+ * On the frame the page's name has finished being shoved off the sides, the
+ * shot CUTS round to 55 degrees off the figure's front and a little further
+ * back, and holds there while the pieces keep streaming (see CUT_AZIMUTH).
+ *
+ * The robot outro (RobotOutro) used to take the page's last scroll room
+ * from statueEnd on. It no longer runs here — it is being kept for a
+ * section of its own — so the robot's phase is pinned to 0 and the statue
+ * owns the whole panel.
  *
  * Model: "The Thinker by Auguste Rodin" by Rigsters (Sketchfab), CC-BY-4.0 —
  * see public/model/thinker/license.txt. Geometry only; the textures are
@@ -67,6 +76,11 @@ gsap.registerPlugin(ScrollTrigger);
 type ProgressRef = MutableRefObject<{
   breakStart: number;
   robot: number;
+  /**
+   * 0..1 across the narration that plays over the held statue. The figure
+   * puts itself back together against this, and the camera pans off it.
+   */
+  story: number;
   value: number;
 }>;
 
@@ -74,19 +88,29 @@ type ProgressRef = MutableRefObject<{
 export type ThinkerTiming = () => {
   /** Scroll position at which the break begins. */
   breakAt: number;
-  /** Scroll position at which the robot outro's progress reaches 1. */
+  /** Scroll position at which the page's scroll ends. */
   end: number;
+  /**
+   * Scroll positions the reassembly runs between: from the frame the name
+   * clears and the camera cuts, to the end of the narration.
+   */
+  storyEnd: number;
+  storyStart: number;
   /** Scroll position at which the stage's progress starts (0). */
   start: number;
   /**
-   * Scroll position at which the statue's progress reaches 1 and the robot
-   * outro's begins. The scroll room from statueEnd to end belongs to the
-   * robot alone.
+   * Scroll position at which the statue's progress reaches 1. The scroll
+   * room from statueEnd to end is a hold on the shot the camera cut to.
    */
   statueEnd: number;
 };
 // Where the breakup ends, as a fraction of the stage's stretch (where it
 // starts comes from the page, see ThinkerTiming).
+//
+// The break runs the whole way: it does not stop at the camera cut, it
+// keeps opening through it and finishes as the panel reaches the full
+// screen. The reverse starts there — see `story`, and `shown` in
+// ChunkedThinker for how the return is made to replay this exactly.
 const BREAK_END = 0.96;
 // Camera distance to what it looks at: at rest, close on the upper two
 // thirds of the figure; over the breakup it eases slightly closer while
@@ -135,16 +159,145 @@ const IMPACT_AIM_LIFT = 0.2;
 const ORBIT_LEFT = -1.0;
 const ORBIT_LEFT_COMPACT = -0.7;
 
+// ---------------------------------------------------------------------------
+// The cut.
+//
+// The moment the name has finished being shoved off the sides of the frame,
+// the shot CUTS — one frame, no easing — round the figure and a little
+// further back, and holds there for the rest of the page. Everything before
+// it (the opening on the blow, the pull-out, the leftward orbit) is
+// untouched.
+//
+// The angle is measured from the figure's FRONT, clockwise seen from above
+// — 90 would be square onto its right shoulder — which is DECREASING
+// azimuth here (azimuth is atan2(x, z), 0 = +z, and increasing azimuth
+// turns counter-clockwise from above). The stage's yaw (THINKER_BASE_YAW)
+// lands the figure's front on +z to within a couple of degrees, measured
+// off the model itself, so the front is azimuth 0 and the shot is -55.
+// It was -75 — a clean side profile; this is 20 degrees back toward the
+// front of the figure.
+//
+// WHEN it fires is `sceneFx.textGone`, which the hero timeline tweens on
+// exactly the word tweens' own start, duration and ease. Not the scroll
+// position the exit maps to: the hero timeline is scrubbed (0.3), so under
+// a real scroll the words lag the scroll by about a third of a second, and
+// keyed off the scroll the cut landed with the last letter still on screen.
+const CUT_AZIMUTH = -55 * (Math.PI / 180);
+// Same height above the figure as the settled wide shot — only the angle
+// around it and the distance change — so the cut reads as a move around the
+// statue rather than a move up or down it.
+const CUT_OFFSET = (() => {
+  const flat = Math.hypot(CAMERA_OFFSET.x, CAMERA_OFFSET.z);
+  return new THREE.Vector3(
+    Math.sin(CUT_AZIMUTH) * flat,
+    CAMERA_OFFSET.y,
+    Math.cos(CUT_AZIMUTH) * flat,
+  );
+})();
+// How much further out the cut sits than the shot it cuts from. A fifth.
+// The name now clears in the last twentieth of the box's growth (the
+// words ride the box's edges out, see HeroIntro), by which point the
+// pull-out has all but settled, so the cut opens at about 6 rather than
+// the 4.65 it did when the name raced the box and cleared at 59%.
+//
+// It is a MULTIPLIER on the pull-out, not a fixed distance, so the pull-out
+// carries on running underneath the cut and the lens keeps opening to 6.1
+// by the end. Frozen at 4.65 the shot ended on a wall of rubble: the pieces
+// fly toward where the camera used to be, which from the side is off the right
+// of frame, so they cross it and fill it. The same is true of the aim,
+// which goes on easing to the figure's middle as it already did. The cut
+// changes the angle around the figure and the distance. Nothing else.
+const CUT_PULL_BACK = 1.2;
+// How much of the cloud's drift the cut shot follows.
+//
+// From round the side the pieces cross the frame instead of coming at the
+// lens. The
+// old angle sat almost ON the flight axis — the camera direction and the
+// flight direction are 16 degrees apart — so the cloud stayed centred while
+// it streamed past; from the side it walks out of the right of frame and
+// leaves half the picture empty. The aim (and with it the camera, which
+// hangs off the aim) travels along the cloud's own mean offset instead, on
+// the same travel curve the pieces use, so the shot dollies with them.
+// 1 = dead centre on the cloud's mean; a little under keeps the figure's
+// remains, which are behind the mean, in the frame too.
+const CUT_AIM_FOLLOW = 0.85;
+
+/**
+ * How far the shot pans off the figure while the narration runs, as a
+ * fraction of half the frame's width.
+ *
+ * A pan, not a truck: only the AIM moves, so the camera turns rather than
+ * slides and the figure swings across the frame instead of the whole scene
+ * sliding with it. Left, which puts the statue over on the right and leaves
+ * the left of the screen — where the staircase sets — clear.
+ *
+ * A fraction rather than world units, because the frame is not always the
+ * same width. A fixed 1.7 units is three quarters of the way across a
+ * laptop and most of the way off a phone held upright.
+ *
+ * Zero now: the figure stays in the middle of the frame for the whole of
+ * the narration, which is set centred over it (see HeroIntro) rather than
+ * in a column beside it. It was 0.48 (and 0.57 before the orbit was
+ * added), which put the statue over on the right to clear the left of the
+ * screen for the staircase. The machinery is left in place for the day the
+ * column comes back.
+ */
+const STORY_PAN = 0;
+/**
+ * And no pan at all on a portrait screen. There is no column beside the
+ * figure to move it out of on a phone — the narration is full width there
+ * — so moving it only loses the statue. The scrim carries legibility
+ * instead (see the narration scrim in HeroIntro).
+ */
+const STORY_PAN_ASPECT = { full: 1.4, none: 0.95 };
+/**
+ * The rest of the shot's move while the figure comes back.
+ *
+ * The pan alone was the only thing happening, and a camera turning on the
+ * spot reads as the subject sliding rather than as the camera going
+ * anywhere. The orbit is what gives it somewhere to go.
+ *
+ * It turns BACK the way the breakup's orbit came: the swing before the cut
+ * carries the eye round to the left (ORBIT_LEFT, decreasing azimuth, which
+ * is clockwise seen from above), and the cut lands 55 degrees round that
+ * way. Positive here is increasing azimuth — counter-clockwise from above
+ * — so from the cut's three-quarter view the figure turns the other way as
+ * it knits itself back together, toward its front rather than on round to
+ * the profile. It was -32, the same way round as before the cut, then 38
+ * the other way; this is 40% of that — a gentle turn rather than a swing,
+ * enough that the figure is seen to move while it stays put in the frame.
+ *
+ * The distance barely moves, and outward at that. Closing in was the
+ * obvious idea — the cloud contracts, so follow it — but it is wrong: the
+ * distance the exploded cloud needed is roughly the distance the whole
+ * figure needs, and pushing to 4.9 cropped its head and its feet. It only
+ * has to open enough to fit a statue that is no longer in pieces.
+ */
+const STORY_ORBIT = 15.2 * (Math.PI / 180);
+const STORY_DOLLY = 1.04;
+
+/**
+ * The reverse's ease, shared by the camera and the pieces so they cannot
+ * disagree about how far along it is.
+ *
+ * Smootherstep, not smoothstep: its rate starts and ends at zero AND its
+ * acceleration does too, so the figure does not lurch into motion the
+ * moment the panel fills, and it settles into place rather than arriving.
+ */
+function storyEaseOf(story: number) {
+  return smoothPhase(0, 1, story);
+}
+
 const FLOOR_Y = -1.6;
 const STAGE_BLACK = "#0a0a0a";
 
-// The hand-off to the robot is a CLIP, not a dissolve: on the frame the
-// robot phase opens, the statue and everything lighting it are simply gone
-// and the robot is simply there. No fade window at either end — this used
-// to cross-fade over robot phase 0..0.08 with the robot coming up over
-// 0.08..0.13 behind it. `statueOn` is that switch, and RobotOutro's
-// ROBOT_FADE_START is its other half. Scrolling back up restores the
-// statue just as sharply.
+// The hand-off to the robot was a CLIP, not a dissolve: on the frame the
+// robot phase opened, the statue and everything lighting it were simply
+// gone and the robot was simply there. `statueOn` is that switch, and
+// RobotOutro's ROBOT_FADE_START is its other half. With the robot out of
+// this sequence the phase never leaves 0, so this returns 1 for the whole
+// page; it is left in place because it is the other half of putting the
+// robot back.
 const statueOn = (robotPhase: number) => (robotPhase > 0 ? 0 : 1);
 const STATUE_FOV = 34;
 
@@ -156,10 +309,14 @@ const cameraProbe: Record<string, unknown> = {};
  * of [time, value] read with `keyed`, which eases between them.
  */
 const CAMERA_AZIMUTH: Array<[number, number]> = [
-  // Held while the robot comes down the field collecting balls, so the
-  // shot opens on the move rather than swinging during it...
-  [0, -45],
-  [1.5, -45],
+  // The entry PANS rather than holding. It used to sit at -45 for the whole
+  // approach so the shot "opened on the move rather than swinging during
+  // it", but a static frame for the first quarter of the run reads as a
+  // still, not an opening — the robot simply drives across it. Sweeping
+  // through the collection leg gives the camera somewhere to have come
+  // from, and it still only ever increases, so nothing doubles back.
+  [0, -78],
+  [1.5, -40],
   // ...and from there it only ever INCREASES — counter-clockwise seen from
   // above — so the camera sweeps one way from the first frame of the drift
   // to the last and never doubles back. The robot itself turns a full
@@ -180,7 +337,10 @@ const CAMERA_AZIMUTH: Array<[number, number]> = [
 ];
 
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
-  [0, 4.6],
+  // Opens wide and pushes in over the collection leg, so the pan above has
+  // some parallax under it rather than being a bare rotation.
+  [0, 5.7],
+  [1.5, 4.5],
   [3.6, 5.2],
   [5.2, 6.0],
   [6.4, 7.2],
@@ -191,7 +351,8 @@ const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   // Down at the level of the drivetrain, looking up at the robot — the
   // angle a trackside racing camera sits at, where the car fills the frame
   // against the sky rather than being looked down on.
-  [0, 0.28],
+  [0, 0.52],
+  [1.5, 0.3],
   [3.6, 0.42],
   // Only at the very end does it climb, for the wide shot that has to hold
   // the goal and the scored balls as well.
@@ -254,6 +415,21 @@ const CAMERA_PARK_BY = 4.6;
  */
 const CAMERA_PARK_AZIMUTH = DRIFT_FINISH.heading + Math.PI / 2;
 const CAMERA_PARK_DISTANCE = 5.0;
+/**
+ * Where the parked camera stands, in the world.
+ *
+ * The orbit centre eases off the live robot and onto this, so once parked
+ * the camera is a fixed spot on the floor that PANS to follow the robot in,
+ * rather than a rig riding along with it. Riding it kept the robot pinned
+ * dead centre of frame the whole way — locked on, not a camera. Standing
+ * still and panning is what a trackside rally camera does: the car crosses
+ * the frame and settles in it.
+ *
+ * The drift reports its finish in robot lengths; the stage is in stage
+ * units, 1.6 of them to a length.
+ */
+const PARK_CENTRE_X = DRIFT_FINISH.position[0] * ROBOT_LENGTH;
+const PARK_CENTRE_Z = DRIFT_FINISH.position[1] * ROBOT_LENGTH;
 /**
  * The height the robot actually scores at: its indexer, which is where
  * RobotOutro lifts the balls from before they lob into the mouth
@@ -407,7 +583,7 @@ function useThinkerScrollProgress({
     readBreakStart();
     ScrollTrigger.addEventListener("refresh", readBreakStart);
     // Marker mode (see DebugMarkers) holds the figure whole. Reduced motion
-    // keeps the statue standing and never opens the robot outro.
+    // keeps the statue standing on the settled wide shot and never cuts.
     if (reducedMotion || window.location.search.includes("thinkerMarkers")) {
       return () => ScrollTrigger.removeEventListener("refresh", readBreakStart);
     }
@@ -489,33 +665,34 @@ function ScrollSync({
   // way worth remembering: read once at mount, they were taken before the
   // page's spacers had their real heights, and the robot's progress sat at
   // 1 from the top of the page.
-  const bounds = useRef<{ robot: ScrollTrigger | null; statue: ScrollTrigger | null }>({
-    robot: null,
-    statue: null,
-  });
+  const bounds = useRef<{ statue: ScrollTrigger | null }>({ statue: null });
+  const story = useRef({ end: 1, start: 0 });
+  useEffect(() => {
+    const read = () => {
+      const { storyEnd, storyStart } = timing();
+      story.current = { end: storyEnd, start: storyStart };
+    };
+    read();
+    ScrollTrigger.addEventListener("refresh", read);
+    return () => ScrollTrigger.removeEventListener("refresh", read);
+  }, [timing]);
   useEffect(() => {
     const statue = ScrollTrigger.create({
       end: () => timing().statueEnd,
       invalidateOnRefresh: true,
       start: () => timing().start,
     });
-    const robot = ScrollTrigger.create({
-      end: () => timing().end,
-      invalidateOnRefresh: true,
-      start: () => timing().statueEnd,
-    });
-    bounds.current = { robot, statue };
+    bounds.current = { statue };
     return () => {
       statue.kill();
-      robot.kill();
-      bounds.current = { robot: null, statue: null };
+      bounds.current = { statue: null };
     };
   }, [timing]);
 
   const read = useCallback(() => {
     if (reducedMotion) return;
-    const { robot, statue } = bounds.current;
-    if (!robot || !statue) return;
+    const { statue } = bounds.current;
+    if (!statue) return;
     // Lenis's own scroll in preference to `window.scrollY`: the browser
     // rounds the applied position to whole pixels, and Lenis knows the
     // fractional one it is heading for.
@@ -526,8 +703,14 @@ function ScrollSync({
       0,
       1,
     );
-    progressRef.current.robot = THREE.MathUtils.clamp(
-      (y - robot.start) / Math.max(robot.end - robot.start, 1),
+    // The robot outro is no longer part of this sequence — it is being kept
+    // for a section of its own — so its phase never leaves 0, which is what
+    // holds the statue, its lights and its floor on (see `statueOn`) and
+    // keeps CameraRig on the statue's camera for the whole page.
+    progressRef.current.robot = 0;
+    progressRef.current.story = THREE.MathUtils.clamp(
+      (y - story.current.start) /
+        Math.max(story.current.end - story.current.start, 1),
       0,
       1,
     );
@@ -553,11 +736,17 @@ function ScrollSync({
 }
 
 function CameraRig({
+  cloudDrift,
   openAim,
   progressRef,
   reducedMotion,
   robotState,
 }: {
+  /**
+   * Where the cloud's centre ends up, in world space: the mean of the
+   * chunks' full offsets, which the cut shot follows.
+   */
+  cloudDrift: THREE.Vector3;
   /** Where the shot opens: the blow, lifted clear of the floor. */
   openAim: THREE.Vector3;
   progressRef: ProgressRef;
@@ -595,6 +784,12 @@ function CameraRig({
   // framing, and lerping from there would slide the lens into the hand
   // shot over a second instead of opening on it.
   const opened = useRef(false);
+  // Nor may the cut: the same 0.08 lerp would slide the lens round to the
+  // new angle over about a third of a second, which is a whip pan, not a
+  // cut. This remembers which side of the exit the last frame was on, so
+  // the frame that crosses it snaps — in either direction, so scrolling
+  // back up cuts back just as sharply.
+  const cutRef = useRef(false);
 
   useFrame(({ clock }) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
@@ -631,6 +826,34 @@ function CameraRig({
       .multiplyScalar(distance)
       .add(lookAt);
 
+    // The cut. Once the name is off the sides of the frame the camera is
+    // 55 degrees round from the figure's front and a fifth further out, and
+    // stays there to the bottom of the stage. Nothing above is skipped: every frame up to this
+    // scroll position plays exactly as it did, and the swing and the orbit
+    // this replaces are still what get it there.
+    const cut = !reducedMotion && sceneFx.textGone >= 1;
+    // How far through the reverse the page is. The figure reassembles
+    // against this (see ChunkedThinker) and the shot keeps moving on it.
+    const story = reducedMotion ? 0 : progressRef.current.story;
+    const settled = storyEaseOf(story);
+    const shotDistance = cut
+      ? distance * CUT_PULL_BACK * THREE.MathUtils.lerp(1, STORY_DOLLY, settled)
+      : distance;
+    if (cut) {
+      // The follow unwinds with the cloud it was following: as the pieces
+      // come home there is nothing out there left to lead the frame toward.
+      lookAt.addScaledVector(
+        cloudDrift,
+        CUT_AIM_FOLLOW * travelAt(breakup) * (1 - settled),
+      );
+      // Orbiting again, back the other way from the breakup's swing.
+      scratch.offset
+        .copy(CUT_OFFSET)
+        .applyAxisAngle(UP, STORY_ORBIT * settled)
+        .multiplyScalar(shotDistance);
+      target.copy(scratch.offset).add(lookAt);
+    }
+
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     // A cut, not a pan. Easing the lens from the statue's framing into the
     // chase swept it across an empty stage for a second before the robot
@@ -646,16 +869,51 @@ function CameraRig({
       // angular wander reads as much bigger movement on the tight hand
       // shot than on the wide one.
       if (!reducedMotion) {
-        const sway = distance * 0.016;
+        const sway = shotDistance * 0.016;
         target.x += Math.sin(clock.elapsedTime * 0.18) * sway;
         target.y += Math.sin(clock.elapsedTime * 0.13 + 1.1) * sway * 0.6;
       }
-      if (opened.current) camera.position.lerp(target, 0.08);
+      const crossed = cut !== cutRef.current;
+      cutRef.current = cut;
+      if (opened.current && !crossed) camera.position.lerp(target, 0.08);
       else {
         opened.current = true;
         camera.position.copy(target);
       }
+      // The pan. Applied to the AIM only, and after the position is fixed,
+      // so the camera turns on the spot. Shifting the look-at before the
+      // position is derived from it would have moved both together, which
+      // keeps the subject dead centre and pans nothing.
+      if (settled > 0.001 && persp.isPerspectiveCamera) {
+        const aspect = persp.aspect;
+        const wide = THREE.MathUtils.clamp(
+          (aspect - STORY_PAN_ASPECT.none) /
+            (STORY_PAN_ASPECT.full - STORY_PAN_ASPECT.none),
+          0,
+          1,
+        );
+        if (wide > 0) {
+          const halfWidth =
+            shotDistance * Math.tan((persp.fov * Math.PI) / 360) * aspect;
+          scratch.forward.copy(lookAt).sub(camera.position).normalize();
+          scratch.offset.crossVectors(scratch.forward, UP).normalize();
+          lookAt.addScaledVector(
+            scratch.offset,
+            -halfWidth * STORY_PAN * settled * wide,
+          );
+        }
+      }
       camera.lookAt(lookAt);
+      // Same probe the chase used to fill in, so a headless capture can read
+      // the statue's framing too — `azimuth` in degrees, on the convention
+      // the cut is written in (0 = +z, and the figure's front is +z).
+      cameraProbe.camera = camera.position.toArray();
+      cameraProbe.look = lookAt.toArray();
+      cameraProbe.cut = cut;
+      cameraProbe.azimuth =
+        Math.atan2(camera.position.x - lookAt.x, camera.position.z - lookAt.z) *
+        (180 / Math.PI);
+      cameraProbe.distance = camera.position.distanceTo(lookAt);
       if (persp.isPerspectiveCamera && Math.abs(persp.fov - STATUE_FOV) > 0.01) {
         persp.fov = STATUE_FOV;
         persp.updateProjectionMatrix();
@@ -743,11 +1001,15 @@ function CameraRig({
     const sweep = Math.atan2(Math.sin(toPark), Math.cos(toPark));
     const swung = side + sweep * parked;
     const radius = THREE.MathUtils.lerp(orbit, CAMERA_PARK_DISTANCE, parked);
+    // The orbit centre itself eases from the robot onto the fixed spot, so
+    // the camera stops travelling with it and starts panning after it.
+    const centreX = THREE.MathUtils.lerp(robotState.anchorPosition.x, PARK_CENTRE_X, parked);
+    const centreZ = THREE.MathUtils.lerp(robotState.anchorPosition.z, PARK_CENTRE_Z, parked);
     chase.position.set(
-      robotState.anchorPosition.x + Math.sin(swung) * radius,
+      centreX + Math.sin(swung) * radius,
       ROBOT_GROUND_Y +
         THREE.MathUtils.lerp(lift, CAMERA_SCORING_HEIGHT + CAMERA_PARK_LIFT, parked),
-      robotState.anchorPosition.z + Math.cos(swung) * radius,
+      centreZ + Math.cos(swung) * radius,
     );
     // Aim at the robot, easing back toward its tail once it is parked so
     // the goal it has just filled shares the frame — but that walk-back and
@@ -939,6 +1201,24 @@ function ChunkedThinker({
   useFrame(({ clock, size }, delta) => {
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
+    const story = reducedMotion ? 0 : progressRef.current.story;
+    const storyEase = storyEaseOf(story);
+
+    // The exact reverse.
+    //
+    // Not a shrink: scaling every piece's travel toward zero brings them
+    // all home together, which is not what taking a break backwards looks
+    // like. The break has an ORDER — each chunk has its own `releaseAt` and
+    // its own window, so the hand goes first and the base last — and the
+    // reverse of that is the base arriving first and the hand last.
+    //
+    // Running the same parameter backwards gets all of it for free. Every
+    // piece's position is a function of this one number; drive it from 1
+    // down to 0 and each chunk retraces its own flight, in reverse order,
+    // spinning and growing back exactly the way it left.
+    const shown = Math.min(breakup, 1 - storyEase);
+    // The last few percent of spread unwinds with it.
+    const settled = settle * (1 - storyEase);
 
     // The robot outro takes the stage: over its first stretch the chunks'
     // materials (surface and interior alike) fade to nothing; scrolling
@@ -970,9 +1250,10 @@ function ChunkedThinker({
       const group = chunkRefs.current[index];
       if (!group) return;
       // Each chunk's flight takes its own window of the breakup once it
-      // has released, then carries on the same way.
+      // has released, then carries on the same way. `shown` rather than
+      // `breakup`, so this same line plays the flight forwards and back.
       const localProgress = Math.max(
-        (breakup - chunk.releaseAt) / Math.max(chunk.travelWindow, 0.01),
+        (shown - chunk.releaseAt) / Math.max(chunk.travelWindow, 0.01),
         0,
       );
       // Time keeps a released piece moving even while the scroll rests;
@@ -986,7 +1267,7 @@ function ChunkedThinker({
 
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
-      const travel = (travelAt(localProgress) + adrift) * (1 + settle * 0.06);
+      const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
       const turn = Math.min(travel, 1.5);
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
@@ -1000,7 +1281,9 @@ function ChunkedThinker({
       const compact = size.width < 720;
       const stageScale = compact ? 0.92 : 1;
       stageRef.current.scale.setScalar(stageScale);
-      const spread = travelAt(breakup);
+      // The stage's own drift rides the same number, so a reassembled
+      // figure stands at exactly the rotation it was carved at.
+      const spread = travelAt(shown);
       stageRef.current.rotation.set(
         -0.08 + spread * 0.04,
         THINKER_BASE_YAW - spread * 0.05,
@@ -1090,7 +1373,13 @@ function StageFloor({
   const materialRef = useRef<THREE.ShadowMaterial>(null);
 
   useFrame(() => {
-    const spread = reducedMotion ? 0 : travelAt(breakupAt(progressRef.current));
+    // Same reversed parameter the chunks ride, so the shadow comes back
+    // under the figure as the figure comes back.
+    const story = reducedMotion ? 0 : progressRef.current.story;
+    const storyEase = storyEaseOf(story);
+    const spread = reducedMotion
+      ? 0
+      : travelAt(Math.min(breakupAt(progressRef.current), 1 - storyEase));
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     if (materialRef.current) {
       // Faded by the spread as before, and gone entirely with the statue
@@ -1120,7 +1409,10 @@ function ThinkerCanvas({
   timing: ThinkerTiming;
 }) {
   const build = useThinkerChunks();
-  // Written by RobotOutro every frame, read by CameraRig for the chase.
+  // RobotOutro used to write this every frame for CameraRig's chase. With
+  // the robot unmounted nothing writes it and nothing reads it — the chase
+  // branch is behind a `robot > 0` test that can no longer be true — but it
+  // is still what CameraRig is typed on, so it stays.
   const robotState = useMemo(createRobotCameraState, []);
   // Where the blow landed, in world space: the build reports it in the
   // figure's own coordinates, so it has to go through the stage group's
@@ -1134,6 +1426,14 @@ function ThinkerCanvas({
     point.y += IMPACT_AIM_LIFT;
 
     return point;
+  }, [build]);
+  // Where the cloud ends up, in world space. The build reports the mean of
+  // the chunks' offsets in the figure's own coordinates, so it goes through
+  // the stage group's rotation like the blow does.
+  const cloudDrift = useMemo(() => {
+    const drift = build ? new THREE.Vector3(...build.drift) : new THREE.Vector3();
+
+    return drift.applyEuler(new THREE.Euler(...STAGE_ROTATION));
   }, [build]);
   // Warm the pipeline as soon as the chunks are in. One frame compiles the
   // materials and uploads the geometry; the shadow map needs its own pass,
@@ -1191,12 +1491,14 @@ function ThinkerCanvas({
       />
       <color args={[STAGE_BLACK]} attach="background" />
       <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
-      {/* Before the camera, deliberately. R3F runs same-priority frame
-          callbacks in mount order, and the camera is framed on `robotState`,
-          which this writes — with the camera first it was always aiming at
-          where the robot had been on the previous frame. */}
-      <RobotOutro progressRef={progressRef} robotState={robotState} />
+      {/* The robot outro is NOT mounted. It is being saved for a section of
+          its own, so nothing here fetches its model or drives its drift;
+          `progressRef.robot` is pinned to 0 (see ScrollSync), which leaves
+          CameraRig on the statue's camera and the statue's lights on for
+          the whole page. Putting it back is this line plus that pin —
+          RobotOutro and the chase branch below are untouched. */}
       <CameraRig
+        cloudDrift={cloudDrift}
         openAim={openAim}
         progressRef={progressRef}
         reducedMotion={reducedMotion}
@@ -1224,7 +1526,7 @@ export default function ThinkerStage({
   /** The stretch of the page's scroll the stage owns, and its break point. */
   timing: ThinkerTiming;
 }) {
-  const progressRef = useRef({ breakStart: 0.05, robot: 0, value: 0 });
+  const progressRef = useRef({ breakStart: 0.05, robot: 0, story: 0, value: 0 });
   const reducedMotion = usePrefersReducedMotion();
 
   // Exposed so headless captures can read the scrubbed state.

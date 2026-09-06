@@ -7,6 +7,27 @@
   --arbor-vw: 1vw;
   --arbor-screen-h: 100vh;
   --arbor-screen-w: 100vw;
+
+  /* The hero's sakura palette, restated for the 2D side of the site.
+     components/BareThreeCanvas.tsx owns these values for the WebGL tree
+     (PETAL_EDGE_COLOR, PETAL_MID_COLOR, PETAL_BASE_COLOR,
+     BLOSSOM_CENTER_COLOR, BLOSSOM_CALYX_COLOR); anything drawn in CSS,
+     canvas 2D or SVG below the fold should pull from here rather than
+     picking its own pink, so the page stays one tree.
+     Canvas code can read them with
+     getComputedStyle(document.documentElement).getPropertyValue(...). */
+  --sakura-edge: #fdeff8;
+  --sakura-mid: #f7cfe6;
+  --sakura-base: #e79cc8;
+  --sakura-center: #c22e63;
+  --sakura-calyx: #a13d5d;
+  --sakura-pedicel: #5d4150;
+  /* The dusk end of the same family: what the field falls to, not what a
+     petal is made of. Not in the WebGL palette because the tree is lit and
+     the background is the room it is lit in. */
+  --sakura-plum: #4a1030;
+  --sakura-night: #180a14;
+  --sakura-sink: #33285c;
 }
 
 @supports (height: 100dvh) {
@@ -65,29 +86,41 @@ body {
   will-change: transform;
 }
 
-/* Warm core: the bright pinks, upper right, echoing where the hero canvas
-   puts its own light. */
+/* Warm blush, upper right: the light coming off the canopy, roughly where
+   the hero canvas puts its own. The centre stops are the sakura palette
+   walked down toward dusk rather than the palette itself — a petal is a lit
+   surface and this is the air behind it, so the same hues sit two or three
+   stops darker. The old field opened on #ff5f9a, which is a neon, not a
+   flower. */
 .site-bg::before {
   background:
-    radial-gradient(38% 46% at 64% 16%, #ff5f9a 0%, rgba(255, 95, 154, 0) 68%),
-    radial-gradient(46% 38% at 80% 44%, #d6246b 0%, rgba(214, 36, 107, 0) 70%),
-    radial-gradient(34% 42% at 46% 64%, #7d1338 0%, rgba(125, 19, 56, 0) 72%);
+    radial-gradient(40% 48% at 66% 15%, #c9648e 0%, rgba(201, 100, 142, 0) 66%),
+    radial-gradient(46% 38% at 82% 46%, #a62c5c 0%, rgba(166, 44, 92, 0) 70%),
+    radial-gradient(34% 42% at 44% 66%, #64143a 0%, rgba(100, 20, 58, 0) 72%);
   animation: site-bg-drift-a 64s ease-in-out infinite alternate;
 }
 
-/* Cool counterweight: violet to the right, a single warm ember upper left,
-   and a deep plum sink at the bottom so the field has somewhere to fall to. */
+/* The cool half. One dusk-blue sink on the right so the field has somewhere
+   to fall to instead of only getting dimmer, a small calyx-warm ember upper
+   left to keep that side from going grey, and deep plum along the bottom.
+   The sink is the only thing here that is not a pink: without it every part
+   of the page is the same temperature and the drift stops reading as light
+   moving. */
 .site-bg::after {
   background:
-    radial-gradient(40% 34% at 90% 68%, #5c2f7a 0%, rgba(92, 47, 122, 0) 72%),
-    radial-gradient(28% 34% at 26% 24%, #ff8f6a 0%, rgba(255, 143, 106, 0) 70%),
-    radial-gradient(54% 44% at 68% 92%, #2a0a1c 0%, rgba(42, 10, 28, 0) 76%);
-  opacity: 0.9;
+    radial-gradient(44% 38% at 88% 66%, #33285c 0%, rgba(51, 40, 92, 0) 74%),
+    radial-gradient(28% 34% at 26% 24%, #9a4352 0%, rgba(154, 67, 82, 0) 70%),
+    radial-gradient(54% 44% at 68% 92%, #240b1a 0%, rgba(36, 11, 26, 0) 76%);
+  opacity: 0.92;
   animation: site-bg-drift-b 87s ease-in-out infinite alternate;
 }
 
-/* Corners back to black, so the field reads as light in a dark room instead
-   of as wallpaper, and so body copy always has somewhere quiet to sit. */
+/* Corners down to a plum near-black, so the field reads as light in a dark
+   room instead of as wallpaper, and so body copy always has somewhere quiet
+   to sit. Plum rather than the neutral #0a0a0a it used to crush to: at this
+   luminance (~0.004 relative, against black's 0.003) the tint costs nothing
+   measurable in contrast, but it keeps the dark edges in the same family as
+   the tree instead of dropping out to a grey hole. */
 .site-bg-vignette {
   position: absolute;
   inset: 0;
@@ -104,18 +137,18 @@ body {
        margin worth shipping on something that moves. */
     linear-gradient(
       to bottom,
-      rgba(10, 10, 10, 0.62) 0%,
-      rgba(10, 10, 10, 0) 20%
+      rgba(16, 8, 14, 0.62) 0%,
+      rgba(16, 8, 14, 0) 20%
     ),
     radial-gradient(
       124% 104% at 68% 28%,
-      rgba(10, 10, 10, 0) 32%,
-      rgba(10, 10, 10, 0.88) 100%
+      rgba(16, 8, 14, 0) 32%,
+      rgba(20, 9, 17, 0.9) 100%
     ),
     linear-gradient(
       to bottom right,
-      rgba(10, 10, 10, 0.92),
-      rgba(10, 10, 10, 0) 46%
+      rgba(20, 9, 17, 0.92),
+      rgba(20, 9, 17, 0) 46%
     );
 }
 
@@ -172,13 +205,207 @@ body {
   }
 }
 
-canvas {
-  display: block;
-  height: var(--arbor-screen-h);
+/* ---------------------------------------------------------------------------
+   Shared petal / decoration primitives
+   Used by the sakura pieces below the fold. Everything here is decoration:
+   it never takes pointer events and it always has a still state, because a
+   petal frozen mid-air by prefers-reduced-motion still has to look like a
+   petal in the air rather than like a bug.
+   --------------------------------------------------------------------------- */
+
+/* Full-bleed decorative layer. Put one of these inside a `position:
+   relative` section and drop petals, canvases or SVG into it. The clip
+   matters: petals are animated past the edges on purpose, and without it
+   they widen the page and the body scrolls sideways on mobile. */
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* A local wash for putting type over a decoration. Anything drawn behind
+   body copy has to leave it above 4.5:1, and the cheapest way to guarantee
+   that per-section is to darken the strip the text actually sits on rather
+   than to dim the whole effect. */
+.fx-scrim {
+  position: absolute;
   inset: 0;
   pointer-events: none;
-  position: fixed;
-  width: var(--arbor-screen-w);
+  background: linear-gradient(
+    to bottom,
+    rgba(16, 8, 14, 0.55) 0%,
+    rgba(16, 8, 14, 0.2) 45%,
+    rgba(16, 8, 14, 0.55) 100%
+  );
+}
+
+/* One petal, drawn in CSS.
+   Obcordate — wide and notched at the top, tapering to the stem — which is
+   the same outline the WebGL petals use (getPetalVertexColor in
+   components/BareThreeCanvas.tsx). The notch is cut with a mask instead of
+   being drawn in the background colour, so the petal works over the blob
+   field, over the cream Contact panel, over anything.
+   Size with --petal-size; the gradient runs base at the stem to edge at the
+   rim, the same direction the vertex colours run on the tree. */
+.petal-2d {
+  width: var(--petal-size, 12px);
+  aspect-ratio: 1 / 1.1;
+  background: radial-gradient(
+    124% 104% at 50% 100%,
+    var(--sakura-base) 0%,
+    var(--sakura-mid) 58%,
+    var(--sakura-edge) 100%
+  );
+  border-radius: 54% 54% 38% 38% / 66% 66% 36% 36%;
+  -webkit-mask-image: radial-gradient(
+    closest-side at 50% 0%,
+    transparent 0 68%,
+    #000 69%
+  );
+  mask-image: radial-gradient(
+    closest-side at 50% 0%,
+    transparent 0 68%,
+    #000 69%
+  );
+}
+
+/* The fall, split three ways because one element can only own one transform.
+   Nest them: an outer node running .petal-fall, an inner running
+   .petal-sway, the petal itself running .petal-spin. Each reads its own
+   custom properties, so a component can hand every petal a different
+   duration, delay and travel and they never march in step.
+
+   .petal-fall travels from --petal-from to --petal-to (default: just above
+   the layer to just below it), so the caller positions the petal with `left`
+   and lets the animation own Y. */
+@keyframes petal-fall {
+  from {
+    transform: translate3d(0, var(--petal-from, -14%), 0);
+  }
+  to {
+    transform: translate3d(0, var(--petal-to, 114%), 0);
+  }
+}
+
+@keyframes petal-sway {
+  from {
+    transform: translate3d(calc(var(--petal-sway, 26px) * -1), 0, 0);
+  }
+  to {
+    transform: translate3d(var(--petal-sway, 26px), 0, 0);
+  }
+}
+
+/* Tumble, not spin: a petal falls edge-over-edge more than it turns flat, so
+   the Y rotation carries most of it and the Z twist only keeps it from
+   reading as a flipping card. */
+@keyframes petal-spin {
+  from {
+    transform: rotate3d(0.2, 1, 0.15, 0deg);
+  }
+  to {
+    transform: rotate3d(0.2, 1, 0.15, 360deg);
+  }
+}
+
+/* Fade in off the top edge and out at the bottom, so nothing pops. */
+@keyframes petal-life {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--petal-opacity, 0.85);
+  }
+  82% {
+    opacity: var(--petal-opacity, 0.85);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A slow breath for anything that should feel lit rather than painted —
+   a glow behind a heading, a blossom mark. */
+@keyframes sakura-breathe {
+  0%,
+  100% {
+    opacity: var(--breathe-low, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    opacity: var(--breathe-high, 0.7);
+    transform: scale(1.06);
+  }
+}
+
+.petal-fall {
+  animation:
+    petal-fall var(--petal-duration, 14s) linear var(--petal-delay, 0s) infinite,
+    petal-life var(--petal-duration, 14s) linear var(--petal-delay, 0s) infinite;
+}
+
+.petal-sway {
+  animation: petal-sway var(--petal-sway-duration, 3.4s) ease-in-out
+    var(--petal-delay, 0s) infinite alternate;
+}
+
+.petal-spin {
+  animation: petal-spin var(--petal-spin-duration, 5.2s) linear
+    var(--petal-delay, 0s) infinite;
+}
+
+.sakura-breathe {
+  animation: sakura-breathe var(--breathe-duration, 9s) ease-in-out infinite;
+}
+
+/* The still state. Motion stops; the petal does not disappear. .petal-fall
+   holds its element at --petal-rest (default a third of the way down the
+   layer) at full opacity, so a reduced-motion visitor sees petals hanging
+   in the air — a photograph of the same scene, not an empty one. Components
+   should give each petal a different --petal-rest for that to look right. */
+@media (prefers-reduced-motion: reduce) {
+  .petal-fall {
+    animation: none;
+    transform: translate3d(0, var(--petal-rest, 34%), 0);
+    opacity: var(--petal-opacity, 0.85);
+  }
+
+  .petal-sway,
+  .petal-spin {
+    animation: none;
+  }
+
+  .sakura-breathe {
+    animation: none;
+    opacity: var(--breathe-high, 0.7);
+  }
+}
+
+canvas {
+  display: block;
+}
+
+/* The hero's WebGL canvases — the tree's and the statue's — fill the stage
+   they sit in. Both are dropped into a layer that is already exactly the
+   viewport, so filling that layer and filling the screen are the same thing
+   while the stage is pinned.
+   
+   Absolute, not fixed, and scoped, not global. Fixed glued them to the
+   viewport, so at the end of the hero the stage scrolled away and the tree
+   stayed on screen over the sections. (The statue's canvas escaped that on
+   its own: its panel carries a scale transform, and a transform makes an
+   element a containing block for fixed descendants. The tree's did not.)
+   And the scope matters as much as the position: as a bare `canvas` rule
+   this also took the sections' 2D canvases out of flow, which collapsed the
+   work plate's frame to the height of its caption. */
+[data-hero-stage] canvas {
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
   z-index: 0;
 }
 
@@ -225,4 +452,25 @@ html {
 }
 html::-webkit-scrollbar {
   display: none;
+}
+
+/* The work list dims the rows you are not on, so hovering reads as picking
+   one out rather than as one row twitching. Applied to the row's CONTENTS,
+   never the row itself: the reveal (components/useRevealOnScroll) animates
+   the <li>'s own opacity as an inline style, which a stylesheet cannot
+   reach and must not fight. */
+[data-work-list]:hover > li > * {
+  opacity: 0.4;
+  transition: opacity 300ms ease;
+}
+
+[data-work-list] > li:hover > * {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-work-list]:hover > li > * {
+    opacity: 1;
+    transition: none;
+  }
 }

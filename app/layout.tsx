@@ -38,9 +38,9 @@ const displaySerif = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Kevin He, Creative Developer",
+  title: "Kevin He",
   description:
-    "Quiet creator, bringing ideas to life through motion, detail and softness.",
+    "Kevin He writes software for things that move: robot autonomy, embedded firmware, and the tooling around both.",
 };
 
 export default function RootLayout({
@@ -53,6 +53,15 @@ export default function RootLayout({
       className={`${inter.variable} ${displaySerif.variable}`}
       lang="en"
     >
+      <head>
+        {/* With JavaScript off, nothing ever reveals the sections and the
+            page is blank below the hero. The rule this cancels lives in
+            globals.css and exists so the reveal does not flash; it is only
+            correct while there is something around to undo it. */}
+        <noscript>
+          <style>{`[data-reveal]{opacity:1 !important}`}</style>
+        </noscript>
+      </head>
       <body>
         <SmoothScroll />
         <SiteBackground />
