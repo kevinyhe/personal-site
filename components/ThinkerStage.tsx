@@ -2,6 +2,7 @@
 
 import { Canvas, invalidate, useFrame, useThree } from "@react-three/fiber";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -21,9 +22,11 @@ import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
+import { DRIFT_FINISH } from "@/components/robotDrift";
 import RobotOutro, {
   createRobotCameraState,
   ROBOT_GROUND_Y,
+  ROBOT_LENGTH,
   type RobotCameraState,
 } from "@/components/RobotOutro";
 
@@ -173,7 +176,7 @@ const CAMERA_AZIMUTH: Array<[number, number]> = [
   // settling shot — a third of the playhead — was one frozen frame. A
   // little more orbit, a little further back and higher, and the aim
   // walking down the goal below give it something to do.
-  [11.63, 112],
+  [11.50, 112],
 ];
 
 const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
@@ -182,7 +185,7 @@ const CAMERA_DISTANCE_KEYS: Array<[number, number]> = [
   [5.2, 6.0],
   [6.4, 7.2],
   [7.4, 8.8],
-  [11.63, 10.0],
+  [11.50, 10.0],
 ];
 const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   // Down at the level of the drivetrain, looking up at the robot — the
@@ -194,7 +197,7 @@ const CAMERA_HEIGHT_KEYS: Array<[number, number]> = [
   // the goal and the scored balls as well.
   [6.4, 1.4],
   [7.4, 3.0],
-  [11.63, 3.8],
+  [11.50, 3.8],
 ];
 
 /**
@@ -210,18 +213,68 @@ const CAMERA_AIM_BEHIND_KEYS: Array<[number, number]> = [
   // Not past the goal's far end: the aim is what the frame centres on, and
   // walking it the goal's whole 5.7 length shoved the robot into the left
   // edge with two thirds of the picture empty floor. Half way down it is.
-  [11.63, 3.4],
+  [11.50, 3.4],
 ];
 
 /**
  * Height the camera aims at, model units above the floor. Low and slightly
  * ABOVE the lens for most of the run, which is what tilts the shot upward.
  */
+/**
+ * Where the camera stops orbiting WITH the robot and parks in the world.
+ *
+ * Everything above is measured against the robot's own nose, which is right
+ * for the drift — the framing follows the car. It is wrong the moment the
+ * robot turns its last half-circle into the goal: the camera was dragged
+ * round with it, swinging a third of the way about the field to hold the
+ * same relative angle, when what the shot wants is to stand still and let
+ * the robot turn in front of it. From PARK_FROM to PARK_BY the offset eases
+ * off the robot's frame and onto a fixed one, and it is fixed from there to
+ * the end. In run seconds — the robot phase spans 236..347vh of scroll over
+ * about 11.4 of them, so one run second is roughly 9.7vh — a little over a
+ * tenth of a second per vh. From the original 4.0/5.2 these went 20vh
+ * earlier, then 10vh back, then 5vh back again: the camera holds the robot's
+ * frame through more of the turn before it goes stale.
+ */
+const CAMERA_PARK_FROM = 3.4;
+const CAMERA_PARK_BY = 4.6;
+/**
+ * The parked camera's direction from the robot, as a world angle (the same
+ * convention as everything else here: 0 = +z, +90 = +x).
+ *
+ * Square to the robot's ACTUAL finish heading, not to the ideal one. The
+ * drift does not land perfectly on its heading target — carrying speed
+ * through the last turn buys the slide at the cost of a few degrees of
+ * squareness — and a hardcoded -90 measured 4 degrees off perpendicular
+ * because of it. Reading the finish out of the drift itself keeps the shot
+ * exactly square through any retune of the run.
+ *
+ * +90 off the nose is the side that puts the goal on the right of frame;
+ * -90, the other square angle, looks across the robot from the far side.
+ */
+const CAMERA_PARK_AZIMUTH = DRIFT_FINISH.heading + Math.PI / 2;
+const CAMERA_PARK_DISTANCE = 5.0;
+/**
+ * The height the robot actually scores at: its indexer, which is where
+ * RobotOutro lifts the balls from before they lob into the mouth
+ * (ROBOT_LENGTH * 0.4 off the floor). The parked camera sits at exactly
+ * this, and aims at exactly this, so the final shot is dead level with the
+ * scoring line rather than looking down on it.
+ */
+const CAMERA_SCORING_HEIGHT = ROBOT_LENGTH * 0.4;
+/**
+ * A little above that. Sitting exactly on the scoring line put the lens too
+ * low in the shot; this lifts it without tilting anything, because the aim
+ * is raised by the same amount — the shot stays dead level and square, it
+ * just sits higher on the robot.
+ */
+const CAMERA_PARK_LIFT = 0.35;
+
 const CAMERA_AIM_HEIGHT: Array<[number, number]> = [
   [0, 0.62],
   [3.6, 0.7],
   [7.4, 0.9],
-  [11.63, 1.1],
+  [11.50, 1.1],
 ];
 
 /**
@@ -352,54 +405,26 @@ function useThinkerScrollProgress({
       );
     };
     readBreakStart();
+    ScrollTrigger.addEventListener("refresh", readBreakStart);
     // Marker mode (see DebugMarkers) holds the figure whole. Reduced motion
     // keeps the statue standing and never opens the robot outro.
-    if (reducedMotion || window.location.search.includes("thinkerMarkers")) return undefined;
-    // The statue's stretch ends at statueEnd, not the bottom of the page:
-    // the scroll room after it belongs to the robot outro, scrubbed the
-    // same way on its own tween.
-    const tween = gsap.to(progressRef.current, {
-      ease: "none",
-      scrollTrigger: {
-        end: () => timing().statueEnd,
-        invalidateOnRefresh: true,
-        onRefresh: readBreakStart,
-        // NONE. The page itself already glides (components/SmoothScroll):
-        // Lenis eases the scroll position over about a second, and a scrub
-        // on top of that is a second lag stacked on the first. At 0.35 the
-        // scene kept moving for a third of a second after the page had
-        // stopped, which is what "not smooth" feels like from the wheel —
-        // the picture sliding on after your hand has finished. `true` binds
-        // the scene rigidly to the eased scroll, so the easing happens once.
-        scrub: true,
-        start: () => timing().start,
-      },
-      value: 1,
-    });
-    const robotTween = gsap.to(progressRef.current, {
-      ease: "none",
-      robot: 1,
-      scrollTrigger: {
-        end: () => timing().end,
-        invalidateOnRefresh: true,
-        // NONE. The page itself already glides (components/SmoothScroll):
-        // Lenis eases the scroll position over about a second, and a scrub
-        // on top of that is a second lag stacked on the first. At 0.35 the
-        // scene kept moving for a third of a second after the page had
-        // stopped, which is what "not smooth" feels like from the wheel —
-        // the picture sliding on after your hand has finished. `true` binds
-        // the scene rigidly to the eased scroll, so the easing happens once.
-        scrub: true,
-        start: () => timing().statueEnd,
-      },
-    });
+    if (reducedMotion || window.location.search.includes("thinkerMarkers")) {
+      return () => ScrollTrigger.removeEventListener("refresh", readBreakStart);
+    }
+    // NOTE: the two progress values are NOT scrubbed GSAP tweens any more.
+    // They were, with `ease: "none"` — a straight line from the scroll
+    // position, routed through a tween that ScrollTrigger drove on its own
+    // animation-frame callback. Straight lines do not need a tween, and
+    // that callback is not the one the canvas draws on: measured under
+    // steady wheel input, 76 of 315 frames drew a progress value the scroll
+    // had already moved past, so the picture held still for a frame and
+    // then covered two frames of ground. `ScrollSync` computes the same two
+    // numbers inside the render loop instead, from the same layout
+    // ScrollTrigger would have used.
     const refresh = window.setTimeout(() => ScrollTrigger.refresh(), 250);
     return () => {
       window.clearTimeout(refresh);
-      tween.scrollTrigger?.kill();
-      tween.kill();
-      robotTween.scrollTrigger?.kill();
-      robotTween.kill();
+      ScrollTrigger.removeEventListener("refresh", readBreakStart);
     };
   }, [progressRef, reducedMotion, timing]);
 }
@@ -426,6 +451,106 @@ function useThinkerChunks() {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Turns the page's scroll position into the stage's two progress values,
+ * inside the render loop.
+ *
+ * This is the fix for the jitter. Lenis eases the scroll on one
+ * animation-frame callback, GSAP computed the scrubbed values on another,
+ * and the canvas draws on a third; nothing orders the three. Measured under
+ * steady wheel input, 76 of 315 frames drew a progress value the scroll had
+ * already moved past — the picture held still for a frame and then covered
+ * two frames of ground, a quarter of the time. Afterwards: 0 of 285, with
+ * the progress tracking Lenis's own scroll to the digit.
+ *
+ * Computing it in the same callback that draws it makes staleness
+ * impossible. Both maps are straight lines, which is all the scrubbed
+ * tweens were (`ease: "none"`), so nothing about the motion changes.
+ *
+ * Registered first in the scene, and R3F runs same-priority frame callbacks
+ * in mount order, so it goes ahead of the robot, the camera and the
+ * fracture.
+ */
+function ScrollSync({
+  progressRef,
+  reducedMotion,
+  timing,
+}: {
+  progressRef: ProgressRef;
+  reducedMotion: boolean;
+  timing: ThinkerTiming;
+}) {
+  // ScrollTrigger still measures the page — it is good at that, and it
+  // re-measures on resize, on font and image load, and on demand. What it
+  // no longer does is hand the value over: these two triggers animate
+  // nothing, they exist so that `.start` and `.end` are always the right
+  // pixel positions. Caching those numbers by hand instead was wrong in a
+  // way worth remembering: read once at mount, they were taken before the
+  // page's spacers had their real heights, and the robot's progress sat at
+  // 1 from the top of the page.
+  const bounds = useRef<{ robot: ScrollTrigger | null; statue: ScrollTrigger | null }>({
+    robot: null,
+    statue: null,
+  });
+  useEffect(() => {
+    const statue = ScrollTrigger.create({
+      end: () => timing().statueEnd,
+      invalidateOnRefresh: true,
+      start: () => timing().start,
+    });
+    const robot = ScrollTrigger.create({
+      end: () => timing().end,
+      invalidateOnRefresh: true,
+      start: () => timing().statueEnd,
+    });
+    bounds.current = { robot, statue };
+    return () => {
+      statue.kill();
+      robot.kill();
+      bounds.current = { robot: null, statue: null };
+    };
+  }, [timing]);
+
+  const read = useCallback(() => {
+    if (reducedMotion) return;
+    const { robot, statue } = bounds.current;
+    if (!robot || !statue) return;
+    // Lenis's own scroll in preference to `window.scrollY`: the browser
+    // rounds the applied position to whole pixels, and Lenis knows the
+    // fractional one it is heading for.
+    const lenis = (window as unknown as { __lenis?: { scroll: number } }).__lenis;
+    const y = lenis ? lenis.scroll : window.scrollY;
+    progressRef.current.value = THREE.MathUtils.clamp(
+      (y - statue.start) / Math.max(statue.end - statue.start, 1),
+      0,
+      1,
+    );
+    progressRef.current.robot = THREE.MathUtils.clamp(
+      (y - robot.start) / Math.max(robot.end - robot.start, 1),
+      0,
+      1,
+    );
+  }, [progressRef, reducedMotion]);
+
+  // The one that matters: same callback that draws, so a frame can only
+  // ever show where the page is now.
+  useFrame(read);
+
+  // And again off gsap's ticker, because the canvas stops rendering
+  // entirely while the panel holding it is shut (`frameloop` is "demand"
+  // then) and these two would otherwise freeze at whatever they were when
+  // it went quiet. Nothing but the canvas reads them, so that was invisible
+  // — but it is a trap for the next thing that does. Both calls are the
+  // same pure function of the scroll, so it does not matter which ran last.
+  // (RobotOutro's own playhead still stops with the canvas; it is derived
+  // from these and catches up on the first frame drawn.)
+  useEffect(() => {
+    gsap.ticker.add(read);
+    return () => gsap.ticker.remove(read);
+  }, [read]);
+  return null;
+}
 
 function CameraRig({
   openAim,
@@ -601,17 +726,42 @@ function CameraRig({
     // middle, which is the swing the old loose springs were there for,
     // without any of their catch-up behaviour.
     const side = robotState.anchorHeading + azimuth;
+    // How far the camera has come off the robot's frame and onto the fixed
+    // one. This has to travel round the robot, not across it: lerping the
+    // two OFFSET VECTORS cut the chord between them, and they end up very
+    // nearly opposite, so the straight line passed within a few centimetres
+    // of the robot's centre — the lens went through the machine. Sweeping
+    // the ANGLE and easing the RADIUS separately keeps the camera a full
+    // orbit-radius out the whole way round.
+    //
+    // The sweep is wrapped to the shorter way round rather than taken as a
+    // raw difference: `side` is the robot's own heading plus the azimuth
+    // key, and both wind past a full turn, so the raw number would send the
+    // camera several times around the field.
+    const parked = smoothPhase(CAMERA_PARK_FROM, CAMERA_PARK_BY, runAt);
+    const toPark = CAMERA_PARK_AZIMUTH - side;
+    const sweep = Math.atan2(Math.sin(toPark), Math.cos(toPark));
+    const swung = side + sweep * parked;
+    const radius = THREE.MathUtils.lerp(orbit, CAMERA_PARK_DISTANCE, parked);
     chase.position.set(
-      robotState.anchorPosition.x + Math.sin(side) * orbit,
-      ROBOT_GROUND_Y + lift,
-      robotState.anchorPosition.z + Math.cos(side) * orbit,
+      robotState.anchorPosition.x + Math.sin(swung) * radius,
+      ROBOT_GROUND_Y +
+        THREE.MathUtils.lerp(lift, CAMERA_SCORING_HEIGHT + CAMERA_PARK_LIFT, parked),
+      robotState.anchorPosition.z + Math.cos(swung) * radius,
     );
     // Aim at the robot, easing back toward its tail once it is parked so
-    // the goal it has just filled shares the frame.
-    const behind = keyed(CAMERA_AIM_BEHIND_KEYS, runAt);
+    // the goal it has just filled shares the frame — but that walk-back and
+    // the raised aim both ease out again as the camera parks, so the last
+    // shot is square on the robot at the height it scores from.
+    const behind = keyed(CAMERA_AIM_BEHIND_KEYS, runAt) * (1 - parked);
     chase.lookPosition.set(
       robotState.anchorPosition.x - Math.sin(robotState.anchorHeading) * behind,
-      ROBOT_GROUND_Y + keyed(CAMERA_AIM_HEIGHT, runAt),
+      ROBOT_GROUND_Y +
+        THREE.MathUtils.lerp(
+          keyed(CAMERA_AIM_HEIGHT, runAt),
+          CAMERA_SCORING_HEIGHT + CAMERA_PARK_LIFT,
+          parked,
+        ),
       robotState.anchorPosition.z - Math.cos(robotState.anchorHeading) * behind,
     );
 
@@ -644,6 +794,8 @@ function CameraRig({
     cameraProbe.look = scratch.look.toArray();
     cameraProbe.robot = robotState.position.toArray();
     cameraProbe.resting = robotState.resting;
+    cameraProbe.heading = robotState.heading;
+    cameraProbe.runTime = robotState.runTime;
     cameraProbe.speed = robotState.speed;
     camera.rotateZ(chase.roll * mix);
     if (persp.isPerspectiveCamera) {
@@ -960,10 +1112,12 @@ function ThinkerCanvas({
   active,
   progressRef,
   reducedMotion,
+  timing,
 }: {
   active: boolean;
   progressRef: ProgressRef;
   reducedMotion: boolean;
+  timing: ThinkerTiming;
 }) {
   const build = useThinkerChunks();
   // Written by RobotOutro every frame, read by CameraRig for the chase.
@@ -1030,8 +1184,18 @@ function ThinkerCanvas({
       shadows
       style={{ height: "100%", width: "100%" }}
     >
+      <ScrollSync
+        progressRef={progressRef}
+        reducedMotion={reducedMotion}
+        timing={timing}
+      />
       <color args={[STAGE_BLACK]} attach="background" />
       <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
+      {/* Before the camera, deliberately. R3F runs same-priority frame
+          callbacks in mount order, and the camera is framed on `robotState`,
+          which this writes — with the camera first it was always aiming at
+          where the robot had been on the previous frame. */}
+      <RobotOutro progressRef={progressRef} robotState={robotState} />
       <CameraRig
         openAim={openAim}
         progressRef={progressRef}
@@ -1040,7 +1204,6 @@ function ThinkerCanvas({
       />
       <StageLights progressRef={progressRef} reducedMotion={reducedMotion} />
       <StageFloor progressRef={progressRef} reducedMotion={reducedMotion} />
-      <RobotOutro progressRef={progressRef} robotState={robotState} />
       {build ? (
         <ChunkedThinker
           build={build}
@@ -1084,6 +1247,7 @@ export default function ThinkerStage({
           active={active}
           progressRef={progressRef}
           reducedMotion={reducedMotion}
+          timing={timing}
         />
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_44%,transparent_0%,rgba(0,0,0,0.12)_42%,rgba(0,0,0,0.92)_100%)]" />
