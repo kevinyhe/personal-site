@@ -199,34 +199,29 @@ type DriverPhase = {
  * units — one robot length is 1.6 of those. Keep the two in step.
  */
 const GOAL_MOUTH_RL: [number, number] = [-3.6 / 1.6, -3.4 / 1.6];
-const GOAL_STAGING: [number, number] = [-3.6 / 1.6, -1.1 / 1.6];
+/** A point beyond the mouth, on the far side from the goal's body, that the
+ *  robot crosses to before turning in. */
+const ABOVE_MOUTH: [number, number] = [-3.6 / 1.6, -6.0 / 1.6];
+/** Nose across the field during the slide: a quarter turn left of entry. */
+const DRIFT_HEADING = Math.PI + Math.PI / 2;
 
 const SCHEDULE: DriverPhase[] = [
-  // In forwards, alongside the run of balls. This is the flat part of the
-  // curve — the top of the parabola, where it has barely started to bend.
-  { duration: 0.6, left: 4.4, right: 4.4 },
-  // The bend starts, and TIGHTENS with every phase. A constant-radius arc
-  // reads as a circle; a curve whose radius keeps shrinking reads as a
-  // robot getting deeper and deeper into a slide, which is the shape of
-  // -(x-2)^2 down its falling side.
-  { duration: 0.7, left: 4.5, right: 2.6, yawGain: 1.6, yawTarget: 0.9 },
-  { duration: 0.7, left: 4.5, right: 1.0, yawGain: 1.8, yawTarget: 1.9 },
-  // Steepest: the aggressive part, tail well out.
-  { duration: 1.2, left: 4.5, right: -1.0, yawGain: 2.0, yawTarget: 3.2 },
-  // Out of the drift and across to the goal. From here the run is no longer
-  // about the slide: the goal has a FIXED place on the floor now, so the
-  // robot has to actually get to it. These phases steer at a point rather
-  // than a heading — the nose is trimmed onto the bearing to the target,
-  // recomputed every step, so the robot closes on it from wherever the
-  // drift left it. That is what lets the drift be as strong as it likes.
-  { duration: 0.5, left: -4.5, right: 4.5, yawGain: 1.8, yawTarget: 5.0 },
-  // Run over to a staging point a little way out in front of the mouth.
-  { duration: 2.6, driveTo: GOAL_STAGING, headingGain: 2.6, left: 4.2, right: 4.2, yawGain: 2.2 },
-  // Swing the tail toward the mouth.
-  { duration: 0.8, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: 0.8, right: 0.8, yawGain: 2.4 },
-  // Reverse entry into the goal, tail-first at the mouth.
-  { duration: 1.4, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: -3.0, right: -3.0, yawGain: 2.4 },
-  // Stop dead.
+  // 1. Up the field, driving forwards, passing the goal on its right. The
+  //    balls are collected along this leg.
+  { duration: 1.5, left: 4.4, right: 4.4 },
+  // 2. The drift. A hard left flick swings the nose round to face across
+  //    the field while the body keeps carrying up it — the robot is
+  //    pointing one way and travelling another, which is the whole move.
+  { duration: 0.6, left: -4.5, right: 4.5, yawGain: 1.6, yawTarget: 3.5 },
+  // 3. Hold it there and let it slide, nose across, still going up.
+  { duration: 1.1, headingGain: 2.0, headingTarget: DRIFT_HEADING, left: 3.2, right: 3.2, yawGain: 1.8 },
+  // 4. Out of the slide and across to a point above the goal's mouth.
+  { duration: 1.1, driveTo: ABOVE_MOUTH, headingGain: 2.6, left: 3.8, right: 3.8, yawGain: 2.2 },
+  // 5. Swing the tail down toward the mouth.
+  { duration: 1.2, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: 0.5, right: 0.5, yawGain: 2.4 },
+  // 6. Back down into it.
+  { duration: 2.2, driveTo: GOAL_MOUTH_RL, driveToBackwards: true, headingGain: 3.0, left: -3.0, right: -3.0, yawGain: 2.4 },
+  // 7. Stop dead, square in the mouth.
   { duration: 1.0, headingGain: 3.6, headingTarget: FINISH_HEADING, left: 0, right: 0, yawGain: 2.6 },
 ];
 
