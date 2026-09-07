@@ -147,12 +147,13 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   //
   // This replaces a long run of shard tuning (0.055 / 0.275 with a 3x
   // radial stretch and size variation 3.0: ~290 slivers and slabs, a
-  // 32-36 s build) with the reference's look, which is also cheaper — the
-  // build's cost is the seed count, ~70 ms a seed in a worker, and uniform
-  // cells this size come to ~170 seeds and 179 pieces (17 s in Node, mean
-  // piece radius 0.34).
-  spacingNear: 0.22,
-  spacingFar: 0.3,
+  // 32-36 s build) with the reference's look. The build's cost is the seed
+  // count, ~70 ms a seed in a worker: 0.22 / 0.3 came to ~170 seeds and
+  // 179 pieces (17 s in Node, mean piece radius 0.34); this, asked for as
+  // "smaller on average", is about a quarter finer on each axis: 283 seeds
+  // and 291 pieces, mean radius 0.30, 28 s in Node, volume still exact.
+  spacingNear: 0.17,
+  spacingFar: 0.23,
   // Cells reach full size within about a third of the figure's height of
   // the blow; with near and far this close it hardly shows.
   spacingFalloff: 0.9,
@@ -166,7 +167,7 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // odd small fragment.
   sizeVariation: 0.5,
   // Safety cap; the spacing stops the sampler first.
-  maxPieces: 200,
+  maxPieces: 320,
   // The hand, placed by hand. The break has to open with the hand itself
   // coming apart into several pieces before anything else moves, and left
   // to the sampler it only ever put two cells there — the third piece to go
