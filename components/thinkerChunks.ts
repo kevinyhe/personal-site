@@ -138,19 +138,20 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // this is also what comes apart first — put it up the forearm instead and
   // the whole arm goes at once rather than the hand alone.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
-  // The order of the break: a plane sweeping ACROSS the figure, from its
-  // right shoulder to the left side of its body and a little downward.
-  // In the figure's own space its front is +z and its right is -x, so the
-  // sweep runs +x with a small -y: the first pieces are the highest, most
-  // -x ones — the right shoulder and the raised right arm under the chin
-  // — and the last the low left side. (It swept along the flight from the
-  // head before; before that it ran outward from the camera's opening
-  // eye, OPENING_EYE, kept as the fallback rule.)
-  releaseFrom: OPENING_EYE,
-  releaseSweep: (() => {
-    const axis = new THREE.Vector3(0.94, -0.34, 0).normalize();
-    return [axis.x, axis.y, axis.z] as [number, number, number];
-  })(),
+  // The order of the break: it spreads from the figure's RIGHT SHOULDER
+  // across the body to its left side, a little downward. The origin is
+  // the shoulder itself, measured off the bake (the -x extreme of the
+  // chunk centres at shoulder height; the figure's right is -x, its front
+  // +z), and distance from it counts a step up double and a step down
+  // 1.3x — so the head, which sits above and to the right, comes after
+  // the chest that is level with the shoulder rather than before it, the
+  // knee below the shoulder later still (at 0.8 it went as early as the
+  // head), and the far side of the body last. A plane sweep was tried first
+  // and always started at the head, the top being the extreme of any
+  // downward-tilted axis; a spread from the camera's opening eye
+  // (OPENING_EYE) before that.
+  releaseFrom: [-0.9, 0.78, 0.4],
+  releaseWeights: { across: 1, down: 1.3, up: 2 },
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
   // convex, nearly all the same size — about a tenth of the figure's
