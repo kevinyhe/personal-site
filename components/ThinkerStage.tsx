@@ -259,9 +259,13 @@ const TREE_ROTATION: [number, number, number] = [0, CHERRY_BASE_YAW, 0];
 // tree's bounding box (its height, or its widest plan extent on a narrow
 // screen, plus that extent again for depth) would just fit the frame,
 // times this. 0.92 reproduces the statue's own cut distance (6.12) from the
-// statue's box, so the tree fills the frame the way the statue did — a
-// little larger than fits, the tips of the boughs at the edges.
-const TREE_FRAME_FILL = 0.92;
+// statue's box; on the real tree that left it small — its plan is wide
+// (3.1 by 2.7 of its 2.1 height) so the fit is width-bound and the depth
+// allowance, the plan's diagonal again, is generous for a crown that is
+// mostly air. 0.75 brings the lens in by a fifth: measured at the cut, the
+// whole tree spanned 56% of the frame's width at 0.92, and the aim is to
+// have the boughs' tips near the edges as the statue's shoulders were.
+const TREE_FRAME_FILL = 0.75;
 // The aim, a little above the tree's centre, as a fraction of its height:
 // the boughs are the wide, bright part and the trunk below them is narrow,
 // so dead centre leaves the crown crowding the top of the frame.
