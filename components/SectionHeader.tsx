@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { scrollWithLenis } from "@/components/SectionLink";
+import { scrollToSection } from "@/components/SectionLink";
 import { sectionLinks } from "@/components/siteContent";
 
 /** Where a section sits in the document, px from the top of the page. */
@@ -238,20 +238,13 @@ export default function SectionHeader() {
     return () => observer.disconnect();
   }, []);
 
-  // Durations: see scrollWithLenis. These are buttons, not anchors, so
-  // without Lenis they have to move the page themselves — and they do it in
-  // one step, not with behavior "smooth": Lenis is absent because
-  // SmoothScroll stood down for prefers-reduced-motion (or failed), and
-  // either way an eased scroll is the wrong answer.
+  // Durations and the no-Lenis fallback: see scrollToSection.
   const jump = (id: string) => {
     const element = document.getElementById(id);
-    if (!element) return;
-    if (!scrollWithLenis(element, 1.4)) element.scrollIntoView();
+    if (element) scrollToSection(element, 1.4);
   };
 
-  const toTop = () => {
-    if (!scrollWithLenis(0, 2)) window.scrollTo(0, 0);
-  };
+  const toTop = () => scrollToSection(0, 2);
 
   return (
     <header
