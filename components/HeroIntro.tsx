@@ -19,10 +19,8 @@ import ThinkerStage, {
 } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
-import HalftoneField from "@/components/HalftoneField";
-import PetalDrift from "@/components/PetalDrift";
 import SakuraStage from "@/components/SakuraStage";
-import { makeNarrationBough } from "@/components/sakuraBough";
+import { makeNarrationTree } from "@/components/sakuraTree";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
@@ -1153,18 +1151,16 @@ export default function HeroIntro({ children }: HeroIntroProps) {
             ref={narrationSpaceRef}
           >
             <h2 className="sr-only">About</h2>
-            {/* The same backdrop as the work sections (see HomeSections),
-                gated on this block: the dot field, the cherry bough hung
-                off the block's top edge — with twice the blossom — and the
-                loose petals that fall out of it. The fixed canvases sit
-                at z-0 and the lines at z-[1] over them; the block itself
-                has no z-index, so the stage's lighten blend meets the
-                page rather than an empty context (see the note on the
-                block). The intro's whole tree stood here for a day and
-                buried the words in its canopy. */}
-            <HalftoneField />
-            <SakuraStage elements={[makeNarrationBough]} gateSelector="#info" />
-            <PetalDrift gateSelector="#info" />
+            {/* The intro's tree behind the words, in the landing page's
+                own style: its own stage, booted as this block comes within
+                a screen of the fold and gated on it, drawn through the
+                same halftone as the hero. The stage's canvas is fixed at
+                z-0 and the lines sit at z-[1] over it; the block itself
+                has no z-index, so the stage's lighten blend meets the page
+                rather than an empty context (see the note on the block).
+                (The work sections' bough-and-dot-field backdrop stood here
+                briefly and was the wrong tree for this part.) */}
+            <SakuraStage elements={[makeNarrationTree]} gateSelector="#info" />
             <div className="relative z-[1]">
               <Narration stage>
                 {HERO_NARRATION.map((lines, index) => (
