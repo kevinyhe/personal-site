@@ -9,7 +9,7 @@ import { Narration, Stanza } from "@/components/Narration";
 import PetalDrift from "@/components/PetalDrift";
 import SakuraStage from "@/components/SakuraStage";
 import makeSakuraBlossomMarks from "@/components/sakuraBlossomMarks";
-import makeSakuraBough from "@/components/sakuraBough";
+import makeSakuraTree from "@/components/sakuraTree";
 import SectionHeader from "@/components/SectionHeader";
 import WorkPlate, { type PlateContent } from "@/components/WorkPlate";
 import {
@@ -43,11 +43,13 @@ import { useRevealOnScroll } from "@/components/useRevealOnScroll";
  * over a text page. There is one WebGL stage below the fold (SakuraStage)
  * and exactly two things stand on it:
  *
- *   - sakuraBough: one heavy cherry limb hung off this block's top edge,
- *     cut out of a real generated tree, with the hero's bark, the hero's
- *     blossoms and the hero's wind. Its blossoms open as you come down into
- *     the page, and it publishes its twig tips so PetalDrift's petals fall
- *     out of it. This is the element the whole thing was for.
+ *   - sakuraTree: the intro's own tree (same generator, same seed) standing
+ *     to the right of the reading column with its canopy over the width of
+ *     the screen, rising at half the page's speed. Its blossoms open as you
+ *     come down into the page, and it publishes its lowest twig tips so
+ *     PetalDrift's petals fall out of it. It replaced sakuraBough (one limb
+ *     of a tree hung off the block's top edge, still on disk), which read
+ *     as a prop rather than as the tree the reader had just been under.
  *   - sakuraBlossomMarks: thirteen five-petal flowers at the page's
  *     landmarks, each a bud that opens as it climbs the screen. One
  *     InstancedMesh, one draw call, ~2.5k triangles — it carries the tree
@@ -221,7 +223,7 @@ export default function HomeSections() {
           viewport early, runs only while this block is on screen and the tab
           is visible, and draws behind the type at z-0 like the dot field.
 
-          Order matters: the bough is the expensive build and everything else
+          Order matters: the tree is the expensive build and everything else
           reads better once it is up, so it goes first.
 
           Not mounted, and left on disk:
@@ -245,7 +247,7 @@ export default function HomeSections() {
               continuously, and now plainly redundant against the bough),
               PetalReveal (a third petal system, one canvas per text block). */}
       <SakuraStage
-        elements={[makeSakuraBough, makeSakuraBlossomMarks]}
+        elements={[makeSakuraTree, makeSakuraBlossomMarks]}
         gateSelector="[data-sections]"
       />
       {/* Behind the type, at z-0 with the stage and the dot field: body copy
