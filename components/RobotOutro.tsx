@@ -5,6 +5,12 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
+import {
+  ROBOT_GROUND_Y,
+  ROBOT_LENGTH,
+  type RobotCameraState,
+} from "@/components/robotConstants";
+
 /**
  * The robot outro: after the Thinker's debris has streamed off, the page's
  * last stretch of scroll hands the stage to a VEX robot. It drives in from
@@ -100,63 +106,17 @@ export type BallState = {
   rotation: [number, number, number];
 };
 
-/** What the rally camera needs to know about the robot, every frame. */
-export type RobotCameraState = {
-  /** Lateral acceleration (stage units/s^2), positive toward the robot's left. */
-  aLat: number;
-  /**
-   * The robot's pose a fixed slice of the RUN ago — see CAMERA_ANCHOR_LAG.
-   * The outro camera orbits this rather than the live pose, which is what
-   * lets the robot swing across the frame while it is moving and settle
-   * back to centre when it stops. Because the lag is in playhead seconds
-   * and not wall-clock seconds, the framing is a pure function of the
-   * scroll position: it cannot fall behind on a fast flick, cannot
-   * overshoot, and scrolling back retraces it exactly.
-   */
-  anchorHeading: number;
-  anchorPosition: THREE.Vector3;
-  /**
-   * Seconds of the run the scroll moved through this frame. The run is
-   * scrubbed, so the robot can cover ground far faster than wall-clock; a
-   * camera that integrates only real time is left behind. Sign is dropped —
-   * a chase should catch up just as hard when the page scrolls backwards.
-   */
-  playheadDelta: number;
-  /** World yaw, same convention as RobotDriftFrame.heading. */
-  heading: number;
-  /** Stage-space position (y is the ground height). */
-  position: THREE.Vector3;
-  /** True once the run has finished and the robot sits still. */
-  resting: boolean;
-  /** Seconds into the drift the scroll currently sits at, and its length. */
-  runDuration: number;
-  runTime: number;
-  /** |velocity|, stage units/s. */
-  speed: number;
-  /** Stage-space velocity. */
-  velocity: THREE.Vector3;
-};
-
-export function createRobotCameraState(): RobotCameraState {
-  return {
-    aLat: 0,
-    anchorHeading: -Math.PI / 2,
-    anchorPosition: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
-    heading: -Math.PI / 2,
-    playheadDelta: 0,
-    position: new THREE.Vector3(9.7, ROBOT_GROUND_Y, 1.5),
-    resting: false,
-    runDuration: 1,
-    runTime: 0,
-    speed: 0,
-    velocity: new THREE.Vector3(),
-  };
-}
-
-/** One robot length in stage units. */
-export const ROBOT_LENGTH = 1.6;
-/** The robot scene's own floor: the statue is faded out, so a clean height. */
-export const ROBOT_GROUND_Y = -1.2;
+// The camera state, the robot's length and its floor height live in
+// robotConstants so ThinkerStage's dormant chase branch can read them
+// without importing this scene (and its RoomEnvironment and lazy asset
+// chunks) into the home page. Re-exported here so nothing written against
+// this module's surface needs to change.
+export {
+  createRobotCameraState,
+  ROBOT_GROUND_Y,
+  ROBOT_LENGTH,
+  type RobotCameraState,
+} from "@/components/robotConstants";
 
 // The hand-off is a CLIP, not a dissolve: the robot is fully there on the
 // same frame the statue vanishes (ThinkerStage's `statueOn`). Nothing eases

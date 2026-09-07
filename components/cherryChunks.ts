@@ -43,6 +43,12 @@ export const CHERRY_BASE_YAW = -55 * (Math.PI / 180);
 
 export const CHERRY_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   modelPath: CHERRY_MODEL_PATH,
+  // Cut ahead of time by `npm run bake:chunks`, like the statue; re-run it
+  // after changing anything below. Without this the tree was cut live in
+  // the worker on every visit (~15 s of it, after the statue's own cut),
+  // which only went unnoticed because the cut is off (CUT_TO_TREE) —
+  // flipping the flag on would have brought that hold straight back.
+  bakedPath: "/model/cherry/chunks",
   // Where the tree broke: the junction, where the primary boughs leave the
   // trunk. Given as fractions of the model's own bounding box, which the
   // fracture measures off the loaded geometry, so this holds through any
@@ -68,9 +74,10 @@ export const CHERRY_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // junction, the way the statue's run towards the blow.
   radialStretch: 3.0,
   // A safety cap, not a target: the spacing above stops the sampler
-  // first. The tree is cut AFTER the statue in the same worker (see
-  // loadCherryChunks), and the reveal waits on both, so every piece here
-  // is added straight onto the television's hold.
+  // first. Only a stale bake cuts live now; when it does, the tree is cut
+  // AFTER the statue in the same worker (see loadCherryChunks), and the
+  // reveal waits on both, so every piece here is added straight onto the
+  // television's hold.
   maxPieces: 200,
   // No hand to place by hand: the junction is on the trunk's axis, and the
   // graded scatter already puts the finest cells there.
