@@ -529,6 +529,22 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
   // Twig tips in `local` space, and the scratch the projection runs through.
   let tipPoints = new Float32Array(0);
   const scratch = new THREE.Vector3();
+  // This element's OWN spawn buffer. boughSpawn is a singleton that the
+  // narration's tree (sakuraTree) writes too, and for the screen where the
+  // narration hands off to the sections both are live. Each producer keeps
+  // its own array and publishes it by reference together with its count, so
+  // a reader never sees one element's count against the other's points —
+  // which is a read past the end, and NaN petals. It also means a producer
+  // only ever resets the record it published: the old dispose() replaced
+  // boughSpawn.points with an empty array whether or not the other element
+  // was still writing into it.
+  let spawnPoints = new Float32Array(0);
+  const publishSpawn = (count: number, frameIndex: number) => {
+    boughSpawn.points = spawnPoints;
+    boughSpawn.count = count;
+    boughSpawn.frame = frameIndex;
+  };
+  const owningSpawn = () => boughSpawn.points === spawnPoints;
 
   const place = (
     viewportWidth: number,
@@ -557,6 +573,15 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
   };
 
   const build = async (ctx: StageBuildContext) => {
+    // Profiling hook beside window.__treeBuildTimings (which the generator
+    // writes for the whole-tree phases): what the CUT costs on top of it,
+    // in ms of main thread, not counting the frames yielded between steps.
+    const timings: Record<string, number> = {};
+    let stepStart = performance.now();
+    const step = (name: string) => {
+      timings[name] = Math.round(performance.now() - stepStart);
+      stepStart = performance.now();
+    };
     const generator = new WeepingCherryGenerator({
       blossomCount: Math.round(BLOSSOM_BUDGET[ctx.quality] * (options.blossoms ?? 1)),
       // The 2D field below the fold is the loose-petal system down here, so
@@ -565,7 +590,10 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
       quality: ctx.quality,
       seed: 71104,
     });
+    const generateStart = performance.now();
     const tree = await generator.generate(ctx.yield);
+    timings.generateWall = Math.round(performance.now() - generateStart);
+    stepStart = performance.now();
     if (ctx.aborted()) {
       disposeTree(generator.group);
       return null;
@@ -616,7 +644,9 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
       disposeTree(generator.group);
       return null;
     }
+    step("cutBranches");
     await ctx.yield();
+    stepStart = performance.now();
     if (ctx.aborted()) {
       geometry.dispose();
       disposeTree(generator.group);
@@ -631,7 +661,9 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
 
     // Blossoms. One sampling of every branch curve, four filters against it.
     const samples = new BranchSamples(tree.branches);
+    step("branchSamples");
     await ctx.yield();
+    stepStart = performance.now();
     if (ctx.aborted()) {
       geometry.dispose();
       disposeTree(generator.group);
@@ -644,9 +676,14 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
       tree.halfBlossomMesh,
       tree.budMesh,
     ];
+    let filterMs = 0;
+    let keptBlossoms = 0;
     for (const mesh of blossomMeshes) {
       if (!mesh) continue;
+      const filterStart = performance.now();
       const count = filterBlossoms(mesh, samples, keep);
+      filterMs += performance.now() - filterStart;
+      keptBlossoms += count;
       mesh.removeFromParent();
       // A variant that lost every instance keeps its geometry off the graph.
       // Only the geometry: the four meshes SHARE one material, so disposing
@@ -660,6 +697,9 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
         return null;
       }
     }
+    timings.filterBlossoms = Math.round(filterMs);
+    timings.keptBlossoms = keptBlossoms;
+    stepStart = performance.now();
     // Anything the generator built and we did not take.
     disposeTree(generator.group);
 
@@ -715,10 +755,11 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
       tipPoints[i * 3 + 1] = point.y;
       tipPoints[i * 3 + 2] = point.z;
     }
-    boughSpawn.points = new Float32Array(wanted * 2);
-    boughSpawn.count = 0;
+    spawnPoints = new Float32Array(wanted * 2);
 
     place(ctx.viewport.width, ctx.quality, ctx.worldUnitsPerPixel);
+    step("placeAndTips");
+    (window as unknown as Record<string, unknown>).__boughBuildTimings = timings;
     ready = true;
     return root;
   };
@@ -767,13 +808,16 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
     // publishes nothing: PetalDrift paints nothing in that state either.
     const tipCount = tipPoints.length / 3;
     if (tipCount === 0 || frame.reducedMotion || bloom < 0.15) {
-      boughSpawn.count = 0;
-      boughSpawn.frame = frame.frameIndex;
+      // Nothing to offer. Say so only if the record is ours: while the
+      // block is still coming up the narration's tree may be publishing
+      // real tips into the same record, and a zero from here would take
+      // them away from the petals still falling out of it.
+      if (owningSpawn()) publishSpawn(0, frame.frameIndex);
       return;
     }
     root.updateMatrixWorld(true);
     const camera = frame.camera;
-    const points = boughSpawn.points;
+    const points = spawnPoints;
     let usable = 0;
     for (let i = 0; i < tipCount; i += 1) {
       scratch.set(tipPoints[i * 3], tipPoints[i * 3 + 1], tipPoints[i * 3 + 2]);
@@ -790,8 +834,7 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
       points[usable * 2 + 1] = y;
       usable += 1;
     }
-    boughSpawn.count = usable;
-    boughSpawn.frame = frame.frameIndex;
+    publishSpawn(usable, frame.frameIndex);
   };
 
   const resize = (ctx: StageResizeContext) => {
@@ -800,8 +843,11 @@ export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement 
 
   const dispose = () => {
     ready = false;
-    boughSpawn.count = 0;
-    boughSpawn.points = new Float32Array(0);
+    if (owningSpawn()) {
+      boughSpawn.count = 0;
+      boughSpawn.points = new Float32Array(0);
+    }
+    spawnPoints = new Float32Array(0);
     tipPoints = new Float32Array(0);
     disposeTree(root);
     root.clear();
