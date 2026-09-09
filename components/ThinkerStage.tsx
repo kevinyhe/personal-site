@@ -1262,6 +1262,7 @@ function StageLights({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const ambientRef = useRef<THREE.AmbientLight>(null);
+  const skyRef = useRef<THREE.HemisphereLight>(null);
   const keyLightRef = useRef<THREE.SpotLight>(null);
   const fillLightRef = useRef<THREE.SpotLight>(null);
   const rimLightRef = useRef<THREE.DirectionalLight>(null);
@@ -1279,6 +1280,7 @@ function StageLights({
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
     if (ambientRef.current) ambientRef.current.intensity = 0.01 * statueLight;
+    if (skyRef.current) skyRef.current.intensity = 0.55 * statueLight;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
       keyLightRef.current.intensity = (17.5 + breakup * 5.5 + pulse) * statueLight;
@@ -1295,6 +1297,30 @@ function StageLights({
   return (
     <group ref={groupRef}>
       <ambientLight ref={ambientRef} intensity={0.01} />
+      {/* What keeps the side facing away from the key off true black. With
+          only the four punctual lights, 34.3% of the panel at hero fraction
+          0.62 sat below luminance 26 and the brow, eye socket and nose were
+          one solid black wedge; this brings that to 29.0%.
+
+          A hemisphere light and not an environment map: a PMREM'd dome did
+          the same job visually but sampled per fragment, and this page is
+          already 8.3 ms a frame (p50, RTX 5060, 1280x800, vsync off)
+          against a 120 Hz display's 8.3 ms budget. The dome plus a grain on
+          the cut faces took it to 12.0 ms; a hemisphere is two dot products
+          in the light loop and left it at 8.7 ms, inside the noise.
+
+          Ground is the stage's own black, so the lift is a top-down
+          gradient that still reads as form rather than the flat wash an
+          ambientLight would give — which is why the ambient stays at 0.01
+          rather than simply being raised. Near-neutral sky on purpose: the
+          palette is white marble on #0a0a0a and a tint would show on every
+          lit pixel. 0.55 leaves the background black and the highlights
+          unclipped at all three sampled hero fractions. */}
+      <hemisphereLight
+        ref={skyRef}
+        args={["#eef1f6", STAGE_BLACK, 0.55]}
+        position={[0, 1, 0]}
+      />
       <spotLight
         ref={keyLightRef}
         angle={0.36}
