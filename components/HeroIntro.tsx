@@ -20,7 +20,7 @@ import ThinkerStage, {
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
-import { loadCherryChunks } from "@/components/cherryChunks";
+import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -848,17 +848,21 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       if (live) setThinkerReady(true);
     };
     const settled = (build: Promise<unknown>) => build.catch(() => undefined);
-    void Promise.all([settled(loadThinkerChunks()), settled(loadCherryChunks())]).then(ready);
+    const builds = [settled(loadThinkerChunks())];
+    if (CUT_TO_TREE) builds.push(settled(loadCherryChunks()));
+    void Promise.all(builds).then(ready);
     // Never strand the page on a fracture that FAILS — but this must not be
     // reachable by one that is merely slow. It was 15 s, and the statue's
     // cut alone measured 12.5 s in the worker at the time: slower machines
     // crossed the line, the reveal went ahead without the chunks, and the
     // box opened on an empty stage (nothing is drawn at all while `build`
     // is null). Then 45 s, three and a half times that. The statue's cut is
-    // now ~132 seeds of shards (about 20 s in a browser worker, ~70 ms a
-    // seed) and the tree's follows it in the same worker, so the net is
-    // the same margin over both. This is the failure net, not a deadline —
-    // the fractures should always win the race.
+    // now ~220 seeds of shards (the page's scroll scene was ready 41 s
+    // after load on the dev box under software GL, most of it this build;
+    // ~70 ms a seed in a worker), and the tree's would follow it in the
+    // same worker if the cut were on (CUT_TO_TREE). This is the failure
+    // net, not a deadline — the fractures should always win the race; if
+    // a slower machine ever loses it, the fix is the seed count, not this.
     const timeout = window.setTimeout(ready, 80000);
     return () => {
       live = false;
@@ -897,17 +901,21 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
     const growStart = heroStart + heroLength * PANEL_GROW_AT;
     const pageEnd = heroStart + heroLength;
-    // The statue's run ends on the frame the box reaches full screen. There
-    // is nothing after it any more — the robot outro used to own the scroll
-    // below this and now does not — so the last stretch of the page holds
-    // the shot the camera cut to.
-    const statueEnd = Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
-    const end = pageEnd;
-    // The reassembly's stretch. It starts where the panel reaches the full
-    // screen — which is also where the break finishes — so the figure keeps
-    // opening through the camera cut and only turns around once the box is
-    // the whole viewport. It ends where the narration does.
     const narrationSpace = narrationSpaceRef.current;
+    // The statue's run ends where the black does: the narration scrim is
+    // shut once the narration's top reaches a fifth of the way down the
+    // viewport (its timeline's `end: "top 20%"`, above), and that is the
+    // last frame of the stage anyone sees. So the break is stretched over
+    // the whole of it — the panel's growth AND the stretch under the
+    // narration — with the camera carrying on its pull-out and swing the
+    // whole way and no cut. It used to end as the box reached the full
+    // screen (HERO_CUT_AT), which is now about half way through.
+    const statueEnd = narrationSpace
+      ? documentTop(narrationSpace) - viewportHeight * 0.2
+      : Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
+    const end = pageEnd;
+    // The story's stretch, which only the camera reads now (and only after
+    // a cut, see ThinkerStage): from the break's end to the narration's.
     const storyStart = statueEnd;
     const storyEnd = narrationSpace
       ? documentTop(narrationSpace) + narrationSpace.offsetHeight - viewportHeight

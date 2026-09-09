@@ -18,6 +18,18 @@ import {
 export const CHERRY_MODEL_PATH = "/model/cherry/scene.gltf";
 
 /**
+ * Whether the stage cuts to the tree at all.
+ *
+ * Off: the statue keeps the stage for the whole page, its break stretched
+ * over everything up to the black, and the camera carries on its pull-out
+ * and swing with no cut. The tree is not built either (its cut would only
+ * add to the television's hold). Everything below and in ThinkerStage
+ * stays wired for the day it is turned back on: flip this and the cut,
+ * the tree, its petals and its framing all return.
+ */
+export const CUT_TO_TREE = false;
+
+/**
  * The tree's resting turn on the stage, about the vertical.
  *
  * The intro draws the tree from +z (its camera sits on the +z axis looking
