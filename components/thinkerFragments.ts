@@ -591,21 +591,28 @@ const ISLAND_MIN_AREA = 0.0015;
 // land inside the neighbour for that to count.
 const RELEASE_PROBE_STEP = 0.08;
 const RELEASE_PROBE_FRACTION = 0.03;
-// How much later in the wanted order (`releaseFrom`/`releaseSweep` rank,
-// 0..1 across the figure) a blocker has to sit before it is allowed to
-// hold a piece back. Without this the graph reverses any break asked to
-// travel the same way the pieces fly, because the leading piece always
-// has unbroken marble in front of it: measured, moving `releaseFrom`
+// How much later in the wanted order (`releaseSweep`'s plane rank, 0..1
+// across the figure) a blocker has to sit before it is allowed to hold a
+// piece back. Without this the graph reverses any break asked to travel
+// the same way the pieces fly, because the leading piece always has
+// unbroken marble in front of it: measured, moving the order's origin
 // right across the body shifted the first fifteen pieces' mean x by 0.02
-// and two `releaseSweep` settings were overridden outright. A blocker
-// only a little later goes a moment after the mover anyway, so the
-// overlap is brief and inside the cloud; a blocker much later is the
-// "piece emerges through the chest" case the guard was written for, and
-// that edge is kept. Touching neighbours are the worst case — they start
-// with faces in contact — so they get a tighter tolerance than pieces the
-// mover only flies past.
-const RELEASE_ORDER_TOLERANCE_TOUCHING = 0.12;
-const RELEASE_ORDER_TOLERANCE_DISTANT = 0.4;
+// and two plane sweeps were overridden outright. A blocker only a little
+// later goes a moment after the mover anyway, so the overlap is brief and
+// inside the cloud; a blocker much later is the "piece emerges through
+// the chest" case the guard was written for, and that edge is kept.
+// Touching neighbours are the worst case — they start with faces in
+// contact — so they get a tighter tolerance than pieces the mover only
+// flies past.
+//
+// The numbers are what it takes for the plane to survive. Spearman of the
+// baked `releaseAt` against the sweep axis, which is 1.0 for a plane the
+// graph has not touched: 0.12/0.4 gave 0.868, 0.25/0.7 gives 0.960. At
+// 0.25/0.7 a piece releases 0.056 of the break from its six nearest
+// neighbours, which is the figure a perfect plane over these 476 pieces
+// gives (0.057) — the graph is no longer costing cohesion.
+const RELEASE_ORDER_TOLERANCE_TOUCHING = 0.25;
+const RELEASE_ORDER_TOLERANCE_DISTANT = 0.7;
 
 // The flight, in multiples of `spread`: the push every piece gets along the
 // direction; the extra the piece furthest along it gets over the piece

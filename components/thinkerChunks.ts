@@ -57,8 +57,8 @@ export const IMPACT_AIM_LIFT = 0.78;
 
 /**
  * The blow, in the figure's own units: the figure's LEFT SHOULDER, which
- * is where the break now begins (releaseFrom below sits on the same
- * point). The cells are graded around this point, so the first pieces the
+ * is where the break now begins (the diagonal plane in
+ * `releaseSweep` below enters the figure at this corner). The cells are graded around this point, so the first pieces the
  * eye sees are the fine ones. It used to be the HAND (-1.157, -0.229,
  * 0.628), from when the break started there; that left the shoulder on
  * the coarse end of the grading, and the pieces coming off first read as
@@ -77,8 +77,8 @@ export const OPENING_AIM_POINT = new THREE.Vector3(-1.157, -0.229, 0.628);
 /**
  * The camera's opening eye in the figure's own space: the aim plus the
  * opening offset at its distance, turned back through the stage's yaw.
- * The break's order was once measured from here — see `releaseFrom`, which
- * is a point on the figure now — so nothing reads this; it is kept because
+ * The break's order was once measured from here — see `releaseSweep`,
+ * which is a plane across the figure now — so nothing reads this; it is kept because
  * the eye is the only place a camera-relative order could be measured
  * from if one is wanted again.
  */
@@ -164,66 +164,44 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   bakedPath: "/model/thinker/chunks",
   // Where the figure struck, and the point the CELLS are graded around:
   // finest here, coarsening away. It is the figure's LEFT SHOULDER, the
-  // same point the break starts from (releaseFrom), because the pieces
+  // corner the break's plane enters at (releaseSweep), because the pieces
   // coming off first are the ones the eye is on and they read as too big
   // when the fine grading sat at the hand instead. Which pieces come
-  // apart first is releaseFrom's business, not this one's.
+  // apart first is releaseSweep's business, not this one's.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
-  // The order of the break: it starts at the figure's LEFT SHOULDER — the
-  // far side from the camera, on the SCREEN RIGHT — and travels across
-  // the shoulders to the figure's RIGHT side, which is the SCREEN LEFT,
-  // and then down. The origin is the shoulder itself, measured off the
-  // bake (the +x extreme of the chunk centres at shoulder height).
+  // The order of the break: ONE PLANE, tilted diagonally, entering at the
+  // TOP of the figure's LEFT (+x, which is the SCREEN RIGHT) and
+  // travelling down and across to the bottom of its RIGHT (-x, the SCREEN
+  // LEFT). Pieces come loose in order of how far along this axis they
+  // sit. A flat front, not a ball: the version before this ranked pieces
+  // by a weighted distance from the shoulder (releaseFrom [0.06, 0.95,
+  // 0.8] with up 4.5 / down 2.5 / across 1.35) and that expands as a
+  // lopsided sphere, which reads as a hole opening and growing rather
+  // than as one motion.
   //
-  // This point now really does set the direction: the flight's constraint
-  // graph used to override it (moving this point right across the body
-  // shifted the first fifteen pieces by 0.02 in x), and is graded now.
+  // The DIAGONAL is what makes a plane possible at all here. A level or
+  // downward-tilted sweep cannot work: the plinth is the +x mass at the
+  // bottom, so a -x sweep starts AT it, and the head is high and at -x,
+  // so a -y sweep starts at the head. Tilting in x AND y puts the plinth
+  // late anyway because it is low, and the head in the middle because it
+  // is across. Measured over the chunk centres, mean release percentile
+  // of the plinth (y < -0.45) and of the head (y > 1.2) against the
+  // tilt off horizontal: 25 deg gave 0.46 / 0.64 (head far too late,
+  // plinth far too early), 45 deg gave 0.70 / 0.17 (head too early), 35
+  // deg gives 0.60 / 0.35. That is this axis.
   //
-  // The origin sits FORWARD of the shoulder, at z 0.8 against the
-  // shoulder mass's own 0.4, so the front of the figure is nearer than
-  // its back and the front comes apart first: the break has to read as
-  // one front crossing the body left to right AND front to back, not as
-  // pieces popping in scattered places. Measured over the shoulder band
-  // (y 0.5..1.2), Spearman of the rank against -x and against -z:
-  // z 0.6/across 1.0 gave +0.73/-0.01 (sideways only, no depth), z 1.1/
-  // across 2.0 gave -0.14/+0.93 (depth swallowed the sideways sweep);
-  // z 0.8/across 1.35 is +0.56/+0.27 in the bake, sideways leading and
-  // depth second. (The whole figure reads the other way, -0.64 against
-  // -x, and that is right: half the pieces are the plinth and the legs,
-  // which sit at +x under a body that sits at -x, so a figure-wide x
-  // correlation measures the pose, not the break.)
+  // The -0.33 in z leans the front forward so the front of the body goes
+  // a beat before the back. It is small on purpose: at -0.45 and beyond
+  // the depth starts eating the sideways read (Spearman over the shoulder
+  // band against -x fell from +0.87 to below +0.7), and the diagonal is
+  // what matters.
   //
-  // The weights are what keep a spread from a point reading as a sideways
-  // sweep. A step down counts 2.5x: at 1.3 the low chest tied with the
-  // far shoulder — both 0.96 from here — so the break spread as a ball
-  // and the first fifteen pieces averaged x -0.51 instead of the
-  // shoulder's +0.06. At 2.5 the front runs along the shoulder line
-  // first, then works down the body, and the plinth — the +x mass at the
-  // very bottom, which a naive -x plane sweep starts AT — is the farthest
-  // thing of all and goes last (mean release percentile 0.76).
-  //
-  // A step up counts 4.5x, to hold the HEAD back: it is high and across
-  // at x -1.18..-0.26, the other thing a tilted plane sweep starts at. It
-  // now averages the 31st percentile of the order and the head proper
-  // (x below -0.6) starts at the 24th; the pieces above y 1.2 that go
-  // earlier than that are the neck and the trapezius, which stand
-  // directly over the shoulder the break starts at.
-  //
-  // The front holds together: release time fits a plane through position
-  // at R2 0.64 (a sphere spreading from a point cannot do better against
-  // a linear fit), and a piece releases on average 0.035 of the break
-  // away from its six nearest neighbours — 4% of the span, against the
-  // 0.2% that separates consecutive pieces. Before the constraint graph
-  // was graded that figure was 6%.
-  //
-  // (A plane sweep, releaseSweep, was tried repeatedly and cannot do
-  // this: no single plane puts both the figure's right side and the +x
-  // plinth at the far end. A spread from the camera's opening eye,
-  // OPENING_EYE, came before that; and the shoulder it once started from
-  // was the RIGHT one, (-0.9, 0.78, 0.4), back when the flight pointed
-  // that way.)
-  releaseFrom: [0.06, 0.95, 0.8],
-  releaseWeights: { across: 1.35, down: 2.5, up: 4.5 },
+  // (An earlier plane sweep was tried and always started at the head.
+  // That was a level axis, and it was also before the flight's constraint
+  // graph was graded — ungraded, the graph overrode any sweep outright.
+  // A spread from the camera's opening eye, OPENING_EYE, came before
+  // that.)
+  releaseSweep: [-0.76, -0.56, -0.33],
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
   // convex, nearly all the same size — about a tenth of the figure's
