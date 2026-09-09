@@ -440,6 +440,13 @@ export type BuildSolidChunkOptions = {
    * come loose in order of their distance from it.
    */
   impact: [number, number, number];
+  /**
+   * Where the break is watched from, in figure units: pieces come loose in
+   * order of their distance from HERE rather than from the impact, so the
+   * ones nearest the lens go first and the far side of the figure last.
+   * Left out, the impact itself is the origin.
+   */
+  releaseFrom?: [number, number, number];
   /** Target cell width at the impact, in figure units. */
   spacingNear: number;
   /** Target cell width far from the impact. */
@@ -522,15 +529,18 @@ const RELEASE_END = 0.86;
 // shrink and the whole thing accelerates away: a piece here and there to
 // begin with, then the figure going at once.
 //
-// The statue's run is short now — it ends when the name finishes leaving the
-// frame, not at the bottom of the page — so this is steeper than it was.
 // Set by measuring how much has let go partway through: at 3 a fifth was out
 // a quarter of the way in and half by 0.54, which spread the break evenly
-// over the run. At 10 it is a tenth and 0.63, so the first stretch stays
-// nearly whole and the collapse is genuinely exponential.
-const RELEASE_ACCELERATION = 10;
-// How much of the breakup a piece's flight takes once released.
-const TRAVEL_WINDOW = 0.275;
+// over the run. At 10 it was a tenth and 0.63. Now that the run is the
+// whole page — from the panel's first beat to the black — 50 keeps the
+// start sparse (the first gap is 0.0155 of the break, the last 0.0003:
+// a piece now and then for a long while, then the figure going at once).
+const RELEASE_ACCELERATION = 50;
+// How much of the breakup a piece's flight takes once released. Doubled
+// from 0.275 with the run: a piece's flight is a share of the break, and
+// the break is twice as long, so this keeps each piece's own pace and
+// then halves it again.
+const TRAVEL_WINDOW = 0.55;
 // Islands smaller than this are dropped as dust. The real correctness
 // filter is the third condition at the call site (an island with no surface
 // polygon at all is a cap-only solid, which the carve should never have
@@ -1926,13 +1936,15 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
     kept.push(point);
   }
 
-  // The break travels outward from the blow, so a piece's place in the
-  // order is simply how far its seed sits from the impact.
-  const farthest = Math.max(...kept.map((point) => point.distanceTo(impact)), 1e-6);
+  // The break travels away from the viewer, so a piece's place in the
+  // order is how far its seed sits from where the break is watched from
+  // (the camera's opening eye; the blow itself when none is given).
+  const releaseFrom = options.releaseFrom ? new THREE.Vector3(...options.releaseFrom) : impact;
+  const farthest = Math.max(...kept.map((point) => point.distanceTo(releaseFrom)), 1e-6);
   const seeds: Seed[] = kept.map((point) => ({
     phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
     point,
-    position: point.distanceTo(impact) / farthest,
+    position: point.distanceTo(releaseFrom) / farthest,
   }));
 
   return { impact, seeds };

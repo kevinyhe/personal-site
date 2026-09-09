@@ -14,11 +14,14 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import * as THREE from "three";
 
 import {
+  CAMERA_DISTANCE_CLOSE,
   CAMERA_OFFSET,
+  CAMERA_OFFSET_CLOSE,
+  IMPACT_AIM_LIFT,
   loadThinkerChunks,
   THINKER_BASE_YAW,
 } from "@/components/thinkerChunks";
-import { CHERRY_BASE_YAW, loadCherryChunks } from "@/components/cherryChunks";
+import { CHERRY_BASE_YAW, CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
@@ -121,19 +124,23 @@ export type ThinkerTiming = () => {
 // Where the breakup ends, as a fraction of the stage's stretch (where it
 // starts comes from the page, see ThinkerTiming).
 //
-// The break runs the whole way: it does not stop at the camera cut, it
-// keeps opening through it and finishes as the panel reaches the full
-// screen. There is no reverse any more — `story` still runs from here to
-// the end of the narration, but only the camera reads it (its orbit and
-// dolly); the pieces of both figures stay gone.
+// The break runs the whole way: over the panel's growth and on under the
+// narration, finishing as the black shuts (the page hands the stage that
+// whole stretch, see HeroIntro's thinkerTiming). There is no reverse —
+// `story` still runs from the break's end to the narration's, but only
+// the camera reads it, and only after a cut (CUT_TO_TREE, off); the
+// pieces stay gone.
 const BREAK_END = 0.96;
 // Camera distance to what it looks at: at rest, close on the upper two
 // thirds of the figure; over the breakup it eases slightly closer while
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
+// The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.6) ends
+// here; 4.6 and 5.68 are four fifths of the pull-outs they replace (to
+// 5.1 and 6.3), the whole camera move having been scaled to 80%.
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 5.1;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 6.3;
+const CAMERA_DISTANCE_BROKEN = 4.6;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 5.68;
 // The shot OPENS on the blow — where the figure struck the floor, the point
 // the whole fracture is measured from — and pulls out from there. The
 // position comes from the build itself (`breakOrigin`), turned into world
@@ -141,9 +148,9 @@ const CAMERA_DISTANCE_COMPACT_BROKEN = 6.3;
 // camera follows it without anything here being retyped. This is the
 // fallback for the frames before the build has landed.
 const IMPACT_FALLBACK = new THREE.Vector3(-0.15, -1.5, 0.25);
-// Far enough back that the blow reads in context — the base and the legs
-// above it — rather than filling the frame with anatomy you cannot place.
-const CAMERA_DISTANCE_CLOSE = 2.6;
+// The opening shot's offset, distance and aim lift live in thinkerChunks,
+// beside the flight direction: the break's order is measured from that
+// same eye, so the two cannot drift apart.
 const CAMERA_DISTANCE_CLOSE_COMPACT = 3.2;
 // The stage group's own rotation. Shared with ChunkedThinker's <group> so
 // the camera and the figure cannot drift apart.
@@ -155,24 +162,13 @@ const LOOK_AT_Y = 0.85;
 const LOOK_AT_Y_BROKEN = -0.05;
 const LOOK_AT_MID = new THREE.Vector3(0.05, LOOK_AT_Y + 0.1, 0.35);
 const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
-// Where the camera sits for the opening shot, per unit of distance: hard to
-// the RIGHT of the figure and a little below the blow, so the move out to
-// CAMERA_OFFSET's high three-quarter view is a real tilt and swing rather
-// than a straight dolly back. Both this and CAMERA_OFFSET sit well to the
-// right, and the swing below runs leftward, so the whole move reads
-// right-to-left.
-const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.18, 1).normalize();
-// The opening aim sits a little above the blow rather than straight at it,
-// so the arms have headroom in the frame instead of sitting on its centre
-// line. It was 0.45 when the blow was on the floor and half the frame would
-// otherwise have been bare ground.
-const IMPACT_AIM_LIFT = 0.2;
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
 // The swing rides the RAW breakup while the zoom rides its smoothstep, so
-// the orbit keeps drifting after the pull-out has settled.
-const ORBIT_LEFT = -1.0;
-const ORBIT_LEFT_COMPACT = -0.7;
+// the orbit keeps drifting after the pull-out has settled. Four fifths of
+// the -1.0 / -0.7 they were, with the rest of the camera's move.
+const ORBIT_LEFT = -0.8;
+const ORBIT_LEFT_COMPACT = -0.56;
 
 // ---------------------------------------------------------------------------
 // The cut.
@@ -315,7 +311,7 @@ type Figure = "statue" | "tree";
 // there is one: with no tree built (its model missing, its build failed)
 // the statue keeps the stage and the cut is only the camera's.
 function figureAt(reducedMotion: boolean, treeReady: boolean): Figure {
-  const cut = !reducedMotion && sceneFx.stageCut >= 1;
+  const cut = CUT_TO_TREE && !reducedMotion && sceneFx.stageCut >= 1;
 
   return cut && treeReady ? "tree" : "statue";
 }
@@ -625,8 +621,9 @@ function smoothPhase(start: number, end: number, value: number) {
 // scroll lasts.
 const DRIFT_ON = 0.3;
 // Released pieces also gain this much travel per second of plain time, so
-// they never hang still in the air when the scroll rests.
-const DRIFT_PER_SECOND = 0.016;
+// they never hang still in the air when the scroll rests. Halved with the
+// flight (TRAVEL_WINDOW): the pieces go at half the pace they did.
+const DRIFT_PER_SECOND = 0.008;
 
 function travelAt(x: number) {
   if (x <= 0) return 0;
@@ -706,6 +703,9 @@ function useThinkerScrollProgress({
 // One figure's chunks, from the page-wide build (see thinkerChunks, which
 // logs a failure once; here a failed figure is simply one that never
 // arrives).
+/** A build that never comes: what the tree's slot gets while the cut is off. */
+const loadNoTree = () => new Promise<ThinkerChunkBuild>(() => undefined);
+
 function useChunkBuild(load: () => Promise<ThinkerChunkBuild>) {
   const [build, setBuild] = useState<ThinkerChunkBuild | null>(null);
   useEffect(() => {
@@ -984,7 +984,7 @@ function CameraRig({
     // Nothing above is skipped: every frame up to this scroll position
     // plays exactly as it did, and the swing and the orbit this replaces
     // are still what get it there.
-    const cut = !reducedMotion && sceneFx.stageCut >= 1;
+    const cut = CUT_TO_TREE && !reducedMotion && sceneFx.stageCut >= 1;
     const figure = figureAt(reducedMotion, tree !== null);
     // How far through the narration the page is. The shot keeps moving on
     // it — a gentle orbit and a touch of dolly — so the held frame is
@@ -1676,7 +1676,9 @@ function ThinkerCanvas({
   timing: ThinkerTiming;
 }) {
   const build = useChunkBuild(loadThinkerChunks);
-  const treeBuild = useChunkBuild(loadCherryChunks);
+  // With the cut off (CUT_TO_TREE) the tree is never asked for: its build
+  // would only lengthen the television's hold for a figure nobody sees.
+  const treeBuild = useChunkBuild(CUT_TO_TREE ? loadCherryChunks : loadNoTree);
   // RobotOutro used to write this every frame for CameraRig's chase. With
   // the robot unmounted nothing writes it and nothing reads it — the chase
   // branch is behind a `robot > 0` test that can no longer be true — but it
