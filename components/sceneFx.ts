@@ -73,13 +73,24 @@ export const sceneFx = {
    */
   backdropLevel: 1,
   /**
-   * 0..1 as the name lockup is shoved off the sides of the frame; 1 on the
-   * frame the last letter is gone. Tweened by the hero timeline on exactly
-   * the word tweens' own start and duration, which is the point: the
-   * statue's camera cuts on this rather than on the scroll position the
-   * exit maps to. The timeline is scrubbed (0.3), so during a real scroll
-   * the words lag the scroll by about a third of a second — read off the
-   * scroll, the cut fired with the last letter still on screen.
+   * 0..1 over the first 60% of the panel's growth; 1 from there on. The
+   * stage CUTS on the frame this reaches 1 — the statue's shot is swapped
+   * for the tree's (see ThinkerStage). Tweened by the hero timeline
+   * alongside the panel's own growth tween rather than read off the scroll
+   * position, so the cut lands on the frame the box is seen at 60% and not
+   * a third of a second before it: the timeline is scrubbed (0.3), so
+   * under a real scroll the box lags the scroll by about that much.
    */
-  textGone: 0,
+  stageCut: 0,
+  /**
+   * 0..1 over the tree's break: 0 until a beat after the cut, 1 where the
+   * statue's break ends (see TREE_BREAK in ThinkerStage), linear in the
+   * panel's growth between. Tweened on the same timeline as `stageCut`,
+   * and that is the point: the two share one clock, so on the frame the
+   * cut lands this is exactly 0 and the tree is seen whole. Measured off
+   * the scroll position instead it ran ahead of the scrubbed cut by
+   * however far the scroll had moved in the last third of a second, and a
+   * wheel flick put the tree's first pieces in flight on its first frame.
+   */
+  treeBreak: 0,
 };

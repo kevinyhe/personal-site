@@ -195,7 +195,15 @@ function findMeshWorldMatrix(gltf: GltfDocument, meshIndex: number) {
   return foundMatrix ?? new THREE.Matrix4();
 }
 
-function normalizeGeometry(geometry: THREE.BufferGeometry) {
+/**
+ * The figure's longest extent after loading. Everything below — cell
+ * spacings, the flight's spread, the stage's camera distances — is tuned in
+ * these units, so a second model is scaled to the same size rather than
+ * the fracture being retuned for it.
+ */
+export const FIGURE_EXTENT = 3.1;
+
+function normalizeGeometry(geometry: THREE.BufferGeometry, extent: number) {
   geometry.computeBoundingBox();
 
   if (!geometry.boundingBox) {
@@ -204,7 +212,7 @@ function normalizeGeometry(geometry: THREE.BufferGeometry) {
 
   const center = geometry.boundingBox.getCenter(new THREE.Vector3());
   const size = geometry.boundingBox.getSize(new THREE.Vector3());
-  const scale = 3.1 / Math.max(size.x, size.y, size.z);
+  const scale = extent / Math.max(size.x, size.y, size.z);
 
   geometry.translate(-center.x, -center.y, -center.z);
   geometry.scale(scale, scale, scale);
@@ -215,7 +223,16 @@ function normalizeGeometry(geometry: THREE.BufferGeometry) {
   return geometry;
 }
 
-export async function loadThinkerGeometry(modelPath = "/model/thinker/scene.gltf") {
+/**
+ * Loads one glTF (its first mesh's first primitive) as a geometry centred
+ * on the origin with its longest extent scaled to `extent`. The statue by
+ * default; the stage's other figures pass their own path (see the
+ * `modelPath` option).
+ */
+export async function loadThinkerGeometry(
+  modelPath = "/model/thinker/scene.gltf",
+  extent = FIGURE_EXTENT,
+) {
   const gltf = await fetchJson<GltfDocument>(modelPath);
   const modelBasePath = modelPath.slice(0, modelPath.lastIndexOf("/") + 1);
   const buffers = await Promise.all(
@@ -271,7 +288,7 @@ export async function loadThinkerGeometry(modelPath = "/model/thinker/scene.gltf
     geometry.computeVertexNormals();
   }
 
-  return normalizeGeometry(geometry);
+  return normalizeGeometry(geometry, extent);
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +421,18 @@ export type ThinkerChunkBuild = {
 };
 
 export type BuildSolidChunkOptions = {
+  /**
+   * The glTF to cut, as a URL under public/. The statue
+   * (/model/thinker/scene.gltf) when left out. Read by the worker, which
+   * loads the model itself; the options are the whole of its message.
+   */
+  modelPath?: string;
+  /**
+   * What the model's longest extent is scaled to before the cut, in figure
+   * units. FIGURE_EXTENT (3.1) when left out, and there is no reason to
+   * pass anything else: the spacings below are in these units.
+   */
+  normalizeHeight?: number;
   /**
    * Where the figure struck the floor, as fractions of its bounding box
    * (0..1 on each axis). Everything about the break is measured from here:
