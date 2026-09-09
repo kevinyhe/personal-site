@@ -179,18 +179,28 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // lopsided sphere, which reads as a hole opening and growing rather
   // than as one motion.
   //
-  // The DIAGONAL is what makes a plane possible at all here. A level or
-  // downward-tilted sweep cannot work: the plinth is the +x mass at the
-  // bottom, so a -x sweep starts AT it, and the head is high and at -x,
-  // so a -y sweep starts at the head. Tilting in x AND y puts the plinth
-  // late anyway because it is low, and the head in the middle because it
-  // is across. Measured over the chunk centres, mean release percentile
-  // of the plinth (y < -0.45) and of the head (y > 1.2) against the
-  // tilt off horizontal: 25 deg gave 0.46 / 0.64 (head far too late,
-  // plinth far too early), 45 deg gave 0.70 / 0.17 (head too early), 35
-  // deg gives 0.60 / 0.35. That is this axis.
+  // It is 15 degrees off horizontal, and the LEFT-TO-RIGHT travel is meant
+  // to dominate the downward travel. Measured on the bake, over the
+  // shoulder band (0.55 < y < 1.2): the release correlates +0.90 with -x
+  // here against +0.86 at the 34 degrees this used to be, and -0.02 with
+  // -z. The front is still one plane — the release correlates 0.963 with
+  // the sweep axis over the body, against the 0.960 the 34-degree version
+  // reached — and a piece releases 0.038 of the break from its six nearest
+  // neighbours, against 0.056 before.
   //
-  // The -0.33 in z leans the front forward so the front of the body goes
+  // What used to stop it being flat was the plinth. The plinth is the +x
+  // mass at the bottom, so a flat -x sweep reaches it at once; only the
+  // downward tilt held it back, and that same tilt starts the break at the
+  // head, which is high and at -x. Measured over the chunk centres, mean
+  // release percentile of the plinth (y < -0.45) and of the head (y > 1.2)
+  // against the tilt: 25 deg gave 0.46 / 0.64, 35 deg 0.60 / 0.35, 45 deg
+  // 0.70 / 0.17. One plane could not do both. `lateFrom` below takes the
+  // plinth out of the plane's hands, and the plane is then free to flatten
+  // until the START drifts off the shoulder: with the base held back the
+  // first twelve pieces sit at the shoulder (0.14, 0.90, 0.29) at 15
+  // degrees and at mid-torso (0.22, 0.64) by 5. 15 is this.
+  //
+  // The z leans the front forward so the front of the body goes
   // a beat before the back. It is small on purpose: at -0.45 and beyond
   // the depth starts eating the sideways read (Spearman over the shoulder
   // band against -x fell from +0.87 to below +0.7), and the diagonal is
@@ -201,7 +211,20 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // graph was graded — ungraded, the graph overrode any sweep outright.
   // A spread from the camera's opening eye, OPENING_EYE, came before
   // that.)
-  releaseSweep: [-0.76, -0.56, -0.33],
+  releaseSweep: [-0.887, -0.257, -0.385],
+  // The base and the legs are ordered after the whole body, whatever the
+  // plane says: 0.4 of the figure's height is the same floor `legsFrom`
+  // uses, y = -0.31. That is what lets the plane above be flat. Measured
+  // over the chunk centres, with the base held back like this the first
+  // twelve pieces stay at the left shoulder down to about 12 degrees of
+  // tilt and slide to mid-torso by 5; without it they had left the
+  // shoulder by 20 degrees and were at the knee by 10. On the bake the
+  // plinth's mean release percentile is 0.75 and the earliest plinth piece
+  // is at 0.51, with the head's mean at 0.35.
+  lateFrom: 0.4,
+  // The cells are graded along the order rather than around a point: see
+  // the spacing notes below.
+  gradeAlongSweep: true,
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
   // convex, nearly all the same size — about a tenth of the figure's
@@ -223,21 +246,31 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // this is the spacing that lands the mean radius at ~0.2. A cut this
   // fine is what made baking it necessary (bakedPath).
   //
-  // The near/far spread then widened, because the pieces at the shoulder
-  // read as too big. Most of that was the impact moving there — with the
-  // grading at the hand, the sphere of 0.4 figure units around the
-  // shoulder held FOUR pieces of mean radius 0.541; it now holds 29 of
-  // mean radius 0.242. 0.09/0.122 was the old pair; 0.075/0.135 came to
-  // 574 pieces and a 58 s cut, past the budget, and 0.07/0.19 fell to 326
-  // and made everything coarser. 0.075/0.155 is 476 pieces, mean radius
-  // 0.230, 33-38 s.
-  spacingNear: 0.075,
-  spacingFar: 0.155,
-  // Cells reach full size within about 1.4 figure units of the blow. It
-  // was 0.9 when near and far were close enough that it hardly showed;
-  // with the spread widened, a falloff that long put fine cells over the
-  // whole torso and cost 100 pieces of build time for no visible gain.
-  spacingFalloff: 0.45,
+  // The spread is now wide because the grading follows the ORDER
+  // (`gradeAlongSweep`), not the distance from a point. Every chunk costs
+  // draw calls whether it ever moves or not — about 2 a frame seated — and
+  // the stage stops being drawn about one screen past the cut, by which
+  // time only ~45 of the pieces have ever released. So the fineness is
+  // spent on the first tenth of the break, which is the shoulder and the
+  // upper body, and the plinth, the legs and the far side are cut coarse:
+  // they are drawn intact for the whole shot and never seen to break.
+  // 0.075/0.155 graded around the shoulder was 476 pieces, mean radius
+  // 0.230 and 0.260 among the first 45 released; this is 506 pieces, mean
+  // radius 0.224 and 0.198 among the first 45, in a 50 s cut.
+  //
+  // The near end only bites with the two settings below it. At 4200
+  // candidates and variationNear 1 (the field at full strength), halving
+  // spacingNear from 0.075 to 0.05 moved the pieces within 0.55 of the
+  // shoulder by nothing at all: mean radius 0.232 either way.
+  candidateTarget: 4200,
+  spacingNear: 0.05,
+  spacingFar: 0.22,
+  // Cells reach full size within this far ALONG THE ORDER (the rank turned
+  // back into figure units, so it still reads as a distance). Steep: it is
+  // what decides how much of the figure is cut fine, and so most of the
+  // piece count. 0.20/0.45 came to 565 pieces and a 58 s cut, 0.24/0.40 to
+  // 383; 0.22/0.43 is 506, within 10% of the 476 this replaces.
+  spacingFalloff: 0.43,
   // No rings: the reference's cells show no concentric structure.
   shellBias: 0,
   // No radial grain: the reference's cells are as wide as they are long
@@ -248,6 +281,15 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // this is back up to where slabs sit beside small fragments without the
   // slivers the old 3.0 made — 1.5 first, then 2.2 when 1.5 still read as
   // even. That is the small side; the large side is wider still.
+  //
+  // A quarter of it over the part the break opens with. The field's
+  // up-swing is an 11x spacing at the top (e^4.8 * 0.5), and the sampler
+  // measures a candidate's room against the LARGER of the two spacings, so
+  // one coarse seed sets the size of everything around it — which is why
+  // the shoulder stayed at a mean radius of 0.232 however fine the spacing
+  // asked it to be. At 0.25 the first 45 pieces released come out at 0.198
+  // and the whole-limb lumps stay in the part that is never seen to break.
+  variationNear: 0.25,
   sizeVariation: 2.2,
   // The biggest pieces asked for at 150% bigger with the smallest left
   // alone. The field is a product of sines and rarely leaves +-0.5, so
@@ -357,7 +399,7 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  * lives) and a version of the cut itself, bumped by hand when the fracture
  * code changes what it makes from the same options.
  */
-export const FRACTURE_VERSION = 4;
+export const FRACTURE_VERSION = 5;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
@@ -378,6 +420,7 @@ export const BAKED_FORMAT = "q16n8";
 
 type BakedChunkRecord = {
   center: [number, number, number];
+  exposedAt: number;
   offset: [number, number, number];
   phase: "head" | "upper" | "lower";
   radius: number;
@@ -465,6 +508,7 @@ async function loadBakedChunks(options: BuildSolidChunkOptions): Promise<Thinker
     chunks: header.chunks.map((record, index) => ({
       center: record.center,
       debug: { capStats: [], sourceIndex: index },
+      exposedAt: record.exposedAt,
       interiorNormals: normals(record.interiorNormals),
       interiorPositions: positions(record.interiorPositions),
       offset: record.offset,

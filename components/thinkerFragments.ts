@@ -393,6 +393,11 @@ export type ThinkerChunkData = {
     capStats: CapBuildStats[];
     sourceIndex: number;
   };
+  /**
+   * Breakup progress (0..1) at which this chunk's cut faces can first be
+   * seen: its own release, or its first neighbour's, whichever is sooner.
+   */
+  exposedAt: number;
   interiorNormals: Float32Array;
   interiorPositions: Float32Array;
   /** Full travel, in the figure's own space, once the chunk has released. */
@@ -475,6 +480,40 @@ export type BuildSolidChunkOptions = {
    * `releaseFrom`.
    */
   releaseSweep?: [number, number, number];
+  /**
+   * Fraction of the figure's height below which a piece is ranked AFTER
+   * the whole body, whatever the sweep says. The plinth is low and on the
+   * figure's LEFT (+x out to 1.22, y below -0.45), so a sweep flat enough
+   * to read as left-to-right reaches it in the first few moments; only a
+   * steep downward tilt held it back, and that same tilt starts the break
+   * at the head. One plane cannot do both, so the base is simply ordered
+   * last and the plane is free to be flat. Left out, nothing is held back.
+   */
+  lateFrom?: number;
+  /**
+   * Grade the CELLS along `releaseSweep` instead of by distance from the
+   * impact: a piece's target size follows its place in the break's order,
+   * so the pieces the break opens with are the fine ones and the rest of
+   * the figure is coarse. Only the first ~45 of 476 pieces ever release
+   * while the stage is on screen, and every piece costs draw calls whether
+   * it moves or not, so fineness spent anywhere else is paid for and never
+   * seen. Needs `releaseSweep`; without it this does nothing.
+   */
+  gradeAlongSweep?: boolean;
+  /**
+   * How many points on the figure's skin a seed may be placed at. It is a
+   * floor on how fine the cells can be (see CANDIDATE_TARGET), and the
+   * sampler is O(candidates x seeds), so it is also most of the cut's cost.
+   */
+  candidateTarget?: number;
+  /**
+   * How much of the size variation applies at the front of the break, 0..1,
+   * easing to all of it over `spacingFalloff`. Below 1 the pieces the break
+   * opens with come out near their target spacing instead of being swallowed
+   * by a coarse patch; the whole-limb lumps the variation is there for stay
+   * in the part of the figure that is never seen to break. 1 when left out.
+   */
+  variationNear?: number;
   /** Target cell width at the impact, in figure units. */
   spacingNear: number;
   /** Target cell width far from the impact. */
@@ -546,6 +585,12 @@ export type BuildSolidChunkOptions = {
 // dense enough that the finest spacing near the impact has candidates to
 // choose between, and no denser — every candidate costs work in the sampler.
 const CANDIDATE_TARGET = 2200;
+// Candidates are the only places a seed can sit, so their spacing is a
+// FLOOR on cell size: 2200 points over the figure's skin sit about 0.074
+// figure units apart, and asking for cells finer than that just gets cells
+// of that size. Measured: with spacingNear at 0.05 and 2200 candidates the
+// pieces within 0.55 of the shoulder came out at a mean radius of 0.232,
+// three times the target, whatever the spacing said.
 // Sampling stops once no candidate has this much room relative to what its
 // own distance from the impact asks for: the figure is covered at the
 // density the grading wanted, and more seeds would only shave slivers.
@@ -1788,6 +1833,14 @@ function sampleGradedSeeds(
   candidates: THREE.Vector3[],
   impact: THREE.Vector3,
   spacingAt: (distance: number) => number,
+  /**
+   * What each candidate's cell size is graded on — plain distance from the
+   * impact, or, with `gradeAlongSweep`, how far along the break's own order
+   * it sits (see planSeeds). Separate from `distances` below, which is the
+   * real distance from the blow and stays what the shells and the blow's
+   * own fine neighbourhood are measured with.
+   */
+  gradeDistances: number[],
   shellRadii: number[],
   existing: THREE.Vector3[],
   stretch: number,
@@ -1806,12 +1859,27 @@ function sampleGradedSeeds(
   // hand coming apart into pieces, so the blow's own neighbourhood keeps the
   // fine spacing the grading asks for and the variation takes over outside
   // it.
+  //
+  // The field is also held DOWN over the part of the figure the break opens
+  // with (`variationNear`, graded on the same distance as the spacing). It
+  // has to be: the room test measures a candidate against the LARGER of the
+  // two spacings, so one coarse seed sets the size of everything around it,
+  // and the field's up-swing (e^4.8 at the top, an 11x spacing) drops such
+  // seeds anywhere. Measured with the field at full strength everywhere:
+  // pieces within 0.55 of the shoulder came out at a mean radius of 0.23
+  // whether spacingNear was 0.075 or 0.05, and whether there were 2200
+  // candidates to place them on or 4200.
+  const variationNear = options.variationNear ?? 1;
   const spacings = candidates.map((candidate, index) => {
     const fieldIn = smoothstep01(distances[index] / IMPACT_FINE_RADIUS);
+    const varyIn =
+      variationNear +
+      (1 - variationNear) *
+        (1 - Math.exp(-gradeDistances[index] / Math.max(options.spacingFalloff, 1e-6)));
 
     return (
-      spacingAt(distances[index]) *
-      Math.pow(sizeFieldAt(candidate, options), fieldIn)
+      spacingAt(gradeDistances[index]) *
+      Math.pow(sizeFieldAt(candidate, options), fieldIn * varyIn)
     );
   });
   // How close a candidate sits to one of the concentric shells around the
@@ -1982,7 +2050,10 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // Candidates: surface points pushed inward along their normals, kept if
   // they land inside the figure.
   const candidates: THREE.Vector3[] = [];
-  const stride = Math.max(1, Math.floor(source.polygons.length / CANDIDATE_TARGET));
+  const stride = Math.max(
+    1,
+    Math.floor(source.polygons.length / (options.candidateTarget ?? CANDIDATE_TARGET)),
+  );
 
   for (let index = 0; index < source.polygons.length; index += stride) {
     const polygon = source.polygons[index];
@@ -2005,19 +2076,6 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   }
 
   const guardPoints = options.guardSeeds.map(toModel);
-  const points = guardPoints.concat(
-    sampleGradedSeeds(candidates, impact, spacingAt, shellRadii, guardPoints, stretch, options),
-  );
-  // Drop any pair that ended up on top of each other (see
-  // SEED_MIN_SEPARATION: a coincident pair is a NaN bisector).
-  const kept: THREE.Vector3[] = [];
-
-  for (const point of points) {
-    if (kept.some((other) => other.distanceTo(point) < SEED_MIN_SEPARATION)) continue;
-
-    kept.push(point);
-  }
-
   // A piece's rank in the order is how far its seed sits from where the
   // break starts (the blow itself when none is given). It is a tie-break
   // inside the flight's constraint graph, not the order itself.
@@ -2029,27 +2087,91 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
     const dz = (point.z - releaseFrom.z) * weights.across;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   };
-  const farthest = Math.max(...kept.map((point) => spreadFrom(point)), 1e-6);
+  const farthest = Math.max(
+    ...candidates.concat(guardPoints).map((point) => spreadFrom(point)),
+    1e-6,
+  );
+  // The break's order, as a 0..1 rank, worked out over the CANDIDATE points
+  // — before any seed exists — so the same rank can both grade the cells
+  // (`gradeAlongSweep`) and order the pieces at the end of this function.
   const sweep = options.releaseSweep
     ? new THREE.Vector3(...options.releaseSweep).normalize()
     : null;
-  let sweepMin = Infinity;
-  let sweepMax = -Infinity;
+  const lateFloor =
+    options.lateFrom === undefined ? -Infinity : modelBox.min.y + size.y * options.lateFrom;
+  const isLate = (point: THREE.Vector3) => point.y < lateFloor;
+  // The body's own span along the sweep, in figure units: what the cell
+  // grading measures its falloff in.
+  let bodyMin = Infinity;
+  let bodyMax = -Infinity;
+  let lateMin = Infinity;
+  let lateMax = -Infinity;
+
   if (sweep) {
-    for (const point of kept) {
+    for (const point of candidates.concat(guardPoints)) {
       const along = point.dot(sweep);
-      sweepMin = Math.min(sweepMin, along);
-      sweepMax = Math.max(sweepMax, along);
+
+      if (isLate(point)) {
+        lateMin = Math.min(lateMin, along);
+        lateMax = Math.max(lateMax, along);
+      } else {
+        bodyMin = Math.min(bodyMin, along);
+        bodyMax = Math.max(bodyMax, along);
+      }
     }
   }
-  const rankOf = (point: THREE.Vector3) =>
-    sweep
-      ? (point.dot(sweep) - sweepMin) / Math.max(sweepMax - sweepMin, 1e-6)
-      : spreadFrom(point) / farthest;
+
+  const bodySpan = Math.max(bodyMax - bodyMin, 1e-6);
+  // The body fills the first 0.7 of the order and the base the last 0.28,
+  // whatever the sweep says about where the base sits. The gap between
+  // them is what keeps the two from interleaving once the constraint graph
+  // has had its say.
+  const BODY_SHARE = 0.7;
+  const LATE_START = 0.72;
+  const rank01 = (point: THREE.Vector3) => {
+    if (!sweep) return spreadFrom(point) / farthest;
+
+    const along = point.dot(sweep);
+
+    if (isLate(point) && lateMax > lateMin) {
+      return LATE_START + (1 - LATE_START) * ((along - lateMin) / (lateMax - lateMin));
+    }
+
+    return BODY_SHARE * THREE.MathUtils.clamp((along - bodyMin) / bodySpan, 0, 1);
+  };
+  // Cell size follows the order rather than the distance from the blow when
+  // `gradeAlongSweep` is on: the rank is turned back into figure units
+  // (the body's span along the sweep) so `spacingFalloff` still reads as a
+  // distance. The base lands past LATE_START * span, which is well beyond
+  // the falloff, so it comes out at `spacingFar` throughout.
+  const gradeDistanceOf = (point: THREE.Vector3) =>
+    sweep && options.gradeAlongSweep ? rank01(point) * bodySpan : point.distanceTo(impact);
+  const points = guardPoints.concat(
+    sampleGradedSeeds(
+      candidates,
+      impact,
+      spacingAt,
+      candidates.map(gradeDistanceOf),
+      shellRadii,
+      guardPoints,
+      stretch,
+      options,
+    ),
+  );
+  // Drop any pair that ended up on top of each other (see
+  // SEED_MIN_SEPARATION: a coincident pair is a NaN bisector).
+  const kept: THREE.Vector3[] = [];
+
+  for (const point of points) {
+    if (kept.some((other) => other.distanceTo(point) < SEED_MIN_SEPARATION)) continue;
+
+    kept.push(point);
+  }
+
   const seeds: Seed[] = kept.map((point) => ({
     phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
     point,
-    position: rankOf(point),
+    position: rank01(point),
   }));
 
   return { impact, seeds };
@@ -2397,7 +2519,7 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   const count = cells.length;
 
   if (count <= 1) {
-    return cells.map(() => 0);
+    return { exposedAt: cells.map(() => 0), releaseAt: cells.map(() => 0) };
   }
 
   // Units: one per seed. The arm goes first in path order; everything
@@ -2525,6 +2647,10 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   };
   // before[u]: units that must start no later than u.
   const before: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
+  // neighbours[c]: the cells that share cut points with c — the pieces whose
+  // leaving opens a cavity whose wall is c's own cut face. Collected here
+  // because the loop below already runs the touching test on every pair.
+  const neighbours: number[][] = Array.from({ length: count }, () => []);
 
   for (let a = 0; a < count; a++) {
     for (let b = a + 1; b < count; b++) {
@@ -2540,6 +2666,8 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
         unitRank[blocker] - unitRank[mover] > tolerance;
 
       if (touching(a, b)) {
+        neighbours[a].push(b);
+        neighbours[b].push(a);
         if (holds(ua, ub, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(a, b)) before[ua].add(ub);
         if (holds(ub, ua, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(b, a)) before[ub].add(ua);
       } else {
@@ -2605,7 +2733,17 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
     });
   });
 
-  return releaseAt;
+  // When a piece's cut faces first become visible: the moment IT leaves, or
+  // the moment any piece it touches leaves, whichever is first. A seated
+  // piece's cut faces are inside solid marble only while its NEIGHBOURS are
+  // seated too — the moment one flies off, the wall of the cavity it leaves
+  // is this piece's own cut face, and a piece that only shows its faces
+  // when it moves shows a hole straight through a hollow figure instead.
+  const exposedAt = releaseAt.map((moment, cell) =>
+    neighbours[cell].reduce((first, other) => Math.min(first, releaseAt[other]), moment),
+  );
+
+  return { exposedAt, releaseAt };
 }
 
 /**
@@ -2655,7 +2793,7 @@ export function buildSolidThinkerChunks(
       .addScaledVector(sideways, FLIGHT_SPREAD)
       .add(jitter);
   });
-  const releaseAt = planReleaseOrder(cells, offsets);
+  const { exposedAt, releaseAt } = planReleaseOrder(cells, offsets);
 
   const chunks = pieces.map((piece, index): ThinkerChunkData => {
     const offset = offsets[index];
@@ -2676,6 +2814,7 @@ export function buildSolidThinkerChunks(
     return {
       center: [piece.center.x, piece.center.y, piece.center.z],
       debug: { capStats: piece.capStats, sourceIndex: piece.id },
+      exposedAt: exposedAt[index],
       interiorNormals: interior.normals,
       interiorPositions: interior.positions,
       offset: [offset.x, offset.y, offset.z],
