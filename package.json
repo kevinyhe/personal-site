@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "bake:balls": "node scripts/bake-balls.mjs"
+    "bake:balls": "node scripts/bake-balls.mjs",
+    "bake:cherry": "node scripts/bake-cherry.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
