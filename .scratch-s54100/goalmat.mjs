@@ -1,0 +1,11 @@
+import fs from "node:fs";
+globalThis.fetch = async (u) => { const b = fs.readFileSync("public" + String(u));
+  return { ok: true, status: 200, arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }; };
+const p = await import("../components/propModels.ts");
+const g = await p.loadGoalModel();
+let clear = 0, solid = 0;
+g.object.traverse((n) => { if (!n.isMesh) return;
+  for (const m of (Array.isArray(n.material) ? n.material : [n.material])) { if (m.transparent) clear += 1; else solid += 1; } });
+console.log("goal materials: translucent", clear, "opaque", solid, "| troughHeight", g.troughHeight.toFixed(3));
+const b = await import("../components/ballPhysics.ts");
+console.log("ball rest height (world):", b.ballStatesAt(b.ballTimelineEnd())[0].position[1].toFixed(3));

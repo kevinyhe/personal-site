@@ -54,12 +54,12 @@ const ROSE_GLOW_COLOR = 0xff4f8b;
 // round dots (ordered dither), like the reference site's dot-matrix render.
 // Cell edge in CSS px — multiplied by the render pixel ratio at runtime, so
 // dots read ~3-5 screen px. "low" quality bumps it one step larger.
-const HALFTONE_CELL_CSS_PX = 4.1;
+export const HALFTONE_CELL_CSS_PX = 4.1;
 // 0..1 mix of dithered over the smooth render; below 1 a hint of the smooth
 // image survives under the dots.
-const HALFTONE_STRENGTH = 0.85;
+export const HALFTONE_STRENGTH = 0.85;
 
-const HALFTONE_VERTEX_SHADER = /* glsl */ `
+export const HALFTONE_VERTEX_SHADER = /* glsl */ `
 precision highp float;
 attribute vec3 position;
 // Single clip-space triangle covering the screen; no matrices needed.
@@ -68,7 +68,7 @@ void main() {
 }
 `;
 
-const HALFTONE_FRAGMENT_SHADER = /* glsl */ `
+export const HALFTONE_FRAGMENT_SHADER = /* glsl */ `
 precision highp float;
 
 uniform sampler2D uScene;
@@ -496,7 +496,7 @@ function fbm2(x: number, z: number, octaves = 5) {
   return total > 0 ? value / total : 0;
 }
 
-function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
+export function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
   if (q !== "auto") return q;
   if (typeof window === "undefined") return "high";
   const w = getViewportWidth();
@@ -506,9 +506,9 @@ function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
   return "high";
 }
 
-type Quality = "auto" | "low" | "medium" | "high";
+export type Quality = "auto" | "low" | "medium" | "high";
 
-type TreeOptions = {
+export type TreeOptions = {
   seed?: number;
   quality?: Quality;
   blossomCount?: number;
@@ -543,7 +543,7 @@ type BlossomPlacement = {
   shade: [number, number, number, number];
 };
 
-type BranchFrame = {
+export type BranchFrame = {
   binormal: THREE.Vector3;
   normal: THREE.Vector3;
   point: THREE.Vector3;
@@ -584,7 +584,7 @@ class CanopyLobe {
   }
 }
 
-class Branch {
+export class Branch {
   id: number;
   parent: Branch | null;
   children: Branch[] = [];
@@ -676,18 +676,18 @@ class Branch {
 // vec4s fed to the shaders; any point rigidly attached to a branch
 // (blossoms!) must bake those same vec4s to reproduce the anchor motion.
 // ---------------------------------------------------------------------------
-function getWindRamp(t: number) {
+export function getWindRamp(t: number) {
   return Math.pow(smoothstep(0.06, 1, clamp01(t)), 1.75);
 }
 
-function getWindFlutterRamp(t: number) {
+export function getWindFlutterRamp(t: number) {
   return smoothstep(0.45, 1, clamp01(t));
 }
 
 // CPU mirror of arborGust() in WIND_SHADER_CHUNK — keep the two in sync.
 // Lets CPU-simulated systems (falling petals) surge with the same gust
 // envelope the branch/blossom shaders sample from uWindTime.
-function arborGustEnvelope(t: number, phase: number) {
+export function arborGustEnvelope(t: number, phase: number) {
   const n =
     Math.sin(t * 0.36 + phase * 0.1) +
     0.6 * Math.sin(t * 0.83 + 1.7 + phase * 0.05) +
@@ -695,7 +695,7 @@ function arborGustEnvelope(t: number, phase: number) {
   return 0.2 + 1.02 * smoothstep(-1.9, 1.75, n);
 }
 
-function getLimbWindAmplitude(branch: Branch) {
+export function getLimbWindAmplitude(branch: Branch) {
   const depthAmp =
     branch.depth === 1 ? 0.078 : branch.depth === 2 ? 0.122 : 0.158;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -706,7 +706,7 @@ function getLimbWindAmplitude(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-function getTwigWindAmplitude(branch: Branch) {
+export function getTwigWindAmplitude(branch: Branch) {
   const depthAmp =
     branch.depth === 4 ? 0.175 : branch.depth === 5 ? 0.225 : 0.26;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -717,7 +717,7 @@ function getTwigWindAmplitude(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-function getTwigWindFlutter(branch: Branch) {
+export function getTwigWindFlutter(branch: Branch) {
   const depthAmp =
     branch.depth === 4 ? 0.008 : branch.depth === 5 ? 0.012 : 0.016;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -728,12 +728,12 @@ function getTwigWindFlutter(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-type BranchWindVectors = {
+export type BranchWindVectors = {
   wind1: [number, number, number, number];
   wind2: [number, number, number, number];
 };
 
-function getBranchWindVectors(branch: Branch, t: number): BranchWindVectors {
+export function getBranchWindVectors(branch: Branch, t: number): BranchWindVectors {
   const ramp = getWindRamp(t);
   const along = clamp01(t);
   return {
@@ -1155,7 +1155,7 @@ class BranchGeometryBuilder {
   }
 }
 
-type BranchWindUniforms = {
+export type BranchWindUniforms = {
   uWindTime: { value: number };
   uWindStrength: { value: number };
   // Cursor rustle (see arborPointerRustle in WIND_SHADER_CHUNK): smoothed
@@ -1708,11 +1708,11 @@ function applyBlossomWind(
 // lavender-pink throughout (matched to the full-bloom Yoshino reference),
 // light petal edges, saturated pink base, and a magenta-crimson flower
 // center / calyx.
-const PETAL_EDGE_COLOR = new THREE.Color("#fdeff8");
-const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
-const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
-const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
-const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
+export const PETAL_EDGE_COLOR = new THREE.Color("#fdeff8");
+export const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
+export const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
+export const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
+export const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
 // Pedicels stay in the plum band — no green anywhere in the palette.
 const PEDICEL_BASE_COLOR = new THREE.Color("#5d4150");
 const PEDICEL_TIP_COLOR = new THREE.Color("#7d5560");
@@ -1726,10 +1726,10 @@ const STAMEN_ANTHER_COLOR = new THREE.Color("#edd28c");
 // the baked vertex-color gradient via instanceColor. Build-time only (no
 // per-frame calls); lerpColors/offsetHSL mutate in place, so nothing is
 // allocated.
-const BLOSSOM_TINT_PALE = new THREE.Color("#f7c4e0");
-const BLOSSOM_TINT_SOFT = new THREE.Color("#f1aed6");
-const BLOSSOM_TINT_ROSE = new THREE.Color("#e693c4");
-const BLOSSOM_TINT_BRIGHT = new THREE.Color("#fbdff0");
+export const BLOSSOM_TINT_PALE = new THREE.Color("#f7c4e0");
+export const BLOSSOM_TINT_SOFT = new THREE.Color("#f1aed6");
+export const BLOSSOM_TINT_ROSE = new THREE.Color("#e693c4");
+export const BLOSSOM_TINT_BRIGHT = new THREE.Color("#fbdff0");
 
 function sampleBlossomTint(rng: () => number, target: THREE.Color) {
   // Gentle pow-curve: draws spread across the whole pink band with a mild
@@ -1802,7 +1802,7 @@ const BLOSSOM_PEDICEL_LENGTH = 0.55;
 // `lowDetail` builds a ~3x cheaper variant (2x2-quad petals, no stamens,
 // coarser center disc) used for the smallest/deepest instances so the sleeve
 // coverage model can raise instance counts without ballooning vertex work.
-function createSakuraBlossomGeometry(openness = 1, lowDetail = false) {
+export function createSakuraBlossomGeometry(openness = 1, lowDetail = false) {
   const positions: number[] = [];
   const colors: number[] = [];
   const uvs: number[] = [];
@@ -2770,7 +2770,7 @@ function wrapAngle(a: number) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
-class FallingPetalSystem {
+export class FallingPetalSystem {
   // One InstancedMesh per loose-petal shape variant; petal i lives in
   // meshes[i % PETAL_VARIANT_COUNT] at slot (i / PETAL_VARIANT_COUNT) | 0.
   meshes: THREE.InstancedMesh[] = [];
@@ -3592,7 +3592,7 @@ class CanopyOcclusion {
   }
 }
 
-class WeepingCherryGenerator {
+export class WeepingCherryGenerator {
   group = new THREE.Group();
   branchMesh: THREE.Mesh | null = null;
   blossomMesh: THREE.InstancedMesh | null = null;
@@ -8081,11 +8081,13 @@ void main() {
     <div
       ref={mountRef}
       style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "var(--arbor-screen-w, 100dvw)",
-        height: "var(--arbor-screen-h, 100dvh)",
+        // Absolute inside the hero's sticky stage, which is itself exactly
+        // the viewport. It was fixed against the viewport directly, which
+        // held the tree on screen after the stage had scrolled away.
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
         overflow: "hidden",
         pointerEvents: "none",
         zIndex: 0,

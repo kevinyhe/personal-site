@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+import { writeFileSync } from "node:fs";
+const [out = "open", waitS = "45"] = process.argv.slice(2);
+const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+await page.addInitScript(() => { window.__heroHold = true; });
+page.on("pageerror", (e) => console.log("[pageerror]", e.message));
+await page.goto(`http://localhost:3005/?${process.env.Q ?? "tvOpen=1"}`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(Number(waitS) * 1000);
+const cdp = await page.context().newCDPSession(page);
+const { data } = await cdp.send("Page.captureScreenshot", { format: "png", fromSurface: false });
+writeFileSync(`${out}.png`, Buffer.from(data, "base64"));
+await browser.close();

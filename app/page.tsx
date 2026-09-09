@@ -1,18 +1,9 @@
 import { preload } from "react-dom";
 import HeroIntro from "@/components/HeroIntro";
-import TransitionLink from "@/components/TransitionLink";
+import HomeSections from "@/components/HomeSections";
+import SectionLink from "@/components/SectionLink";
 import TreeTuner from "@/components/TreeTuner";
-
-const socialLinks = [
-  { href: "https://x.com/thekevinlab", label: "X" },
-  { href: "https://www.linkedin.com/in/kevinyhe", label: "LinkedIn" },
-  { href: "https://github.com/kevinyhe", label: "GitHub" },
-];
-const menuLinks = [
-  { href: "/work", label: "Work" },
-  { href: "/info", label: "Info" },
-  { href: "/contact", label: "Contact" },
-];
+import { sectionLinks, socialLinks } from "@/components/siteContent";
 
 /**
  * Clips each word of the lockup at its own bottom edge, so letters parked
@@ -75,7 +66,7 @@ export default function Home() {
           the tree, then Freeze to get the lines that bake it in. */}
       <TreeTuner />
       <HeroIntro>
-        <h1 className="sr-only">Kevin He - Creative Developer</h1>
+        <h1 className="sr-only">Kevin He — engineer, Toronto</h1>
 
         {/* Solid type; only the large right serif word carries the (subtle)
             difference effect, matching the reference site. */}
@@ -84,7 +75,7 @@ export default function Home() {
               links right. A 3-column grid so the nav is centred on the
               page, not between its neighbours. */}
           <div
-            className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 text-[0.85rem] uppercase tracking-[0.04em] text-white"
+            className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 font-serif-display text-[1.1rem] text-white"
             data-hero-animate
             data-hero-strip
             style={{ textShadow: "0 0 8px rgba(255,255,255,0.25)" }}
@@ -94,25 +85,31 @@ export default function Home() {
             </p>
             <p aria-hidden="true" className="sm:hidden" />
 
-            <nav className="flex items-center justify-center gap-6 sm:gap-8">
-              {menuLinks.map((item) => (
-                <TransitionLink
+            {/* These scroll to the sections below rather than navigating:
+                Work, Info and Contact are on this page now (HomeSections).
+                /work, /info and /contact still exist and still link to each
+                other; nothing here reaches them any more. */}
+            <nav className="flex items-center justify-center gap-8 sm:gap-14">
+              {sectionLinks.map((item) => (
+                <SectionLink
                   className="pointer-events-auto transition-opacity duration-200 hover:opacity-60"
-                  href={item.href}
-                  key={item.href}
-                  veilLabel={item.label}
+                  id={item.id}
+                  key={item.id}
                 >
                   {item.label}
-                </TransitionLink>
+                </SectionLink>
               ))}
             </nav>
 
             <div className="flex items-center justify-end gap-3">
               {socialLinks.map((social, index) => (
                 <span className="flex items-center gap-3" key={social.label}>
+                  {/* A middle dot, not a slash: the strip is set in the demo
+                      serif now, and "/" is one of the glyphs that cut
+                      replaces with its watermark (see siteContent). */}
                   {index > 0 ? (
                     <span aria-hidden="true" className="opacity-40">
-                      /
+                      {"\u00B7"}
                     </span>
                   ) : null}
                   <a
@@ -137,7 +134,11 @@ export default function Home() {
               side margins trim measured glyph sidebearings so ink, not the
               em box, is flush with the padding edges. */}
           <div
-            className="flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]"
+            // relative is load-bearing: it makes this the words' offsetParent
+            // from the first frame, so HeroIntro's measurements of them do
+            // not change meaning the moment the scroll gives the lockup a
+            // transform (which would make it their offsetParent anyway).
+            className="relative flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]"
             data-hero-lockup
           >
             {/* One shared baseline, both words the same size (0.58 of the
@@ -164,8 +165,13 @@ export default function Home() {
               <Letters text="He." />
             </span>
           </div>
+
         </div>
       </HeroIntro>
+
+      {/* Below the hero's sticky stage. Reachable now that the stage lives
+          in its own scroll room and scrolls away at the end of it. */}
+      <HomeSections />
     </div>
   );
 }

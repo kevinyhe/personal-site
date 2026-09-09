@@ -31,9 +31,6 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".next-b94432/types/**/*.ts",
-    ".next-build94432/types/**/*.ts",
-    ".next-s94432/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts"
   ],

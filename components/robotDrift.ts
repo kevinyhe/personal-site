@@ -263,13 +263,26 @@ const SCHEDULE: DriverPhase[] = [
   // 5. Carry the rotation the rest of the way round, so the tail comes to
   //    point at the mouth. The nose passes through a full turn here; it
   //    never doubles back.
+  //
+  //    The sticks were at 1.0, which crept: the robot held a big slip angle
+  //    but at 0.29 rl/s of ground speed, and the model fades slip out below
+  //    0.3 anyway, so it read as a pivot on the spot rather than a slide.
+  //    At 2.4 it carries speed through the turn — nearly double — and it
+  //    also arrives better: the finish lands 0.004 rl from the mouth
+  //    instead of 0.28, at the cost of about 4 degrees of squareness that
+  //    the parking phases below no longer have time to take out.
+  //
+  //    Grip was the other candidate and is a trap: dropping MU_KINETIC from
+  //    0.42 to 0.36 slides beautifully and puts the finish at (-4.55, -3.16)
+  //    — straight past the goal, which is the failure the fixed goal
+  //    position was introduced to stop.
   {
     duration: 1.2,
     forceTurn: 1,
     headingGain: 2.4,
     headingTarget: FINISH_HEADING_CONTINUOUS,
-    left: 1.0,
-    right: 1.0,
+    left: 2.4,
+    right: 2.4,
     yawGain: 2.4,
   },
   // 6. Back down into it, tail first, squaring up on the way.

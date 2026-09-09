@@ -72,4 +72,14 @@ export const sceneFx = {
    * as the camera pushes in.
    */
   backdropLevel: 1,
+  /**
+   * 0..1 as the name lockup is shoved off the sides of the frame; 1 on the
+   * frame the last letter is gone. Tweened by the hero timeline on exactly
+   * the word tweens' own start and duration, which is the point: the
+   * statue's camera cuts on this rather than on the scroll position the
+   * exit maps to. The timeline is scrubbed (0.3), so during a real scroll
+   * the words lag the scroll by about a third of a second — read off the
+   * scroll, the cut fired with the last letter still on screen.
+   */
+  textGone: 0,
 };

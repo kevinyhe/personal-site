@@ -13,6 +13,9 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
 import ThinkerStage, { type ThinkerTiming } from "@/components/ThinkerStage";
+import { Narration, Stanza } from "@/components/Narration";
+import { HERO_NARRATION } from "@/components/siteContent";
+import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -35,21 +38,43 @@ const TREE_DROP_DURATION = 0.292;
 // name, tree and orbit keep their old absolute pacing. The Thinker inside
 // the panel starts breaking the moment it starts growing.
 const PANEL_GROW_AT = TREE_DROP_DURATION;
-// Where the box finishes growing, the statue's run ends and the page cuts
-// to the robot — all on this one frame.
-const HERO_CUT_AT = 0.712;
+// Where the box finishes growing and the statue's run ends, both on this
+// one frame. Everything from PANEL_GROW_AT to here is the statue's section
+// of the page; it was 0.712, and the whole section was stretched by a fifth
+// (0.42 of the timeline to 0.504) to scroll 20% slower. Nothing before
+// PANEL_GROW_AT moved, and the spacer below is the same height, so the
+// television, the tree's fall and the name's rise keep their exact pacing.
+const HERO_CUT_AT = 0.796;
 const PANEL_GROW_DURATION = HERO_CUT_AT - PANEL_GROW_AT;
-// How long the two words take to clear the frame sideways. Set against the
-// BOX, not against the timeline: they have to be gone while it is still
-// opening, not race its edges out. The box used to grow over 0.708 and the
-// words over 0.42, so the name was clear by the time the box was 59% of the
-// screen. The box now grows over 0.42 — it has to be full for the cut — so
-// holding the words at 0.42 meant they only just beat it. 0.249 puts the
-// name off screen at that same 59% again.
-const WORD_EXIT_DURATION = 0.249;
-// How long the two words take to clear the frame sideways, and the moment
-// the last of them is gone — which is when the statement below them
-// arrives.
+/**
+ * How far a narration line is carried sideways, as a fraction of the
+ * viewport's width, either side of its centred rest.
+ *
+ * Two percent: a fifth of a screen width of travel at 0.07 was right for a
+ * staircase set in a column beside the figure, where the motion had a
+ * margin to happen in. The lines are now centred over the statue, which
+ * stays in the middle of the frame, and the same travel would walk them
+ * off it — this is enough that the block is never quite still, and no
+ * more.
+ */
+const NARRATION_DRIFT = 0.02;
+/**
+ * And less again on a phone, where 2% of the width is under 8px and the
+ * lines already fill the screen: measured before, the leftmost line sat
+ * 12px off the side of the screen at 9%, and content pushed off the LEFT
+ * is clipped rather than added to scrollWidth, so an overflow check does
+ * not catch it.
+ */
+const NARRATION_DRIFT_NARROW = 0.01;
+const narrationDrift = () =>
+  window.innerWidth *
+  (window.innerWidth < 700 ? NARRATION_DRIFT_NARROW : NARRATION_DRIFT);
+
+// How far past the em box the letters' ink can reach on the side that
+// faces the box, as a fraction of the word's height. Tracking pulls the
+// last letter's box in over its own ink, so the box is not where the ink
+// ends; this is what the "text gone" cue waits for on top of the box.
+const INK_OVERHANG = 0.1;
 
 // When the statue's canvas starts drawing, as a fraction of the same
 // timeline. It MUST lead PANEL_GROW_AT: the canvas is frozen while the
@@ -103,7 +128,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
-  const statueSpaceRef = useRef<HTMLDivElement | null>(null);
+  const narrationSpaceRef = useRef<HTMLDivElement | null>(null);
+  const narrationScrimRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  // Whether the pinned stage is anywhere on screen. False once the hero's
+  // scroll room has gone by and the sections below own the viewport: the
+  // statue's canvas draws on "always" while its panel is open, and without
+  // this it kept running a full-screen WebGL scene, off screen, for the
+  // whole length of the page under it.
+  const [stageVisible, setStageVisible] = useState(true);
   // The panel is "open" (the statue's canvas runs its live loop) from a
   // little BEFORE the panel starts growing, so the stage is already drawn
   // when the first pixel of the box appears; flipped by the scroll
@@ -469,8 +502,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // The next page, on scroll: one scrubbed timeline over 432vh. The top
   // strip fades, the name sinks out of the bottom of the frame, and the
   // tree sinks out too while the camera orbits it counter-clockwise
-  // through 60% of the intro's sweep; once the name has gone, a
-  // viewport-sized panel grows from the centre until it fills the frame.
+  // through 60% of the intro's sweep; once the name has arrived in the
+  // middle, a viewport-sized panel grows out of the gap between its two
+  // words until it fills the frame, pushing them off the sides as it goes.
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
@@ -494,21 +528,59 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // never getBoundingClientRect: offset* is the laid-out box and ignores
       // the transform the scrub has already applied, so a refresh mid-scroll
       // re-reads the same numbers instead of compounding them.
+      //
+      // The words are measured THROUGH the lockup: their offsetLeft is
+      // relative to it (it is positioned, see the markup) and the lockup's
+      // own offsetLeft is relative to the viewport-sized type layer. Read
+      // straight off the words, the number changed meaning mid-page — a
+      // transformed lockup becomes their offsetParent whether positioned
+      // or not, so the same call gave viewport coordinates before the
+      // scroll started and lockup coordinates after, 64px apart.
       const centreOffset = () =>
         (window.innerHeight - lockup.offsetHeight) / 2 - lockup.offsetTop;
       const words = gsap.utils.toArray<HTMLElement>(
         lockup.querySelectorAll("[data-hero-letters]"),
       );
-      // Clear of the frame, not parked at its edge: the type layer sits
-      // ABOVE the panel (z-20 over z-15), so a word left at the edge would
-      // still be sitting on the full-screen box at the end of the growth.
-      // The margin covers the letters' negative side margins and the ink
-      // that overhangs the em box.
-      const clearance = () => window.innerWidth * 0.06;
-      const outLeft = () =>
-        -(words[0].offsetLeft + words[0].offsetWidth) - clearance();
-      const outRight = () =>
-        window.innerWidth - words[1].offsetLeft + clearance();
+      // The box grows out of the GAP between the two words, not the middle
+      // of the screen. "Kevin" is set at 0.58 of a width that fills the
+      // line, so its last letter sits about 8% of the screen past the
+      // centre: a box scaled from the centre opens under the "n" on its
+      // very first pixel, and no rate of exit can undo an overlap that is
+      // already there at scale 0. From the gap's centre both words start
+      // half a gap clear of the box's edges — and each is pushed at exactly
+      // its own edge's speed (see the word tweens), so that half gap holds
+      // for the whole growth and the box never touches the type.
+      //
+      // The panel is the full viewport scaled about this point, so its
+      // edges still all reach the screen's edges together at scale 1. Set
+      // straight on the style rather than tweened: gsap smooths a change of
+      // origin with a compensating translate, which at scale 0 is the
+      // wrong thing.
+      const wordRight = () =>
+        lockup.offsetLeft + words[0].offsetLeft + words[0].offsetWidth;
+      const wordLeft = () => lockup.offsetLeft + words[1].offsetLeft;
+      const gapCentre = () => (wordRight() + wordLeft()) / 2;
+      const placeOrigin = () => {
+        panel.style.transformOrigin = `${gapCentre()}px 50%`;
+      };
+      // Where each word has to be at scale 1: exactly one edge's travel
+      // away, which leaves it half a gap past the side of the frame.
+      const outLeft = () => -gapCentre();
+      const outRight = () => window.innerWidth - gapCentre();
+      // The fraction of the growth by which the last of the ink has left
+      // the frame, moving at those rates. Under 1 on any layout where the
+      // words fit on the line, so the cut fires while the box is still
+      // opening — later than it used to (about 0.9 of the growth rather
+      // than 0.6), because the words now ride the box out instead of
+      // racing ahead of it.
+      const wordsClearAt = () => {
+        const overhang = INK_OVERHANG * words[0].offsetHeight;
+        const leftClear = (wordRight() + overhang) / gapCentre();
+        const rightClear =
+          (window.innerWidth - wordLeft() + overhang) /
+          (window.innerWidth - gapCentre());
+        return Math.min(Math.max(leftClear, rightClear), 1);
+      };
       const tl = gsap.timeline({
         defaults: { ease: "none" },
         onUpdate: () => {
@@ -525,6 +597,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           // This used to carry all the smoothing at 1.4, which on top of an
           // eased scroll would smooth twice and read as the scene dragging
           // behind the page. Enough is left to take the edge off.
+          onRefreshInit: placeOrigin,
           scrub: prefersReducedMotion ? true : 0.3,
           start: "top top",
           trigger: scrollSpace,
@@ -541,7 +614,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // the full scroll and every cue landed ~1.4x later than it reads here,
       // with the robot cutting in before the name had finished leaving.
       tl.set({}, {}, 1);
-      gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
+      placeOrigin();
+      gsap.set(panel, { scale: 0 });
       tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
         // Up to the middle over the WHOLE of the tree's fall, on the TREE'S
         // OWN EASE so the two move as one thing. Sharing only a start and an
@@ -579,26 +653,119 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { duration: PANEL_GROW_DURATION, ease: "none", scale: 1 },
           PANEL_GROW_AT,
         )
-        // Shoved apart by the box, accelerating out of frame. They start
-        // with the growth and are gone before it is two thirds open, so they
-        // clear ahead of the box's own edges rather than racing them.
+        // Pushed apart by the box, at the box's own pace: the same linear
+        // ease over the same duration, each word travelling exactly as far
+        // as the edge of the box nearest it. A word and its edge therefore
+        // move as one thing, and the half gap between them at the first
+        // pixel of growth is the half gap between them at the last. They
+        // used to accelerate out ahead of the box (power2.in over half the
+        // growth), which put them clear early but let the box open under
+        // the type while they were still gathering speed.
         .to(
           words[0],
-          { x: outLeft, duration: WORD_EXIT_DURATION, ease: "power2.in" },
+          { x: outLeft, duration: PANEL_GROW_DURATION, ease: "none" },
           PANEL_GROW_AT,
         )
         .to(
           words[1],
-          { x: outRight, duration: WORD_EXIT_DURATION, ease: "power2.in" },
+          { x: outRight, duration: PANEL_GROW_DURATION, ease: "none" },
+          PANEL_GROW_AT,
+        )
+        // The exit as a number the statue's camera can cut on. It runs on
+        // the words' own tween — same start, same length, same ease — and
+        // is scaled so it reaches exactly 1 on the frame the last of the
+        // ink leaves the sides (wordsClearAt), whatever the scrub is doing.
+        // Reading the scroll position instead fired the cut about a third
+        // of a second early, with the "n" still on screen.
+        .to(
+          sceneFx,
+          {
+            textGone: () => 1 / wordsClearAt(),
+            duration: PANEL_GROW_DURATION,
+            ease: "none",
+          },
           PANEL_GROW_AT,
         );
 
+      // ------------------------------------------------------------------
+      // The narration's sideways travel.
+      //
+      // Each line is carried across the screen as it scrolls, alternate
+      // lines from opposite sides, and it never stops: a line enters offset
+      // one way, passes through its true indent as it crosses the middle of
+      // the screen, and leaves offset the other way. So the staircase is
+      // always moving sideways under the reading position rather than
+      // arriving and then sitting still.
+      //
+      // One trigger per line, each scrubbed over that line's own trip
+      // through the viewport, which is what keeps every line's phase tied
+      // to where IT is rather than to where the block is. The reveal hook
+      // fades the same elements in and is told not to move them
+      // (`data-reveal="slide"`), so the two never write the same property.
+      const slides = gsap.utils.toArray<HTMLElement>(
+        root.querySelectorAll('[data-reveal="slide"]'),
+      );
+      slides.forEach((line, index) => {
+        const from = index % 2 === 0 ? -1 : 1;
+        gsap.fromTo(
+          line,
+          { x: () => from * narrationDrift() },
+          {
+            ease: "none",
+            scrollTrigger: {
+              end: "bottom top",
+              invalidateOnRefresh: true,
+              scrub: prefersReducedMotion ? true : 0.4,
+              start: "top bottom",
+              trigger: line,
+            },
+            x: () => -from * narrationDrift(),
+          },
+        );
+      });
+
+      // ------------------------------------------------------------------
+      // The scrim behind the narration.
+      //
+      // On a wide screen there is none: the camera pans the figure out from
+      // under the words instead, and dimming the scene as well takes the
+      // reassembly — the thing the narration is playing over — and hides it.
+      //
+      // A phone has no column beside the figure to pan it into, so the
+      // statue really is behind the text there and something has to give.
+      // That, and only that, is what this is for.
+      const narrationSpace = narrationSpaceRef.current;
+      const scrim = narrationScrimRef.current;
+      if (narrationSpace && scrim) {
+        gsap
+          .timeline({
+            defaults: { ease: "none" },
+            scrollTrigger: {
+              end: "bottom bottom",
+              invalidateOnRefresh: true,
+              scrub: prefersReducedMotion ? true : 0.3,
+              start: "top bottom",
+              trigger: narrationSpace,
+            },
+          })
+          .set({}, {}, 1)
+          .fromTo(
+            scrim,
+            { opacity: 0 },
+            {
+              duration: 0.16,
+              opacity: () => (window.innerWidth < 700 ? 0.6 : 0),
+            },
+            0,
+          );
+      }
     }, root);
     return () => {
       ctx.revert();
       sceneFx.treeDrop = 0;
       sceneFx.orbit = 0;
       sceneFx.halftone = 1;
+      sceneFx.textGone = 0;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
   }, [revealComplete]);
@@ -615,8 +782,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       if (live) setThinkerReady(true);
     };
     void loadThinkerChunks().then(ready, ready);
-    // Never strand the page on a fracture that fails or crawls.
-    const timeout = window.setTimeout(ready, 15000);
+    // Never strand the page on a fracture that FAILS — but this must not be
+    // reachable by one that is merely slow. It was 15 s, and the cut is now
+    // ~115 seeds with the size variation on, which measures 12.5 s in the
+    // worker: slower machines crossed the line, the reveal went ahead
+    // without the chunks, and the box opened on an empty stage (nothing is
+    // drawn at all while `build` is null). This is the failure net, not a
+    // deadline — the fracture should always win the race.
+    const timeout = window.setTimeout(ready, 45000);
     return () => {
       live = false;
       window.clearTimeout(timeout);
@@ -645,7 +818,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // Read from the layout each time ScrollTrigger refreshes.
   const thinkerTiming = useCallback<ThinkerTiming>(() => {
     const scrollSpace = scrollSpaceRef.current;
-    const statueSpace = statueSpaceRef.current;
     const viewportHeight = window.innerHeight;
     const documentTop = (element: HTMLElement | null) =>
       element ? element.getBoundingClientRect().top + window.scrollY : 0;
@@ -654,15 +826,22 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const heroStart = documentTop(scrollSpace);
     const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
     const growStart = heroStart + heroLength * PANEL_GROW_AT;
-    const pageEnd = statueSpace
-      ? documentTop(statueSpace) + statueSpace.offsetHeight - viewportHeight
-      : growStart;
-    // The statue's run ends on the frame the box reaches full screen, and the
-    // page clips straight to the robot there. The name is long gone by then
-    // — it clears the frame while the box is still opening. Everything below
-    // this is the robot's.
+    const pageEnd = heroStart + heroLength;
+    // The statue's run ends on the frame the box reaches full screen. There
+    // is nothing after it any more — the robot outro used to own the scroll
+    // below this and now does not — so the last stretch of the page holds
+    // the shot the camera cut to.
     const statueEnd = Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
     const end = pageEnd;
+    // The reassembly's stretch. It starts where the panel reaches the full
+    // screen — which is also where the break finishes — so the figure keeps
+    // opening through the camera cut and only turns around once the box is
+    // the whole viewport. It ends where the narration does.
+    const narrationSpace = narrationSpaceRef.current;
+    const storyStart = statueEnd;
+    const storyEnd = narrationSpace
+      ? documentTop(narrationSpace) + narrationSpace.offsetHeight - viewportHeight
+      : end + 1;
     return {
       // The stage opens with the box; the figure holds together for a beat
       // of scroll after that before the first piece goes.
@@ -670,7 +849,24 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       end,
       start: growStart,
       statueEnd,
+      storyEnd,
+      storyStart,
     };
+  }, []);
+
+  // The narration's lines are [data-reveal] like everything else on the
+  // page; this is the only tree outside HomeSections that has any.
+  useRevealOnScroll(rootRef);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStageVisible(entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(stage);
+    return () => observer.disconnect();
   }, []);
 
   // The canvas owns the DOM homography (same-frame application); on unmount
@@ -684,6 +880,26 @@ export default function HeroIntro({ children }: HeroIntroProps) {
 
   return (
     <section className="relative" id="top" ref={rootRef}>
+      {/* The pin container, and everything pinned inside it: the tree
+          canvas, the type, the statue's panel, the narration over it. Its
+          height is the two spacers at the bottom of this file — the hero's
+          own run, then the narration's — so the stage stays on screen
+          across both and only scrolls away at the end of the second.
+
+          Its height is deliberately NOT what the choreography is measured
+          against. That is the first spacer, which the timeline triggers on
+          and thinkerTiming measures; the container being longer is what
+          buys the narration its scroll without stretching the intro. */}
+      <div className="relative">
+        {/* Exactly one viewport, pinned to the top of it. The height comes
+            from the same custom property the canvases size against, so the
+            stage, the type layer and the WebGL drawing buffer cannot
+            disagree about how tall a screen is on mobile. */}
+        <div
+          className="sticky top-0 h-[var(--arbor-screen-h)] w-full overflow-hidden"
+          data-hero-stage
+          ref={stageRef}
+        >
       <BareThreeCanvas
         introActive={revealStarted}
         onCrtProgress={handleCrtProgress}
@@ -696,46 +912,46 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           viewport — text, nav, bar, everything — is warped onto the
           monitor's screen with a CSS homography that tracks the projected
           WebGL screen quad, so the site itself is the machine's display.
-          fixed inset-0 is load-bearing: the transform makes this the
-          containing block for the fixed overlay inside, so it must be
-          exactly viewport-sized. transform-origin 0 0 because the
-          homography maps from the viewport's top-left corner. */}
+          absolute inset-0 is load-bearing: `will-change: transform` makes
+          this the containing block for the fixed overlay inside, so it must
+          be exactly viewport-sized. transform-origin 0 0 because the
+          homography maps from the viewport's top-left corner. (It was
+          `fixed inset-0`, which came to the same thing while the stage was
+          pinned and the wrong thing once the stage scrolled away.) */}
       <div
         // pointer-events-none is load-bearing: this layer sits above the
         // statue's panel, and without it every drag meant for the statue
         // dies here. The links inside re-enable their own events.
-        className="pointer-events-none fixed inset-0 z-20"
+        className="pointer-events-none absolute inset-0 z-20"
         ref={heroLayerRef}
         style={{ transformOrigin: "0 0", willChange: "transform" }}
       >
         {children}
       </div>
 
-      {/* The next page's panel: exactly the viewport, grown from the centre
-          by the scroll timeline once the name has left. Above the canvas,
+      {/* The next page's panel: exactly the stage, grown by the scroll
+          timeline from the gap between the name's two words (the timeline
+          sets the origin from the laid-out type). Above the canvas,
           below the type layer. Inside it, The Thinker: its own canvas,
-          scaled with the panel, driven by the second spacer's scroll. */}
+          scaled with the panel. */}
       <div
-        className="pointer-events-none fixed inset-0 z-[15] bg-[#0a0a0a]"
+        className="pointer-events-none absolute inset-0 z-[15] bg-[#0a0a0a]"
         data-hero-panel
         style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
       >
         {revealComplete ? (
-          <ThinkerStage active={panelOpen} timing={thinkerTiming} />
+          <ThinkerStage active={panelOpen && stageVisible} timing={thinkerTiming} />
         ) : null}
       </div>
 
-      {/* Scroll room. Every visible layer is fixed, so these spacers are the
-          only thing giving the document height: the first drives the hero's
-          exit and the panel's growth, the second gives the statue's breakup
-          (which begins with the growth) its short, deliberately outpaced
-          run, and the robot outro the tail beyond it. */}
-      <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-      {/* 50vh of the statue holding the full screen, then 100vh for the
-          robot: the scroll scrubs its whole drift, roughly a screen of
-          scrolling from the first move to the stop. */}
-      <div aria-hidden="true" className="h-[150vh]" ref={statueSpaceRef} />
-
+      {/* Narrow screens only — see the scrim's timeline. Stays at zero on
+          anything wide enough for the camera to pan the figure aside. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[17] bg-[#0a0a0a]"
+        ref={narrationScrimRef}
+        style={{ opacity: 0 }}
+      />
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
           builds behind it. Removed from the DOM when the reveal is done. */}
@@ -743,7 +959,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         <div
           aria-label="Loading"
           aria-live="polite"
-          className="fixed inset-0 z-10 overflow-hidden bg-[#0a0a0a]"
+          className="absolute inset-0 z-10 overflow-hidden bg-[#0a0a0a]"
           ref={overlayRef}
           role="status"
         >
@@ -764,6 +980,51 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           </div>
         </div>
       ) : null}
+        </div>
+
+        {/* Scroll room, in two parts, both inside the pin container above so
+            the stage stays put across the whole of it.
+
+            The first is the hero's own run and nothing about it has moved:
+            the timeline below triggers on THIS element, so its length still
+            sets every cue from the television to the statue's cut. The
+            second is the narration's, and it only exists because the
+            container is taller than the trigger — lengthening the trigger
+            would have stretched the whole intro to fit it.
+
+            The negative margin cancels the sticky stage's own place in the
+            flow, so these two are what give the container its height. */}
+        <div style={{ marginTop: "calc(var(--arbor-screen-h) * -1)" }}>
+          <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
+          {/* The narration, IN FLOW, over the pinned statue, each line
+              centred on the figure, which holds the middle of the frame.
+              
+              It scrolls at page speed and reveals a line at a time on
+              entry, which is what the reference does — measured off it: its
+              lines track the scroll exactly 1:1, their staircase offsets
+              are static translates, and the only motion is each line coming
+              up ninety pixels as it arrives. Nothing is pinned and nothing
+              cross-fades.
+
+              Its own height is what extends the pin container, so the
+              statue stays behind it for exactly as long as there are words,
+              and the padding is the beat before the first line and after
+              the last. relative + z so it paints over the sticky stage,
+              which is positioned and would otherwise cover it. */}
+          <div
+            className="relative z-10 px-6 py-[45vh] text-center text-[#f0f0f0] sm:px-16"
+            id="info"
+            ref={narrationSpaceRef}
+          >
+            <h2 className="sr-only">About</h2>
+            <Narration stage>
+              {HERO_NARRATION.map((lines, index) => (
+                <Stanza center key={index} lines={lines} slide />
+              ))}
+            </Narration>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
