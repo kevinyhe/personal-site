@@ -35,6 +35,11 @@ import {
   updatePetals,
 } from "@/components/treePetals";
 import { sceneFx } from "@/components/sceneFx";
+// The panel-growth fractions this stage and the hero timeline share live in
+// a leaf module, so HeroIntro can read them without pulling this chunk
+// (three, r3f) in to do it. Only BREAK_END is used here by name; STAGE_CUT_AT
+// and TREE_BREAK are referenced in the comments below and read off sceneFx.
+import { BREAK_END } from "@/components/stageCues";
 // Nothing of the robot's is imported but these: RobotOutro is no longer
 // mounted here (see ThinkerCanvas), and the dormant chase branch in
 // CameraRig, written against its camera state and its parked finish, reads
@@ -133,7 +138,7 @@ export type ThinkerTiming = () => {
 // `story` still runs from the break's end to the narration's, but only
 // the camera reads it, and only after a cut (CUT_TO_TREE, off); the
 // pieces stay gone.
-const BREAK_END = 0.96;
+
 // Camera distance to what it looks at: at rest, close on the upper two
 // thirds of the figure; over the breakup it eases slightly closer while
 // dollying to the left (on the scroll, not the pieces' easing), letting
@@ -247,18 +252,6 @@ const CUT_AIM_FOLLOW = 0.85;
 // pieces fly the way the statue's did (the same world direction, see
 // cherryChunks) and the shot follows them the same way.
 //
-// Where the cut sits in the panel's growth, which is also the stage's own
-// progress (0 at the first pixel, 1 at the full screen): 60% of the way,
-// with the box a little over half the screen. The statue has been coming
-// apart for most of that. The hero timeline tweens `sceneFx.stageCut` to
-// reach 1 exactly here.
-export const STAGE_CUT_AT = 0.6;
-// And the tree's break, as fractions of the same growth: from a beat after
-// the cut — enough to see the tree whole — to where the statue's break
-// ends, so both figures are fully open on the frame the panel fills the
-// screen. The hero timeline tweens `sceneFx.treeBreak` 0..1 across this,
-// on the same clock as the cut (see sceneFx for why not the scroll).
-export const TREE_BREAK = { end: BREAK_END, start: STAGE_CUT_AT + 0.03 };
 // The tree stands turned to the cut's angle so the side the intro showed
 // faces the lens; no lean, its base is flat on the floor.
 const TREE_ROTATION: [number, number, number] = [0, CHERRY_BASE_YAW, 0];

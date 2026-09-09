@@ -14,6 +14,13 @@ import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
+// The panel-growth fractions the statue's stage and this timeline must
+// agree on. A leaf module, so reading them costs nothing and the two sides
+// cannot drift; the stage itself still arrives as its own chunk.
+import {
+  STAGE_CUT_AT as cutAt,
+  TREE_BREAK as treeBreak,
+} from "@/components/stageCues";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
 import type { ThinkerTiming } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
@@ -92,24 +99,6 @@ class StageErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
  * undo the split above. The reveal waits for them (nothing scrolls before
  * the reveal is done, and the timeline is built on that same flag).
  */
-type StageCues = {
-  cutAt: number;
-  treeBreak: { end: number; start: number };
-};
-// Tracks ThinkerStage: cutAt is STAGE_CUT_AT, treeBreak.start is
-// STAGE_CUT_AT + 0.03 and treeBreak.end is BREAK_END. Only reached if the
-// stage's chunk failed or hung (STAGE_CUES_TIMEOUT_MS); then there is no
-// stage to read sceneFx.stageCut or sceneFx.treeBreak either, so these
-// only keep the timeline the one that was designed.
-const FALLBACK_STAGE_CUES: StageCues = {
-  cutAt: 0.6,
-  treeBreak: { end: 0.96, start: 0.63 },
-};
-// How long the reveal waits for the stage's chunk before going ahead with
-// the fallback. The chunk is ~150 kB gzipped and requested once the
-// television is up, so on anything short of a stalled link it is in
-// within a second or two; this is for the stalled link.
-const STAGE_CUES_TIMEOUT_MS = 10000;
 
 type HeroIntroProps = {
   children: ReactNode;
@@ -295,8 +284,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const [revealComplete, setRevealComplete] = useState(false);
   // The statue's chunks are cut and ready (or gave up trying).
   const [thinkerReady, setThinkerReady] = useState(false);
-  // The stage's code has arrived (see StageCues above), or been given up on.
-  const [stageCues, setStageCues] = useState<StageCues | null>(null);
 
   const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
   const crtProgressRef = useRef(0);
@@ -441,28 +428,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // its assets reported in). Not at mount: at mount the link is carrying
   // the GLB and four textures the head preloads, and the ~150 kB chunk
   // would share the bandwidth with the one thing the veil is waiting on.
-  // The cues are needed before the reveal may START (the gate below), so
-  // the wait has a ceiling of its own: if the chunk is still not in after
-  // STAGE_CUES_TIMEOUT_MS the reveal goes ahead on the fallback rather
-  // than holding the name forever.
+  // Nothing waits on it — the two numbers the timeline needs are static
+  // imports now (see stageCues) — so this is a warm-up, not a gate.
   useEffect(() => {
-    if (!(sceneReady || crtReady) || stageCues) return undefined;
-    let live = true;
-    const settle = (cues: StageCues) => {
-      if (!live) return;
-      live = false;
-      setStageCues(cues);
-    };
-    void loadThinkerStage()
-      .then((stage) => ({ cutAt: stage.STAGE_CUT_AT, treeBreak: stage.TREE_BREAK }))
-      .catch(() => FALLBACK_STAGE_CUES)
-      .then(settle);
-    const timeout = window.setTimeout(() => settle(FALLBACK_STAGE_CUES), STAGE_CUES_TIMEOUT_MS);
-    return () => {
-      live = false;
-      window.clearTimeout(timeout);
-    };
-  }, [crtReady, sceneReady, stageCues]);
+    if (!(sceneReady || crtReady)) return;
+    void loadThinkerStage().catch(() => undefined);
+  }, [crtReady, sceneReady]);
 
   // Never strand the page: if the model fails to report (network, a stuck
   // decode), carry on with whatever the rig has after a grace period. The
@@ -475,12 +446,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     return () => window.clearTimeout(timeout);
   }, [crtReady]);
 
-  // The reveal starts once the tree scene is built, the stage's code and
-  // its cues are in (StageCues), AND the television has had its minimum
+  // The reveal starts once the tree scene is built AND the television has
+  // had its minimum
   // time on screen. Nothing about any of that loading is shown; the name
   // simply holds until it is ready.
   useEffect(() => {
-    if (!tvShown || !sceneReady || !thinkerReady || !stageCues || revealStarted) {
+    if (!tvShown || !sceneReady || !thinkerReady || revealStarted) {
       return undefined;
     }
     let timeout = 0;
@@ -497,7 +468,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
     tryStart();
     return () => window.clearTimeout(timeout);
-  }, [revealStarted, sceneReady, stageCues, thinkerReady, tvShown]);
+  }, [revealStarted, sceneReady, thinkerReady, tvShown]);
 
   useEffect(() => {
     if (!revealStarted || revealComplete) return undefined;
@@ -683,10 +654,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
-    // stageCues is always set by the time revealComplete is (the reveal
     // gate waits for it); the check is for the types.
-    if (!revealComplete || !stageCues || !root || !scrollSpace) return undefined;
-    const { cutAt, treeBreak } = stageCues;
+    if (!revealComplete || !root || !scrollSpace) return undefined;
     const strip = root.querySelector<HTMLElement>("[data-hero-strip]");
     const lockup = root.querySelector<HTMLElement>("[data-hero-lockup]");
     const panel = root.querySelector<HTMLElement>("[data-hero-panel]");
@@ -816,7 +785,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         )
         // The box's growth as a number the stage can cut on: the same
         // start and the same linear ease as the box's own tween, over the
-        // first 60% of its length (cutAt, the stage's STAGE_CUT_AT), so this reaches exactly
+        // first 60% of its length (STAGE_CUT_AT), so this reaches exactly
         // 1 on the frame the box is 60% grown — whatever the scrub is
         // doing. (It used to cut on the name clearing the sides, about 90%
         // of the way; the words still ride the box out, the cut no longer
@@ -832,7 +801,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         )
         // And the tree's break, on the same clock: from a beat after the
         // cut to where the statue's break ends, both as fractions of the
-        // growth (treeBreak, the stage's TREE_BREAK). Tweened here rather than read off the scroll
+        // growth (TREE_BREAK). Tweened here rather than read off the scroll
         // in the stage so that it cannot run ahead of the cut it follows.
         .to(
           sceneFx,
@@ -1047,7 +1016,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       sceneFx.treeBreak = 0;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
-  }, [revealComplete, stageCues]);
+  }, [revealComplete]);
 
   // The Thinker's chunks are cut in a worker from the moment the page
   // mounts, and the tree's straight after them in the same worker. The

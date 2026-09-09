@@ -9,9 +9,6 @@ export const metadata: Metadata = {
     "Reach Kevin He by email, or find him on GitHub, LinkedIn, X and Instagram.",
 };
 
-const FOCUS_RING =
-  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-current";
-
 /** Same curve and dimming as the /work and /info rows; see app/work/page.tsx. */
 const ROW_EASE =
   "transition-[opacity,transform] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:group-hover/row:translate-x-0";
@@ -50,7 +47,7 @@ export default function ContactPage() {
           <span className="inline-block" data-reveal>
             <a
               aria-label={`Email ${EMAIL}`}
-              className={`inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none ${FOCUS_RING}`}
+              className={`inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none`}
               href={`mailto:${EMAIL}`}
             >
               <FractureText className="max-w-full" text={EMAIL} />
@@ -81,7 +78,7 @@ export default function ContactPage() {
           {elsewhere.map((social) => (
             <li className="group/row relative" key={social.label}>
               <a
-                className={`grid grid-cols-1 gap-1 py-4 sm:grid-cols-12 sm:items-baseline sm:gap-8 ${FOCUS_RING}`}
+                className={`grid grid-cols-1 gap-1 py-4 sm:grid-cols-12 sm:items-baseline sm:gap-8`}
                 data-reveal
                 href={social.href}
                 rel="noreferrer"

@@ -10,13 +10,6 @@ type TransitionLinkProps = ComponentProps<typeof Link> & {
   veilLabel?: string;
 };
 
-/**
- * Keyboard focus ring for every internal link. An outline rather than a
- * box-shadow ring so it needs no offset colour: it sits 4px outside the
- * text and shows whatever is behind it, dark page or cream contact block.
- */
-const FOCUS_RING =
-  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-current";
 
 /**
  * How long the covering panel may sit over the outgoing page before this
@@ -90,7 +83,14 @@ export default function TransitionLink({
     // Ignore repeat clicks while a wipe is already in flight: the first
     // one's push is still coming, and restarting the tween from below the
     // viewport would make the panel jump.
-    if (veil.dataset.state === "wiping") return;
+    // "covering" too: the panel is over the viewport and a push is already
+    // in flight. The veil has no pointer-events-none, so a mouse cannot
+    // reach a link here, but the link that was clicked still holds focus and
+    // Enter (or one key repeat) would snap the covering panel to below the
+    // viewport, flash the page it had just covered, and wipe it back up.
+    if (veil.dataset.state === "wiping" || veil.dataset.state === "covering") {
+      return;
+    }
     // "clearing" is the template sliding the previous wipe off the top
     // (0 -> -101). Clicking another link then is legitimate — the panel is
     // still partly on screen, so bring it back down from where it is rather
@@ -110,9 +110,17 @@ export default function TransitionLink({
       onComplete: () => {
         veil.dataset.state = "covering";
         router.push(target);
+        const from = window.location.pathname;
         coverTimer = window.setTimeout(() => {
           // The template took over, or a later click did. Nothing to do.
           if (veil.dataset.state !== "covering") return;
+          // The route DID change, the new page is just slow to mount. Sliding
+          // the panel off now would uncover the outgoing page and, worse,
+          // clear data-state — so when the incoming page finally mounted,
+          // app/template.tsx would find nothing to answer and the page would
+          // hard-cut in behind a parked veil. Leave it covered: the template
+          // is still coming, and it owns the way off.
+          if (window.location.pathname !== from) return;
           veil.dataset.state = "clearing";
           gsap.to(veil, {
             duration: 0.45,
@@ -128,7 +136,7 @@ export default function TransitionLink({
 
   return (
     <Link
-      className={className ? `${FOCUS_RING} ${className}` : FOCUS_RING}
+      className={className}
       href={href}
       onClick={handleClick}
       {...rest}

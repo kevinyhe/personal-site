@@ -210,6 +210,10 @@ export default function WorkPlate({ content }: { content: PlateContent | null })
         pos.seeded = true;
         pos.x = pos.tx;
         pos.y = pos.ty;
+        // A row can already be hovered on the frame this seeds (see the
+        // mount-time run() below), and nothing else will wake the loop:
+        // the hover event that set it has been and gone.
+        if (contentRef.current) run();
       }
     };
     window.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -359,8 +363,15 @@ export default function WorkPlate({ content }: { content: PlateContent | null })
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("resize", measureCard);
 
-    // Nothing is hovered at mount, so there is nothing to draw yet.
-    if (content) run();
+    // Normally nothing is hovered at mount and there is nothing to draw. But
+    // this component is loaded lazily now (HomeSections), so it can mount
+    // with a row ALREADY hovered — the chunk landed late, or a row scrolled
+    // under a still cursor, which fires enter/leave without a pointermove.
+    // pos is then unseeded at 0,0 and the plate would fade up in the corner
+    // until the reader moved the mouse. Wait for the first real pointer
+    // position instead: one is on its way, because the plate only exists
+    // while a pointer device is in use.
+    if (content && pos.seeded) run();
 
     return () => {
       stop();
