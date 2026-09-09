@@ -18,6 +18,7 @@ import {
   loadThinkerChunks,
   THINKER_BASE_YAW,
 } from "@/components/thinkerChunks";
+import { CHERRY_BASE_YAW, loadCherryChunks } from "@/components/cherryChunks";
 import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
@@ -52,9 +53,14 @@ gsap.registerPlugin(ScrollTrigger);
  * the camera backs off and follows to keep the cloud in view; the last few
  * percent are a settle.
  *
- * On the frame the page's name has finished being shoved off the sides, the
- * shot CUTS round to 55 degrees off the figure's front and a little further
- * back, and holds there while the pieces keep streaming (see CUT_AZIMUTH).
+ * On the frame the panel is 60% grown, the shot CUTS — and the statue goes
+ * with it. The tree from the intro (its upper trunk and boughs, in the
+ * same marble; see cherryChunks) stands whole on the stage from that frame,
+ * seen from 55 degrees off its front, and breaks the same way the statue
+ * did over the rest of the panel's growth (see CUT_AZIMUTH and TREE_CUT_AT).
+ * Neither figure comes back together: the pieces stream on for as long as
+ * the page scrolls. Should the tree fail to build, the cut still fires and
+ * the statue keeps the stage.
  *
  * The robot outro (RobotOutro) used to take the page's last scroll room
  * from statueEnd on. It no longer runs here — it is being kept for a
@@ -109,8 +115,9 @@ export type ThinkerTiming = () => {
 //
 // The break runs the whole way: it does not stop at the camera cut, it
 // keeps opening through it and finishes as the panel reaches the full
-// screen. The reverse starts there — see `story`, and `shown` in
-// ChunkedThinker for how the return is made to replay this exactly.
+// screen. There is no reverse any more — `story` still runs from here to
+// the end of the narration, but only the camera reads it (its orbit and
+// dolly); the pieces of both figures stay gone.
 const BREAK_END = 0.96;
 // Camera distance to what it looks at: at rest, close on the upper two
 // thirds of the figure; over the breakup it eases slightly closer while
@@ -177,11 +184,12 @@ const ORBIT_LEFT_COMPACT = -0.7;
 // It was -75 — a clean side profile; this is 20 degrees back toward the
 // front of the figure.
 //
-// WHEN it fires is `sceneFx.textGone`, which the hero timeline tweens on
-// exactly the word tweens' own start, duration and ease. Not the scroll
-// position the exit maps to: the hero timeline is scrubbed (0.3), so under
-// a real scroll the words lag the scroll by about a third of a second, and
-// keyed off the scroll the cut landed with the last letter still on screen.
+// WHEN it fires is `sceneFx.stageCut`, which the hero timeline tweens on
+// the panel's own growth tween: the same start and ease, over the first 60%
+// of it, so it reaches 1 on the frame the box is seen at 60%. Not the
+// scroll position that maps to: the hero timeline is scrubbed (0.3), so
+// under a real scroll the box lags the scroll by about a third of a second,
+// and keyed off the scroll the cut would land before the box got there.
 const CUT_AZIMUTH = -55 * (Math.PI / 180);
 // Same height above the figure as the settled wide shot — only the angle
 // around it and the distance change — so the cut reads as a move around the
@@ -221,6 +229,84 @@ const CUT_PULL_BACK = 1.2;
 // 1 = dead centre on the cloud's mean; a little under keeps the figure's
 // remains, which are behind the mean, in the frame too.
 const CUT_AIM_FOLLOW = 0.85;
+
+// ---------------------------------------------------------------------------
+// The tree.
+//
+// On the cut the statue is gone and the intro's cherry tree stands on the
+// stage in its place — whole, its cut-flat base on the floor, in the same
+// marble — and breaks from there over the rest of the panel's growth. Its
+// pieces fly the way the statue's did (the same world direction, see
+// cherryChunks) and the shot follows them the same way.
+//
+// Where the cut sits in the panel's growth, which is also the stage's own
+// progress (0 at the first pixel, 1 at the full screen): 60% of the way,
+// with the box a little over half the screen. The statue has been coming
+// apart for most of that. The hero timeline tweens `sceneFx.stageCut` to
+// reach 1 exactly here.
+export const STAGE_CUT_AT = 0.6;
+// And the tree's break, as fractions of the same growth: from a beat after
+// the cut — enough to see the tree whole — to where the statue's break
+// ends, so both figures are fully open on the frame the panel fills the
+// screen. The hero timeline tweens `sceneFx.treeBreak` 0..1 across this,
+// on the same clock as the cut (see sceneFx for why not the scroll).
+export const TREE_BREAK = { end: BREAK_END, start: STAGE_CUT_AT + 0.03 };
+// The tree stands turned to the cut's angle so the side the intro showed
+// faces the lens; no lean, its base is flat on the floor.
+const TREE_ROTATION: [number, number, number] = [0, CHERRY_BASE_YAW, 0];
+// How far back the cut shot sits from the tree: the distance at which the
+// tree's bounding box (its height, or its widest plan extent on a narrow
+// screen, plus that extent again for depth) would just fit the frame,
+// times this. 0.92 reproduces the statue's own cut distance (6.12) from the
+// statue's box, so the tree fills the frame the way the statue did — a
+// little larger than fits, the tips of the boughs at the edges.
+const TREE_FRAME_FILL = 0.92;
+// The aim, a little above the tree's centre, as a fraction of its height:
+// the boughs are the wide, bright part and the trunk below them is narrow,
+// so dead centre leaves the crown crowding the top of the frame.
+const TREE_AIM_LIFT = 0.04;
+
+/**
+ * Where the tree stands and how it is framed, worked out once from its
+ * build (see `treeShotOf`). Everything in WORLD space, after the tree's
+ * rotation and its placement on the floor.
+ */
+type TreeShot = {
+  /** What the cut shot looks at. */
+  aim: THREE.Vector3;
+  /** Where the cloud's centre ends up, for the follow. */
+  drift: THREE.Vector3;
+  /** Half the tree's height and half its widest plan extent. */
+  halfHeight: number;
+  halfWidth: number;
+  /** How far the tree's group origin sits above its flat base. */
+  baseLift: number;
+};
+
+// How far through the tree's break the page is, 0..1: the hero timeline's
+// own number (see TREE_BREAK), on the cut's clock.
+function treeBreakupAt() {
+  return THREE.MathUtils.clamp(sceneFx.treeBreak, 0, 1);
+}
+
+// The stage is drawn a little smaller on a narrow screen. One place for
+// the number, because the tree's placement and its framing both have to
+// agree with the group's scale (its base sits on the floor only if the
+// two are worked out in the same units).
+function stageScaleOf(width: number) {
+  return width < 720 ? 0.92 : 1;
+}
+
+type Figure = "statue" | "tree";
+
+// Which figure is on the stage this frame. The tree from the cut on — if
+// there is one: with no tree built (its model missing, its build failed)
+// the statue keeps the stage and the cut is only the camera's.
+function figureAt(reducedMotion: boolean, treeReady: boolean): Figure {
+  const cut = !reducedMotion && sceneFx.stageCut >= 1;
+
+  return cut && treeReady ? "tree" : "statue";
+}
 
 /**
  * How far the shot pans off the figure while the narration runs, as a
@@ -277,12 +363,12 @@ const STORY_ORBIT = 15.2 * (Math.PI / 180);
 const STORY_DOLLY = 1.04;
 
 /**
- * The reverse's ease, shared by the camera and the pieces so they cannot
- * disagree about how far along it is.
+ * The story's ease, for the camera's orbit and dolly over the narration.
+ * It used to be shared with the pieces' reverse, which is gone.
  *
  * Smootherstep, not smoothstep: its rate starts and ends at zero AND its
- * acceleration does too, so the figure does not lurch into motion the
- * moment the panel fills, and it settles into place rather than arriving.
+ * acceleration does too, so the shot does not lurch into motion the moment
+ * the panel fills, and it settles rather than arriving.
  */
 function storyEaseOf(story: number) {
   return smoothPhase(0, 1, story);
@@ -605,25 +691,70 @@ function useThinkerScrollProgress({
   }, [progressRef, reducedMotion, timing]);
 }
 
-function useThinkerChunks() {
+// One figure's chunks, from the page-wide build (see thinkerChunks, which
+// logs a failure once; here a failed figure is simply one that never
+// arrives).
+function useChunkBuild(load: () => Promise<ThinkerChunkBuild>) {
   const [build, setBuild] = useState<ThinkerChunkBuild | null>(null);
   useEffect(() => {
     let active = true;
-    loadThinkerChunks()
+    load()
       .then((next) => {
         if (active) {
           setBuild(next);
           ScrollTrigger.refresh();
         }
       })
-      .catch((error: unknown) => {
-        console.error("Unable to build The Thinker's chunks.", error);
-      });
+      .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, []);
+  }, [load]);
   return build;
+}
+
+/**
+ * Where the tree stands and how the cut frames it, from its build: the
+ * bounding box of every chunk at rest (the tree whole), in the tree's own
+ * space, then through its rotation. In the tree's own units, measured from
+ * its base: the group is scaled on a narrow screen, so the world positions
+ * are made per frame (see `treeAim`, and the tree's placement in
+ * ChunkedFigure).
+ */
+function treeShotOf(build: ThinkerChunkBuild): TreeShot {
+  const box = new THREE.Box3();
+  const point = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  for (const chunk of build.chunks) {
+    center.set(...chunk.center);
+    for (const positions of [chunk.surfacePositions, chunk.interiorPositions]) {
+      for (let i = 0; i + 2 < positions.length; i += 3) {
+        point.set(positions[i], positions[i + 1], positions[i + 2]).add(center);
+        box.expandByPoint(point);
+      }
+    }
+  }
+  const size = box.getSize(new THREE.Vector3());
+  const rotation = new THREE.Euler(...TREE_ROTATION);
+  // The turn is about the vertical only, so the base's height is the box's.
+  const baseLift = -box.min.y;
+  const aim = box.getCenter(new THREE.Vector3()).applyEuler(rotation);
+  aim.y += baseLift + size.y * TREE_AIM_LIFT;
+  return {
+    aim,
+    baseLift,
+    drift: new THREE.Vector3(...build.drift).applyEuler(rotation),
+    halfHeight: size.y / 2,
+    // The widest the plan can be from any angle: its diagonal.
+    halfWidth: Math.hypot(size.x, size.z) / 2,
+  };
+}
+
+/** The tree's aim in the world, for the group drawn at `scale`. */
+function treeAim(tree: TreeShot, scale: number, out: THREE.Vector3) {
+  out.copy(tree.aim).multiplyScalar(scale);
+  out.y += FLOOR_Y;
+  return out;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -741,10 +872,12 @@ function CameraRig({
   progressRef,
   reducedMotion,
   robotState,
+  tree,
 }: {
   /**
-   * Where the cloud's centre ends up, in world space: the mean of the
-   * chunks' full offsets, which the cut shot follows.
+   * Where the statue's cloud's centre ends up, in world space: the mean of
+   * the chunks' full offsets, which the cut shot follows when the statue
+   * keeps the stage past the cut.
    */
   cloudDrift: THREE.Vector3;
   /** Where the shot opens: the blow, lifted clear of the floor. */
@@ -752,6 +885,8 @@ function CameraRig({
   progressRef: ProgressRef;
   reducedMotion: boolean;
   robotState: RobotCameraState;
+  /** The tree's place and framing, once it has been built. */
+  tree: TreeShot | null;
 }) {
   const { camera, scene, size } = useThree();
   const lookAt = useMemo(() => new THREE.Vector3(0, 0, 0), []);
@@ -786,10 +921,13 @@ function CameraRig({
   const opened = useRef(false);
   // Nor may the cut: the same 0.08 lerp would slide the lens round to the
   // new angle over about a third of a second, which is a whip pan, not a
-  // cut. This remembers which side of the exit the last frame was on, so
+  // cut. This remembers which side of the cut the last frame was on, so
   // the frame that crosses it snaps — in either direction, so scrolling
-  // back up cuts back just as sharply.
+  // back up cuts back just as sharply. And which figure it was framing:
+  // a tree that lands after the cut (only when its build was late, see
+  // figureAt) takes the frame with the same snap.
   const cutRef = useRef(false);
+  const figureRef = useRef<Figure>("statue");
 
   useFrame(({ clock }) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
@@ -826,26 +964,47 @@ function CameraRig({
       .multiplyScalar(distance)
       .add(lookAt);
 
-    // The cut. Once the name is off the sides of the frame the camera is
-    // 55 degrees round from the figure's front and a fifth further out, and
-    // stays there to the bottom of the stage. Nothing above is skipped: every frame up to this
-    // scroll position plays exactly as it did, and the swing and the orbit
-    // this replaces are still what get it there.
-    const cut = !reducedMotion && sceneFx.textGone >= 1;
-    // How far through the reverse the page is. The figure reassembles
-    // against this (see ChunkedThinker) and the shot keeps moving on it.
+    // The cut. Once the panel is 60% grown the camera is 55 degrees round
+    // from the figure's front and stays there to the bottom of the stage.
+    // Nothing above is skipped: every frame up to this scroll position
+    // plays exactly as it did, and the swing and the orbit this replaces
+    // are still what get it there.
+    const cut = !reducedMotion && sceneFx.stageCut >= 1;
+    const figure = figureAt(reducedMotion, tree !== null);
+    // How far through the narration the page is. The shot keeps moving on
+    // it — a gentle orbit and a touch of dolly — so the held frame is
+    // never quite still.
     const story = reducedMotion ? 0 : progressRef.current.story;
     const settled = storyEaseOf(story);
-    const shotDistance = cut
-      ? distance * CUT_PULL_BACK * THREE.MathUtils.lerp(1, STORY_DOLLY, settled)
-      : distance;
-    if (cut) {
-      // The follow unwinds with the cloud it was following: as the pieces
-      // come home there is nothing out there left to lead the frame toward.
-      lookAt.addScaledVector(
-        cloudDrift,
-        CUT_AIM_FOLLOW * travelAt(breakup) * (1 - settled),
+    const persp = camera as THREE.PerspectiveCamera;
+    let shotDistance = distance;
+    if (cut && figure === "tree" && tree) {
+      // The tree's shot: aimed at the tree, back far enough for its box to
+      // fill the frame — by height, or by width on a screen too narrow for
+      // that — then following its cloud as the pieces go. In world units,
+      // so the tree's own are scaled as its group is.
+      const scale = stageScaleOf(size.width);
+      const halfTan = Math.tan((STATUE_FOV * Math.PI) / 360);
+      const aspect = persp.isPerspectiveCamera ? persp.aspect : 1;
+      const halfHeight = tree.halfHeight * scale;
+      const halfWidth = tree.halfWidth * scale;
+      const fit = Math.max(halfHeight / halfTan, halfWidth / (halfTan * aspect));
+      shotDistance =
+        (fit + halfWidth) *
+        TREE_FRAME_FILL *
+        THREE.MathUtils.lerp(1, STORY_DOLLY, settled);
+      treeAim(tree, scale, lookAt).addScaledVector(
+        tree.drift,
+        scale * CUT_AIM_FOLLOW * travelAt(treeBreakupAt()),
       );
+    } else if (cut) {
+      // The statue's own cut shot — only seen when there is no tree — a
+      // fifth further out than the shot it cuts from.
+      shotDistance =
+        distance * CUT_PULL_BACK * THREE.MathUtils.lerp(1, STORY_DOLLY, settled);
+      lookAt.addScaledVector(cloudDrift, CUT_AIM_FOLLOW * travelAt(breakup));
+    }
+    if (cut) {
       // Orbiting again, back the other way from the breakup's swing.
       scratch.offset
         .copy(CUT_OFFSET)
@@ -861,7 +1020,6 @@ function CameraRig({
     // the first robot pixel.
     chase.blend = robotPhase > 0 ? 1 : 0;
 
-    const persp = camera as THREE.PerspectiveCamera;
     if (chase.blend <= 0) {
       // The statue's camera, untouched.
       chase.seeded = false;
@@ -873,8 +1031,9 @@ function CameraRig({
         target.x += Math.sin(clock.elapsedTime * 0.18) * sway;
         target.y += Math.sin(clock.elapsedTime * 0.13 + 1.1) * sway * 0.6;
       }
-      const crossed = cut !== cutRef.current;
+      const crossed = cut !== cutRef.current || figure !== figureRef.current;
       cutRef.current = cut;
+      figureRef.current = figure;
       if (opened.current && !crossed) camera.position.lerp(target, 0.08);
       else {
         opened.current = true;
@@ -910,6 +1069,7 @@ function CameraRig({
       cameraProbe.camera = camera.position.toArray();
       cameraProbe.look = lookAt.toArray();
       cameraProbe.cut = cut;
+      cameraProbe.figure = figure;
       cameraProbe.azimuth =
         Math.atan2(camera.position.x - lookAt.x, camera.position.z - lookAt.z) *
         (180 / Math.PI);
@@ -1160,16 +1320,47 @@ function StageLights({
   );
 }
 
-function ChunkedThinker({
+// How many frames a figure is drawn regardless of which figure the stage
+// is on, from the frame its chunks arrive — the warm-up (see the warm
+// effect in ThinkerCanvas): uploading its geometry and compiling its
+// materials and their shadow pass. Drawn hidden, none of that happens, and
+// it would all land on the cut frame as a hitch — the one frame meant to
+// read as a hard cut. Only while the panel is still shut (nothing drawn
+// is seen), so a build landing late is not flashed over the other figure.
+const WARM_FRAMES = 4;
+
+/**
+ * One figure in pieces: the statue or the tree, each from its own build,
+ * standing where `placement` puts it and breaking against its own measure
+ * of the page. Only the figure the stage is on (see figureAt) is drawn;
+ * the other is kept mounted and warm, so the swap on the cut costs
+ * nothing on the frame.
+ */
+function ChunkedFigure({
   build,
+  figure,
+  placement,
   progressRef,
   reducedMotion,
+  treeReady,
 }: {
   build: ThinkerChunkBuild;
+  figure: Figure;
+  /**
+   * Where the figure stands: the resting rotation of its group, and how far
+   * the group's origin sits above the floor, in the figure's own units.
+   * `onFloor` scales that with the group, so a base at -baseLift lands on
+   * the floor on a narrow screen too; the statue's origin stays put
+   * instead, as it always has (its base floats a little on a phone, and
+   * did before the tree).
+   */
+  placement: { baseLift: number; onFloor: boolean; rotation: [number, number, number] };
   progressRef: ProgressRef;
   reducedMotion: boolean;
+  treeReady: boolean;
 }) {
   const stageRef = useRef<THREE.Group>(null);
+  const warmedRef = useRef(0);
   const chunkRefs = useRef<Array<THREE.Group | null>>([]);
   // Per chunk, how long it has been adrift (seconds of wall time).
   const adriftRef = useRef<Float32Array>(new Float32Array(0));
@@ -1199,26 +1390,27 @@ function ChunkedThinker({
   }, [chunks]);
 
   useFrame(({ clock, size }, delta) => {
-    const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
-    const settle = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
-    const story = reducedMotion ? 0 : progressRef.current.story;
-    const storyEase = storyEaseOf(story);
+    // The figure's own measure of the break: the statue's runs from the
+    // panel's first beat, the tree's from the cut (see treeBreakupAt).
+    // Scrolling back up runs the same number down again, so each figure
+    // retraces its own flight — that is all the "reverse" there is now.
+    const shown = reducedMotion
+      ? 0
+      : figure === "tree"
+        ? treeBreakupAt()
+        : breakupAt(progressRef.current);
+    // The last few percent of spread.
+    const settled = reducedMotion ? 0 : smoothPhase(BREAK_END, 1, progressRef.current.value);
 
-    // The exact reverse.
-    //
-    // Not a shrink: scaling every piece's travel toward zero brings them
-    // all home together, which is not what taking a break backwards looks
-    // like. The break has an ORDER — each chunk has its own `releaseAt` and
-    // its own window, so the hand goes first and the base last — and the
-    // reverse of that is the base arriving first and the hand last.
-    //
-    // Running the same parameter backwards gets all of it for free. Every
-    // piece's position is a function of this one number; drive it from 1
-    // down to 0 and each chunk retraces its own flight, in reverse order,
-    // spinning and growing back exactly the way it left.
-    const shown = Math.min(breakup, 1 - storyEase);
-    // The last few percent of spread unwinds with it.
-    const settled = settle * (1 - storyEase);
+    // Only the figure the stage is on is drawn — after its warm-up frames.
+    const warming =
+      warmedRef.current < WARM_FRAMES && progressRef.current.value <= 0;
+    if (warming) warmedRef.current += 1;
+    if (stageRef.current) {
+      stageRef.current.visible =
+        warming || figureAt(reducedMotion, treeReady) === figure;
+      if (!stageRef.current.visible) return;
+    }
 
     // The robot outro takes the stage: over its first stretch the chunks'
     // materials (surface and interior alike) fade to nothing; scrolling
@@ -1278,23 +1470,30 @@ function ChunkedThinker({
     });
 
     if (stageRef.current) {
-      const compact = size.width < 720;
-      const stageScale = compact ? 0.92 : 1;
+      const stageScale = stageScaleOf(size.width);
       stageRef.current.scale.setScalar(stageScale);
-      // The stage's own drift rides the same number, so a reassembled
-      // figure stands at exactly the rotation it was carved at.
+      // A base on the floor stays there whatever the scale: the group's
+      // origin rises with it by the (scaled) height of the base below it.
+      stageRef.current.position.y =
+        FLOOR_Y + placement.baseLift * (placement.onFloor ? stageScale : 1);
+      // The stage's own drift rides the same number, so a figure scrolled
+      // back to whole stands at exactly the rotation it was carved at.
       const spread = travelAt(shown);
       stageRef.current.rotation.set(
-        -0.08 + spread * 0.04,
-        THINKER_BASE_YAW - spread * 0.05,
-        0.012,
+        placement.rotation[0] + spread * 0.04,
+        placement.rotation[1] - spread * 0.05,
+        placement.rotation[2],
       );
     }
   });
 
   return (
-    <group ref={stageRef} rotation={STAGE_ROTATION}>
-      <DebugMarkers />
+    <group
+      ref={stageRef}
+      position={[0, FLOOR_Y + placement.baseLift, 0]}
+      rotation={placement.rotation}
+    >
+      {figure === "statue" ? <DebugMarkers /> : null}
       {chunks.map((chunk, index) => (
         <group
           key={index}
@@ -1366,20 +1565,25 @@ function DebugMarkers() {
 function StageFloor({
   progressRef,
   reducedMotion,
+  treeReady,
 }: {
   progressRef: ProgressRef;
   reducedMotion: boolean;
+  treeReady: boolean;
 }) {
   const materialRef = useRef<THREE.ShadowMaterial>(null);
 
   useFrame(() => {
-    // Same reversed parameter the chunks ride, so the shadow comes back
-    // under the figure as the figure comes back.
-    const story = reducedMotion ? 0 : progressRef.current.story;
-    const storyEase = storyEaseOf(story);
+    // The same parameter the chunks of the figure on the stage ride, so
+    // the shadow fades with that figure — and is back, whole, under the
+    // tree on the cut.
     const spread = reducedMotion
       ? 0
-      : travelAt(Math.min(breakupAt(progressRef.current), 1 - storyEase));
+      : travelAt(
+          figureAt(reducedMotion, treeReady) === "tree"
+            ? treeBreakupAt()
+            : breakupAt(progressRef.current),
+        );
     const robotPhase = reducedMotion ? 0 : progressRef.current.robot;
     if (materialRef.current) {
       // Faded by the spread as before, and gone entirely with the statue
@@ -1408,7 +1612,8 @@ function ThinkerCanvas({
   reducedMotion: boolean;
   timing: ThinkerTiming;
 }) {
-  const build = useThinkerChunks();
+  const build = useChunkBuild(loadThinkerChunks);
+  const treeBuild = useChunkBuild(loadCherryChunks);
   // RobotOutro used to write this every frame for CameraRig's chase. With
   // the robot unmounted nothing writes it and nothing reads it — the chase
   // branch is behind a `robot > 0` test that can no longer be true — but it
@@ -1435,11 +1640,26 @@ function ThinkerCanvas({
 
     return drift.applyEuler(new THREE.Euler(...STAGE_ROTATION));
   }, [build]);
+  // The statue stands where it always has — its group at the origin, which
+  // is 1.6 above the floor; the tree with its flat base on the floor,
+  // centred, and framed from its own bounds.
+  const statuePlacement = useMemo(
+    () => ({ baseLift: -FLOOR_Y, onFloor: false, rotation: STAGE_ROTATION }),
+    [],
+  );
+  const treeShot = useMemo(() => (treeBuild ? treeShotOf(treeBuild) : null), [treeBuild]);
+  const treePlacement = useMemo(
+    () =>
+      treeShot
+        ? { baseLift: treeShot.baseLift, onFloor: true, rotation: TREE_ROTATION }
+        : null,
+    [treeShot],
+  );
   // Warm the pipeline as soon as the chunks are in. One frame compiles the
   // materials and uploads the geometry; the shadow map needs its own pass,
   // so draw a few across consecutive frames rather than all in one tick.
   useEffect(() => {
-    if (!build) return undefined;
+    if (!build && !treeBuild) return undefined;
     let frames = 0;
     let raf = 0;
     const warm = () => {
@@ -1448,7 +1668,7 @@ function ThinkerCanvas({
     };
     raf = requestAnimationFrame(warm);
     return () => cancelAnimationFrame(raf);
-  }, [build]);
+  }, [build, treeBuild]);
   return (
     <Canvas
       camera={{
@@ -1503,14 +1723,32 @@ function ThinkerCanvas({
         progressRef={progressRef}
         reducedMotion={reducedMotion}
         robotState={robotState}
+        tree={treeShot}
       />
       <StageLights progressRef={progressRef} reducedMotion={reducedMotion} />
-      <StageFloor progressRef={progressRef} reducedMotion={reducedMotion} />
+      <StageFloor
+        progressRef={progressRef}
+        reducedMotion={reducedMotion}
+        treeReady={treeBuild !== null}
+      />
       {build ? (
-        <ChunkedThinker
+        <ChunkedFigure
           build={build}
+          figure="statue"
+          placement={statuePlacement}
           progressRef={progressRef}
           reducedMotion={reducedMotion}
+          treeReady={treeBuild !== null}
+        />
+      ) : null}
+      {treeBuild && treePlacement ? (
+        <ChunkedFigure
+          build={treeBuild}
+          figure="tree"
+          placement={treePlacement}
+          progressRef={progressRef}
+          reducedMotion={reducedMotion}
+          treeReady
         />
       ) : null}
     </Canvas>

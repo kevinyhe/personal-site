@@ -6,10 +6,12 @@ import {
 } from "@/components/thinkerFragments";
 
 /**
- * Builds The Thinker's chunks off the main thread: the fracture takes a
+ * Builds a figure's chunks off the main thread: the fracture takes a
  * second or two, which would otherwise land as a freeze right as the panel
- * opens. Receives the build options, replies once with the build (buffers
- * transferred) or an error message.
+ * opens. Receives the build options (which name the model to cut; the
+ * statue by default), replies once per request with the build (buffers
+ * transferred) or an error message. One worker serves every figure, one
+ * request after another — see thinkerChunks.
  */
 
 type WorkerScope = {
@@ -21,8 +23,9 @@ const scope = self as unknown as WorkerScope;
 
 scope.onmessage = async (event) => {
   try {
-    const geometry = await loadThinkerGeometry();
-    const build = buildSolidThinkerChunks(geometry, event.data);
+    const options = event.data;
+    const geometry = await loadThinkerGeometry(options.modelPath, options.normalizeHeight);
+    const build = buildSolidThinkerChunks(geometry, options);
 
     geometry.dispose();
     scope.postMessage({ build }, chunkTransferables(build.chunks));
