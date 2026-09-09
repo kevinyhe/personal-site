@@ -7,7 +7,11 @@ import {
   getViewportMetrics,
   getViewportWidth,
 } from "@/components/viewportMetrics";
-import { TREE_BASE_SCALE, treeTuning } from "@/components/treeTuning";
+import {
+  INTRO_TREE_SEED,
+  TREE_BASE_SCALE,
+  treeTuning,
+} from "@/components/treeTuning";
 import { sceneFx } from "@/components/sceneFx";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -3630,7 +3634,7 @@ export class WeepingCherryGenerator {
   };
 
   constructor(private options: TreeOptions = {}) {
-    this.rng = makeRng(options.seed ?? 20260705);
+    this.rng = makeRng(options.seed ?? INTRO_TREE_SEED);
     this.quality = resolveSceneQuality(options.quality ?? "auto");
   }
 
@@ -7515,7 +7519,7 @@ void main() {
       await reportSceneBuildProgress();
 
       const generator = new WeepingCherryGenerator({
-        seed: 20260705,
+        seed: INTRO_TREE_SEED,
         quality: sceneQuality,
         showDebugLobes: false,
       });
