@@ -40,25 +40,26 @@ export const CHERRY_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // centre line in plan, and their mean fork point is this. The trunk's
   // top is at half height; everything above it is bough.
   impact: [0.505, 0.143, 0.526],
-  // The statue's spacing family as it was before its shards were tuned
-  // finer (0.08 / 0.4 there now): the tree is normalised to the same 3.1
-  // units, so these cells read as the same kind of break, only a little
-  // coarser. Kept coarser on purpose — every seed costs about 70 ms of
-  // worker time whatever the model, and this build sits on the television
-  // hold behind the statue's. Finest at the junction, coarsening out along
-  // the boughs.
-  spacingNear: 0.1,
-  spacingFar: 0.5,
+  // Finer than the statue's cells (0.08 / 0.4 there): the boughs are thin,
+  // and a cell the width of a bough cuts it into rings rather than pieces,
+  // so the tree wants smaller cells to read as breaking rather than
+  // unscrewing. Every seed costs about 70 ms of worker time whatever the
+  // model, and this build sits on the television hold behind the
+  // statue's, which is why this is not finer still. Finest at the
+  // junction, coarsening out along the boughs.
+  spacingNear: 0.055,
+  spacingFar: 0.18,
   spacingFalloff: 0.9,
   shellBias: 0.5,
   sizeVariation: 2.1,
   // The statue's shard stretch, unchanged: pieces run long towards the
   // junction, the way the statue's run towards the blow.
   radialStretch: 3.0,
-  // The same time budget as the statue. The tree is cut AFTER the statue
-  // in the same worker (see loadCherryChunks), and the reveal waits on
-  // both, so this is added straight onto the television's hold.
-  maxPieces: 110,
+  // A safety cap, not a target: the spacing above stops the sampler
+  // first. The tree is cut AFTER the statue in the same worker (see
+  // loadCherryChunks), and the reveal waits on both, so every piece here
+  // is added straight onto the television's hold.
+  maxPieces: 200,
   // No hand to place by hand: the junction is on the trunk's axis, and the
   // graded scatter already puts the finest cells there.
   guardSeeds: [],

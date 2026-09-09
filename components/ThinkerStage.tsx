@@ -23,7 +23,14 @@ import {
   makeChunkGeometries,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
-import { addSeamAttribute, useMarbleMaterials } from "@/components/marbleSeams";
+import { useMarbleMaterials } from "@/components/marbleMaterials";
+import {
+  createPetalGeometry,
+  createPetalMaterial,
+  paintPetals,
+  planPetals,
+  updatePetals,
+} from "@/components/treePetals";
 import { sceneFx } from "@/components/sceneFx";
 import { DRIFT_FINISH } from "@/components/robotDrift";
 // RobotOutro itself is deliberately not imported: it is no longer mounted
@@ -763,6 +770,9 @@ function treeAim(tree: TreeShot, scale: number, out: THREE.Vector3) {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+// Scratch for laying out the petals against a chunk's pose.
+const scratchOffset = new THREE.Vector3();
+const scratchEuler = new THREE.Euler();
 
 /**
  * Turns the page's scroll position into the stage's two progress values,
@@ -1371,14 +1381,39 @@ function ChunkedFigure({
   const adriftRef = useRef<Float32Array>(new Float32Array(0));
   // The opacity last written into the chunks' materials (1 = untouched).
   const appliedFadeRef = useRef(1);
-  // One surface and one cut-face material for all the chunks; the surface
-  // one draws the glue seams from each chunk's `seam` attribute.
+  // One surface and one cut-face material for all the chunks.
   const marble = useMarbleMaterials();
+  // The blossom, on the tree only: instanced petals resting on the boughs
+  // that fall as the boughs break away (see treePetals). Laid out once per
+  // build against the same pose the chunk loop below writes, so a petal
+  // lets go from exactly where its bough was.
+  const petalRef = useRef<THREE.InstancedMesh>(null);
+  const chunkProgressRef = useRef<Float32Array>(new Float32Array(0));
+  const petals = useMemo(() => {
+    if (figure !== "tree") return null;
+    return planPetals(build.chunks, (chunk, progress, position, quaternion, scale) => {
+      const travel = travelAt(progress);
+      const turn = Math.min(travel, 1.5);
+      position.set(...chunk.center).addScaledVector(scratchOffset.set(...chunk.offset), travel);
+      quaternion.setFromEuler(
+        scratchEuler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
+      );
+      scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));
+    });
+  }, [build, figure]);
+  const petalGeometry = useMemo(() => (petals ? createPetalGeometry() : null), [petals]);
+  const petalMaterial = useMemo(() => (petals ? createPetalMaterial() : null), [petals]);
+  useEffect(() => {
+    if (petals && petalRef.current) paintPetals(petalRef.current, petals);
+    return () => {
+      petalGeometry?.dispose();
+      petalMaterial?.dispose();
+    };
+  }, [petalGeometry, petalMaterial, petals]);
   const chunks = useMemo(
     () =>
       build.chunks.map((chunk) => {
         const geometries = makeChunkGeometries(chunk);
-        addSeamAttribute(geometries.surfaceGeometry, geometries.interiorGeometry);
         return {
           ...geometries,
           center: new THREE.Vector3(...chunk.center),
@@ -1447,6 +1482,7 @@ function ChunkedFigure({
 
     if (adriftRef.current.length !== chunks.length) {
       adriftRef.current = new Float32Array(chunks.length);
+      chunkProgressRef.current = new Float32Array(chunks.length);
     }
 
     chunks.forEach((chunk, index) => {
@@ -1468,6 +1504,7 @@ function ChunkedFigure({
         adriftRef.current[index] = 0;
       }
 
+      chunkProgressRef.current[index] = localProgress;
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
@@ -1479,6 +1516,23 @@ function ChunkedFigure({
       group.rotation.set(chunk.spin.x * turn, chunk.spin.y * turn, chunk.spin.z * turn);
       group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));
     });
+
+    if (petals && petalRef.current) {
+      updatePetals(
+        petalRef.current,
+        petals,
+        build.chunks,
+        (index, out) => {
+          const group = chunkRefs.current[index];
+          return group ? out.compose(group.position, group.quaternion, group.scale) : null;
+        },
+        chunkProgressRef.current,
+        adriftRef.current,
+        // The floor, in the group's own space: its origin sits baseLift
+        // above the floor.
+        -placement.baseLift,
+      );
+    }
 
     if (stageRef.current) {
       const stageScale = stageScaleOf(size.width);
@@ -1505,6 +1559,13 @@ function ChunkedFigure({
       rotation={placement.rotation}
     >
       {figure === "statue" ? <DebugMarkers /> : null}
+      {petals && petalGeometry && petalMaterial ? (
+        <instancedMesh
+          args={[petalGeometry, petalMaterial, petals.count]}
+          frustumCulled={false}
+          ref={petalRef}
+        />
+      ) : null}
       {chunks.map((chunk, index) => (
         <group
           key={index}
