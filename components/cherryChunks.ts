@@ -34,20 +34,27 @@ export const CHERRY_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // Where the tree broke: the junction, where the primary boughs leave the
   // trunk. Given as fractions of the model's own bounding box, which the
   // fracture measures off the loaded geometry, so this holds through any
-  // re-bake of the model at the same proportions. The trunk stands at the
-  // box's centre in plan (the bake recentres the model), and the primaries
-  // leave it about a third of the way up the cut-down trunk — the cut is
-  // at 45% of the full tree's height and the crown opens just above half.
-  // Re-measure against cherry-meta.json once the bake has settled.
-  impact: [0.5, 0.34, 0.5],
-  // The statue's spacing family, unchanged: the tree is normalised to the
-  // same 3.1 units, so the same cell sizes read as the same kind of break.
-  // Finest at the junction, coarsening out along the boughs.
+  // re-bake of the model at the same proportions. Measured off the bake
+  // (scripts/bake-cherry.mjs, see cherry-meta.json): the six primaries fork
+  // between 9% and 19% of the way up the cut-down trunk, on the box's
+  // centre line in plan, and their mean fork point is this. The trunk's
+  // top is at half height; everything above it is bough.
+  impact: [0.505, 0.143, 0.526],
+  // The statue's spacing family as it was before its shards were tuned
+  // finer (0.08 / 0.4 there now): the tree is normalised to the same 3.1
+  // units, so these cells read as the same kind of break, only a little
+  // coarser. Kept coarser on purpose — every seed costs about 70 ms of
+  // worker time whatever the model, and this build sits on the television
+  // hold behind the statue's. Finest at the junction, coarsening out along
+  // the boughs.
   spacingNear: 0.1,
   spacingFar: 0.5,
   spacingFalloff: 0.9,
   shellBias: 0.5,
   sizeVariation: 2.1,
+  // The statue's shard stretch, unchanged: pieces run long towards the
+  // junction, the way the statue's run towards the blow.
+  radialStretch: 3.0,
   // The same time budget as the statue. The tree is cut AFTER the statue
   // in the same worker (see loadCherryChunks), and the reveal waits on
   // both, so this is added straight onto the television's hold.

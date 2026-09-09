@@ -850,15 +850,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const settled = (build: Promise<unknown>) => build.catch(() => undefined);
     void Promise.all([settled(loadThinkerChunks()), settled(loadCherryChunks())]).then(ready);
     // Never strand the page on a fracture that FAILS — but this must not be
-    // reachable by one that is merely slow. It was 15 s, and the cut is
-    // ~115 seeds with the size variation on, which measures 12.5 s in the
-    // worker: slower machines crossed the line, the reveal went ahead
-    // without the chunks, and the box opened on an empty stage (nothing is
-    // drawn at all while `build` is null). Then 45 s, three and a half
-    // times that. There are two builds now, the tree's after the statue's
-    // (about 10 s more, measured on the same machine), so the net is the
-    // same margin over both. This is the failure net, not a deadline — the
-    // fractures should always win the race.
+    // reachable by one that is merely slow. It was 15 s, and the statue's
+    // cut alone measured 12.5 s in the worker at the time: slower machines
+    // crossed the line, the reveal went ahead without the chunks, and the
+    // box opened on an empty stage (nothing is drawn at all while `build`
+    // is null). Then 45 s, three and a half times that. The statue's cut is
+    // now ~132 seeds of shards (about 20 s in a browser worker, ~70 ms a
+    // seed) and the tree's follows it in the same worker, so the net is
+    // the same margin over both. This is the failure net, not a deadline —
+    // the fractures should always win the race.
     const timeout = window.setTimeout(ready, 80000);
     return () => {
       live = false;
