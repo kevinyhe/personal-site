@@ -1,20 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
-import gsap from "gsap";
+import { type ReactNode, useRef } from "react";
 import TransitionLink from "@/components/TransitionLink";
+import { sectionLinks, socialLinks } from "@/components/siteContent";
+import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 
-const NAV_LINKS = [
-  { href: "/work", label: "Work" },
-  { href: "/info", label: "Info" },
-  { href: "/contact", label: "Contact" },
-] as const;
-
-const SOCIAL_LINKS = [
-  { href: "https://x.com/thekevinlab", label: "X" },
-  { href: "https://www.linkedin.com/in/kevinyhe", label: "LinkedIn" },
-  { href: "https://github.com/kevinyhe", label: "GitHub" },
-];
+const NAV_LINKS = sectionLinks;
+const SOCIAL_LINKS = socialLinks;
 
 type SubpageShellProps = {
   children: ReactNode;
@@ -30,70 +22,7 @@ type SubpageShellProps = {
 export default function SubpageShell({ children, current }: SubpageShellProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return undefined;
-
-    const items = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-reveal]"),
-    );
-    if (!items.length) return undefined;
-
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (prefersReducedMotion) {
-      gsap.set(items, { opacity: 1 });
-      return undefined;
-    }
-
-    gsap.set(items, { autoAlpha: 0, y: 18 });
-
-    let observer: IntersectionObserver | null = null;
-    let startTimer = 0;
-
-    const start = () => {
-      observer = new IntersectionObserver(
-        (entries, obs) => {
-          // Reveal everything that entered together as one staggered batch.
-          const batch = entries
-            .filter((entry) => entry.isIntersecting)
-            .map((entry) => entry.target as HTMLElement)
-            .sort((a, b) =>
-              a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
-                ? -1
-                : 1,
-            );
-          if (!batch.length) return;
-          batch.forEach((el) => obs.unobserve(el));
-          gsap.to(batch, {
-            autoAlpha: 1,
-            duration: 0.75,
-            ease: "power3.out",
-            stagger: 0.09,
-            y: 0,
-          });
-        },
-        { rootMargin: "0px 0px -8% 0px", threshold: 0.05 },
-      );
-      items.forEach((el) => observer?.observe(el));
-    };
-
-    // If we arrived under the transition wipe, hold the first batch until
-    // the panel has mostly cleared so the stagger is actually visible.
-    const veil = document.getElementById("page-veil");
-    if (veil?.dataset.state) {
-      startTimer = window.setTimeout(start, 420);
-    } else {
-      start();
-    }
-
-    return () => {
-      window.clearTimeout(startTimer);
-      observer?.disconnect();
-      gsap.killTweensOf(items);
-    };
-  }, []);
+  useRevealOnScroll(rootRef, { holdForVeil: true });
 
   const year = new Date().getFullYear();
 

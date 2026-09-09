@@ -1990,22 +1990,7 @@ function carveCell(
     });
   });
 
-  // Floor the patch on the distance to the nearest other seed. `reach` is 0
-  // for a seed that owns no polygon at all, which left a radius of 0.2 —
-  // often too small to catch any surface, so the cell came out cap-only and
-  // was thrown away as dust, leaving a hole. The neighbour distance is a
-  // size the cell cannot be smaller than, so it is a safe floor.
-  let nearestOther = Infinity;
-
-  seeds.forEach((other, index) => {
-    if (index === seedIndex) return;
-    nearestOther = Math.min(nearestOther, other.point.distanceTo(seed));
-  });
-
-  const radius = Math.max(
-    reach * 1.3 + 0.2,
-    isFinite(nearestOther) ? nearestOther * 1.3 : 0,
-  );
+  const radius = reach * 1.3 + 0.2;
   let polygons = source.polygons.filter((polygon) =>
     polygon.vertices.some((vertex) => vertex.point.distanceTo(seed) <= radius),
   );
