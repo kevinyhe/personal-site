@@ -83,7 +83,13 @@ export default function FractureText({
             "inline-block will-change-transform " +
             "transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] " +
             "group-hover/fracture:[transform:translate(var(--fx),var(--fy))_rotate(var(--fr))] " +
-            "group-hover/fracture:opacity-80"
+            "group-hover/fracture:opacity-80 " +
+            // Under prefers-reduced-motion the pieces stay put and the line
+            // only dims on hover: fifty letters flying apart is exactly the
+            // motion that setting asks not to see. The rest of the page's
+            // reveals already snap under it (useRevealOnScroll); this was
+            // the one hover left that moved.
+            "motion-reduce:transition-none motion-reduce:group-hover/fracture:[transform:none]"
           }
           key={piece.index}
           style={
