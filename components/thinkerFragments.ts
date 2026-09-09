@@ -427,21 +427,6 @@ export type BuildSolidChunkOptions = {
    */
   shellBias: number;
   /**
-   * 0..1 pull of seeds onto the spokes: straight lines running out from the
-   * impact. Seeds on a shared spoke cut each other with planes across it,
-   * and seeds on neighbouring spokes cut each other with planes along it,
-   * so the cells between spokes come out as wedges pointing back at the
-   * blow — the radial cracks of something dropped on a floor. 0 leaves the
-   * shells on their own, which gives rings with no spokes between them.
-   */
-  spokeBias: number;
-  /**
-   * How many spokes fan out from the impact, counted over the whole sphere
-   * of directions (only the ones that point into the figure matter). Sets
-   * the angular gap between radial cracks.
-   */
-  spokeCount: number;
-  /**
    * How much further apart two seeds must sit along the line from the
    * impact than across it: the sampler's room test shrinks the part of
    * their separation that runs along that line by this, so a radial
@@ -499,15 +484,9 @@ const SEED_STOP_RATIO = 0.75;
 // so a coincident pair is a NaN plane and a corrupt cell.
 const SEED_MIN_SEPARATION = 0.02;
 // The first concentric shell sits this many near-spacings out from the
-// impact; the rest step outward by the local spacing.
+// impact; the rest step outward by the local spacing times the radial
+// stretch, the same distance the room test makes radial neighbours keep.
 const SHELL_START = 0.75;
-// Width of the random factor on a candidate's score when the sampler picks
-// the next seed (1 +- half of this). Widening it was tried as a way to break
-// the greedy fill's lattice, and it did nothing: at 0.5 the spread of
-// nearest-seed distances was the same as at 0.16 (cv 0.50 vs 0.51) and the
-// shards lined up with the blow a little worse (0.67 vs 0.71). The room
-// test, not the score, decides where seeds can go.
-const PICK_JITTER = 0.16;
 // The last piece releases this far into the breakup.
 const RELEASE_END = 0.86;
 // The first gap between releases is this many times the last, so the gaps
@@ -1656,33 +1635,6 @@ const TAU = Math.PI * 2;
 // the first thing to break always breaks small.
 const IMPACT_FINE_RADIUS = 0.55;
 
-/**
- * `count` directions spread evenly over the sphere (a Fibonacci spiral),
- * turned by a rotation drawn from the build seed so the spokes do not line
- * up with the figure's axes.
- */
-function spokeDirections(count: number, seed: number) {
-  const total = Math.max(Math.round(count), 1);
-  const turn = new THREE.Quaternion().setFromAxisAngle(
-    randomUnitVector(17, seed + 401),
-    hash01(19, seed + 409) * TAU,
-  );
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  const directions: THREE.Vector3[] = [];
-
-  for (let index = 0; index < total; index++) {
-    const y = 1 - (2 * (index + 0.5)) / total;
-    const ring = Math.sqrt(Math.max(1 - y * y, 0));
-    const angle = golden * index;
-
-    directions.push(
-      new THREE.Vector3(Math.cos(angle) * ring, y, Math.sin(angle) * ring).applyQuaternion(turn),
-    );
-  }
-
-  return directions;
-}
-
 /** Smoothstep on an already-normalised 0..1 input. */
 function smoothstep01(x: number) {
   const t = THREE.MathUtils.clamp(x, 0, 1);
@@ -1737,6 +1689,7 @@ function sampleGradedSeeds(
   spacingAt: (distance: number) => number,
   shellRadii: number[],
   existing: THREE.Vector3[],
+  stretch: number,
   options: BuildSolidChunkOptions,
 ) {
   if (candidates.length === 0) return [];
@@ -1763,7 +1716,11 @@ function sampleGradedSeeds(
   // How close a candidate sits to one of the concentric shells around the
   // impact: 1 on a shell, 0 midway between two. Pulling seeds onto shells
   // lines their bisectors up into rings around the blow with spokes between
-  // them, which is the signature of an impact fracture.
+  // them, which is the signature of an impact fracture. The band either
+  // side of a shell is half the radial gap between seeds, which is the
+  // spacing times the stretch (see `gap` below): the shells themselves step
+  // that far apart, and a band of half the plain spacing would leave the
+  // pull dead across two thirds of each gap.
   const shell = distances.map((distance, index) => {
     let nearestShell = Infinity;
 
@@ -1771,41 +1728,22 @@ function sampleGradedSeeds(
       nearestShell = Math.min(nearestShell, Math.abs(distance - radius));
     }
 
-    return 1 - Math.min(nearestShell / Math.max(spacings[index] * 0.5, 1e-6), 1);
-  });
-  // How close a candidate sits to one of the spokes running out from the
-  // impact: 1 on a spoke, 0 half a cell width off it. The spokes are fixed
-  // directions, so the gap between them opens with distance the way the
-  // cells do — near the blow they are closer together than the cells and
-  // every candidate is on one (the fine grading rules there anyway); out at
-  // the base they are a cell or two apart and the pull has something to
-  // line seeds up along.
-  const spokes = spokeDirections(options.spokeCount, options.seed);
-  const spoke = candidates.map((candidate, index) => {
-    if (distances[index] < 1e-6) return 1;
-
-    const direction = candidate.clone().sub(impact).multiplyScalar(1 / distances[index]);
-    let bestDot = -1;
-
-    for (const axis of spokes) {
-      bestDot = Math.max(bestDot, direction.dot(axis));
-    }
-
-    if (bestDot <= 0) return 0;
-
-    // Perpendicular distance from the candidate to the nearest spoke line.
-    const offSpoke = distances[index] * Math.sqrt(Math.max(1 - bestDot * bestDot, 0));
-
-    return 1 - Math.min(offSpoke / Math.max(spacings[index] * 0.5, 1e-6), 1);
+    return 1 - Math.min(nearestShell / Math.max(spacings[index] * 0.5 * stretch, 1e-6), 1);
   });
   // The room between two points, with the part of it that runs along the
-  // line from the impact shrunk by `radialStretch`: a seed then has to sit
-  // that much further from its neighbour along a spoke than across it to
-  // count as clear, and the (plain Euclidean) Voronoi cells the carve cuts
-  // between them come out that much longer towards the blow than they are
-  // wide. The line is taken at the pair's midpoint so the distance is the
-  // same seen from either end.
-  const stretch = Math.max(options.radialStretch, 1);
+  // line from the impact shrunk by `stretch` (the caller's `radialStretch`):
+  // a seed then has to sit that much further from its neighbour along that
+  // line than across it to count as clear, and the (plain Euclidean)
+  // Voronoi cells the carve cuts between them come out that much longer
+  // towards the blow than they are wide. The line is taken at the pair's
+  // midpoint so the distance is the same seen from either end.
+  //
+  // Right at the blow there is no line to take: a pair straddling the
+  // impact has a midpoint a hair from it, pointing wherever rounding
+  // says, and the split into along and across would then be decided by
+  // noise. So the stretch eases in from 1 (plain distance) to full over
+  // the first half-spacing of midpoint distance from the impact — a ramp,
+  // not a threshold, so no pair's room jumps as the midpoint crosses it.
   const between = new THREE.Vector3();
   const radial = new THREE.Vector3();
   const gap = (a: THREE.Vector3, b: THREE.Vector3) => {
@@ -1816,10 +1754,11 @@ function sampleGradedSeeds(
 
     if (reach < 1e-6) return between.length();
 
+    const local = 1 + (stretch - 1) * smoothstep01(reach / (0.5 * spacingAt(reach)));
     const along = between.dot(radial) / reach;
     const across = Math.max(between.lengthSq() - along * along, 0);
 
-    return Math.sqrt(across + (along * along) / (stretch * stretch));
+    return Math.sqrt(across + (along * along) / (local * local));
   };
   const nearest = candidates.map((candidate) =>
     existing.reduce((best, point) => Math.min(best, gap(candidate, point)), Infinity),
@@ -1856,8 +1795,8 @@ function sampleGradedSeeds(
       const score =
         room *
         (1 + options.shellBias * shell[index]) *
-        (1 + options.spokeBias * spoke[index]) *
-        (1 - PICK_JITTER / 2 + hash01(index + chosen.length * 7, options.seed + 311) * PICK_JITTER);
+        // +-8%: widening this to +-25% was measured to change nothing.
+        (0.92 + hash01(index + chosen.length * 7, options.seed + 311) * 0.16);
 
       if (score > bestScore) {
         bestScore = score;
@@ -1905,13 +1844,16 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // stretched along with the seeds (see `radialStretch`): the sampler makes
   // seeds sit that much further apart along the line from the blow, and
   // shells packed tighter than that would have nothing to land on them.
+  // The same stretch goes to the sampler, so its room test, its shell band
+  // and this step all measure the radial gap the same way.
+  const stretch = Math.max(options.radialStretch, 1);
   const reach = modelBox.min.distanceTo(modelBox.max);
   const shellRadii: number[] = [];
 
   for (
     let radius = options.spacingNear * SHELL_START;
     radius < reach;
-    radius += spacingAt(radius) * Math.max(options.radialStretch, 1)
+    radius += spacingAt(radius) * stretch
   ) {
     shellRadii.push(radius);
   }
@@ -1943,7 +1885,7 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
 
   const guardPoints = options.guardSeeds.map(toModel);
   const points = guardPoints.concat(
-    sampleGradedSeeds(candidates, impact, spacingAt, shellRadii, guardPoints, options),
+    sampleGradedSeeds(candidates, impact, spacingAt, shellRadii, guardPoints, stretch, options),
   );
   // Drop any pair that ended up on top of each other (see
   // SEED_MIN_SEPARATION: a coincident pair is a NaN bisector).

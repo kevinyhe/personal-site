@@ -86,15 +86,16 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // television shot waits for the build (12.5 s in the worker before this),
   // so this is a trade measured along a curve, old build = 1.0x:
   //   0.10 / 0.50  100 seeds  112 pieces  median piece 0.232  1.0x
-  //   0.08 / 0.40  133 seeds  140 pieces  median piece 0.228  1.3x
+  //   0.08 / 0.40  132 seeds  144 pieces  median piece 0.230  1.0-1.3x
   //   0.07 / 0.35  176 seeds  185 pieces  median piece 0.203  1.6x
   // (median piece = cube root of the median chunk volume, figure units;
   // the old build's was 0.269.) The shard shaping below already makes the
   // median piece ~14% narrower at the old spacing, by cutting many small
-  // ones beside a few slabs; this row buys 14% more pieces on top, so the
-  // typical piece is ~15% narrower and there are more of them, for 30%
-  // more build. The 0.07 row is the one to take if the wait stops
-  // mattering. The old "~110 seeds and the carve loses cells" wall was
+  // ones beside a few slabs; this row buys 17% more pieces on top, so the
+  // typical piece is ~15% narrower and there are more of them. The build
+  // cost of that measured 1.30x in one warm run and 1.03x in another (the
+  // machine was busier for the second), so call it up to a third more. The
+  // 0.07 row is the one to take if the wait stops mattering. The old "~110 seeds and the carve loses cells" wall was
   // measured again: 0.00% of the figure's volume lost at every row up to
   // 205 seeds, 2 dust slivers dropped here (was 1).
   spacingNear: 0.08,
@@ -105,36 +106,25 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // Enough shell pull to line the cuts up into rings and spokes, not so
   // much that they stop covering the figure evenly.
   shellBias: 0.5,
-  // Pull onto the radial lines from the blow. Its measured effect is small
-  // next to `radialStretch` below (measured at 0.07 / 0.35 spacing): with
-  // the stretch at 3 and this at 0, 0.6 and 1.0 the shards' long axes line
-  // up with the direction to the blow at 0.68, 0.71 and 0.70 (1 = every
-  // shard points at it, 0.5 = no relation), and the size spread between
-  // neighbours is 9.4x, 11.3x and 10.4x. 0.6 is the best of those three;
-  // it is not what makes the look.
-  spokeBias: 0.6,
-  // 90 over the sphere is a spoke every ~0.37 radians, which at a figure
-  // unit from the blow is one spoke per cell width; 180 measured the same
-  // alignment (0.71) with slightly less size spread (10.2x).
-  spokeCount: 90,
   // This is what turns even patches into shards. Seeds may sit three times
   // further apart along the line from the blow than across it, so the
   // cells between them run long towards the impact: the long axes of the
-  // pieces point at the blow at 0.69 (was 0.53 with no stretch, which is
-  // chance), and their length against their width goes 1.36x -> 1.50x at
+  // pieces point at the blow at 0.66 (was 0.53 with no stretch, which is
+  // chance), and their length against their width goes 1.36x -> 1.47x at
   // the median. 1.6 measured 0.62 and 2.0 measured 0.64; the effect keeps
   // growing to 3 and the figure still carves clean there (0.00% lost).
   // It also costs seeds: at a given spacing the stretched room fits about
   // a quarter fewer of them (186 -> 135 at 0.085 / 0.42 with 1.6), which
-  // is why the spacing above is tighter than the piece count suggests.
+  // is why the spacing above is tighter than the piece count suggests. A
+  // pull onto fixed spokes from the blow was tried on top of this and
+  // dropped: it moved the alignment 0.68 -> 0.71, inside the noise.
   radialStretch: 3.0,
   // Cells vary either side of what their distance asks for, so the figure
   // does not break into evenly sized tiles. Measured as the volume p75/p25
   // between neighbouring chunks with the distance grading divided out: an
   // even break is 1.78x. This was 2.1, which measured 6.73x at the old
-  // spacing; at 2.6 it is 9.7x with the shards (11.3x at 0.07 / 0.35) —
-  // slabs beside slivers, which is what a glued-together statue looks
-  // like. 3.0 measured LOWER (9.6x) because it stranded so many seeds
+  // spacing; at 2.6 it is 12.8x with the shards — slabs beside slivers,
+  // which is what a glued-together statue looks like. 3.0 measured LOWER (9.6x) because it stranded so many seeds
   // inside the figure (45 all-cut pieces against 30) that the spread went
   // into the tail instead.
   //
@@ -147,7 +137,7 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   sizeVariation: 2.6,
   // Time budget, not a target: the build is ~70 ms a seed and the
   // television shot holds until it finishes. The sampler runs out of room
-  // at ~133 seeds with the spacing above, so this is headroom rather than
+  // at ~132 seeds with the spacing above, so this is headroom rather than
   // the number it lands on — it is here so a later spacing change cannot
   // quietly double the wait. Was 110; the 0.07 / 0.35 row above needs 180.
   maxPieces: 150,
