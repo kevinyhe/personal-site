@@ -84,6 +84,10 @@ const INK_OVERHANG = 0.1;
 // linearly out of nothing, so it is big enough to see what is inside it
 // within a few vh rather than tens.
 const PANEL_OPEN_AT = 0.22;
+// Fraction of the narration's black-out (its own scrubbed stretch, below)
+// past which the sheet counts as shut: the statue's loop stops and the
+// blur under the sheet is dropped. The last percent is invisible.
+const SCRIM_SHUT_AT = 0.99;
 // How far into the panel's growth the statue waits before it starts coming
 // apart, in viewport heights of scroll.
 const CHUNK_DELAY_VIEWPORTS = 0.3;
@@ -143,6 +147,13 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // timeline, never on every frame.
   const [panelOpen, setPanelOpen] = useState(false);
   const panelOpenRef = useRef(false);
+  // The black scrim over the stage has closed completely (the narration's
+  // entry, below). Behind an opaque sheet the statue's canvas was still
+  // drawing a full-screen WebGL scene nobody could see; this puts its loop
+  // on "demand" for as long as the sheet is shut. Flipped by the scrim's
+  // timeline at SCRIM_SHUT_AT, never on every frame.
+  const [scrimCovered, setScrimCovered] = useState(false);
+  const scrimCoveredRef = useRef(false);
   // The veil's bar is for the television's own assets only (GLB + four
   // textures): the thing the page is actually waiting on before it can
   // show anything.
@@ -725,43 +736,94 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       });
 
       // ------------------------------------------------------------------
-      // The scrim behind the narration.
+      // The cut to black under the narration.
       //
-      // On a wide screen there is none: the camera pans the figure out from
-      // under the words instead, and dimming the scene as well takes the
-      // reassembly — the thing the narration is playing over — and hides it.
+      // This is what lukebaffait.fr does where its own frame sequence gives
+      // way to the about text: over the next section's approach — its top
+      // crossing from the bottom of the viewport to the top — a full-screen
+      // sheet over the sequence goes to 0.7, and on desktop the frames
+      // under it blur out (16px), while the sequence keeps playing its last
+      // stretch underneath. Here the sheet goes all the way to black: the
+      // narration runs over black now, not over the figure. Whatever the
+      // stage is still doing plays on under the rising black in just the
+      // same way, and once the sheet is shut the stage stops drawing (see
+      // scrimCovered).
       //
-      // A phone has no column beside the figure to pan it into, so the
-      // statue really is behind the text there and something has to give.
-      // That, and only that, is what this is for.
+      // The stretch ends with the block's top a fifth of the way down, so
+      // the black is two thirds closed as the first line starts to fade in
+      // (components/useRevealOnScroll shows a line 8% up from the bottom;
+      // the block's padding puts the first line 45vh under its top) and is
+      // shut before that line has climbed to the middle. The reference is
+      // at 0.7 at that same two-thirds point.
+      //
+      // autoAlpha rather than opacity: at zero it also sets visibility
+      // hidden, and a hidden sheet has no backdrop to blur, so the filter
+      // costs nothing across the whole of the hero before this runs.
+      //
+      // Every width. This used to dim only phones, because on a wide screen
+      // the camera panned the figure out from under the words instead; that
+      // pan is gone.
       const narrationSpace = narrationSpaceRef.current;
       const scrim = narrationScrimRef.current;
       if (narrationSpace && scrim) {
-        gsap
-          .timeline({
-            defaults: { ease: "none" },
-            scrollTrigger: {
-              end: "bottom bottom",
-              invalidateOnRefresh: true,
-              scrub: prefersReducedMotion ? true : 0.3,
-              start: "top bottom",
-              trigger: narrationSpace,
-            },
-          })
-          .set({}, {}, 1)
-          .fromTo(
-            scrim,
-            { opacity: 0 },
-            {
-              duration: 0.16,
-              opacity: () => (window.innerWidth < 700 ? 0.6 : 0),
-            },
-            0,
-          );
+        const scrimTrigger = {
+          end: "top 20%",
+          invalidateOnRefresh: true,
+          scrub: prefersReducedMotion ? true : 0.3,
+          start: "top bottom",
+          trigger: narrationSpace,
+        };
+        const scrimTl = gsap.timeline({
+          defaults: { ease: "none" },
+          onUpdate: () => {
+            const covered = scrimTl.progress() >= SCRIM_SHUT_AT;
+            if (covered !== scrimCoveredRef.current) {
+              scrimCoveredRef.current = covered;
+              setScrimCovered(covered);
+            }
+          },
+          scrollTrigger: scrimTrigger,
+        });
+        scrimTl.fromTo(scrim, { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 0);
+
+        // The blur, on the same stretch, desktop only (the reference's own
+        // rule: phones skip it, and a phone blurring two full-screen WebGL
+        // canvases through a sheet is exactly why). Its own timeline under
+        // gsap.matchMedia rather than a width check made once here, so a
+        // phone turned on its side and back gets the right answer each
+        // time instead of the one it loaded with; the context reverts it
+        // with everything else. Dropped to none once the sheet is shut —
+        // the browser blurs the backdrop of an opaque sheet all the same,
+        // for every frame of the narration, and nobody can see it. Going
+        // back up, the set renders backwards to the blur it replaced.
+        const canBlur =
+          !prefersReducedMotion &&
+          (CSS.supports("backdrop-filter", "blur(1px)") ||
+            CSS.supports("-webkit-backdrop-filter", "blur(1px)"));
+        if (canBlur) {
+          gsap.matchMedia().add("(min-width: 700px)", () => {
+            gsap
+              .timeline({
+                defaults: { ease: "none" },
+                scrollTrigger: { ...scrimTrigger },
+              })
+              .fromTo(
+                scrim,
+                { backdropFilter: "blur(0px)" },
+                { backdropFilter: "blur(16px)", duration: 1 },
+                0,
+              )
+              .set(scrim, { backdropFilter: "none" }, 1);
+          });
+        }
       }
     }, root);
     return () => {
       ctx.revert();
+      // The next run's timeline starts at 0 and only reports changes, so
+      // a flag left shut here would keep the statue's loop off for good.
+      scrimCoveredRef.current = false;
+      setScrimCovered(false);
       sceneFx.treeDrop = 0;
       sceneFx.orbit = 0;
       sceneFx.halftone = 1;
@@ -858,6 +920,22 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // page; this is the only tree outside HomeSections that has any.
   useRevealOnScroll(rootRef);
 
+  // The statue's canvas runs its live loop only while there is something
+  // to see: the panel is open, the stage is on screen, and the black scrim
+  // has not shut over it.
+  const stageActive = panelOpen && stageVisible && !scrimCovered;
+
+  // Exposed so headless captures can tell whether the canvas is drawing
+  // once the scrim has closed (the stage's own hook only reports the
+  // scrubbed progress, which keeps moving either way).
+  useEffect(() => {
+    const debug = { active: stageActive, covered: scrimCovered };
+    (window as unknown as Record<string, unknown>).__narrationScrim = debug;
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__narrationScrim;
+    };
+  }, [scrimCovered, stageActive]);
+
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return undefined;
@@ -940,17 +1018,20 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
       >
         {revealComplete ? (
-          <ThinkerStage active={panelOpen && stageVisible} timing={thinkerTiming} />
+          <ThinkerStage active={stageActive} timing={thinkerTiming} />
         ) : null}
       </div>
 
-      {/* Narrow screens only — see the scrim's timeline. Stays at zero on
-          anything wide enough for the camera to pan the figure aside. */}
+      {/* The black the narration runs over: shut by the scrim's timeline as
+          the narration block arrives, at every width. Above the statue's
+          panel, below the type layer. Hidden as well as clear at rest, so
+          its blur has no backdrop to work on until it is needed. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-[17] bg-[#0a0a0a]"
+        data-narration-scrim
         ref={narrationScrimRef}
-        style={{ opacity: 0 }}
+        style={{ opacity: 0, visibility: "hidden" }}
       />
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
