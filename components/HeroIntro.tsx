@@ -56,6 +56,46 @@ const HERO_CUT_AT = 0.796;
 const BREAK_STRETCH = 2;
 const PANEL_GROW_DURATION = HERO_CUT_AT - PANEL_GROW_AT;
 /**
+ * The room the box leaves between its left edge and the last letter of
+ * "Kevin", as a fraction of the viewport's width, for the whole of its
+ * growth. The box grows from the middle of the screen, and "Kevin" is set
+ * so wide that its "n" sits past the middle; so the words go first, and
+ * the box only starts once "Kevin" has cleared this much of the centre
+ * (see boxPlanOf and the growth tween).
+ */
+const BOX_CLEARANCE = 0.1;
+
+/**
+ * The box's growth against the words' exit, from the laid-out type.
+ *
+ * Over the growth window the two words move outward at one speed, a
+ * total of `travel` px each; the box starts at `startAt` (0..1 of the
+ * window) and its half width then grows at that same speed, so the gap
+ * between its left edge and "Kevin" holds at BOX_CLEARANCE throughout.
+ * Solved so the box fills the screen on the window's last frame: with
+ * kevinRight the "n"'s edge from the left of the viewport,
+ *   startAt = (kevinRight - (W/2 - clearance)) / travel
+ *   travel  = kevinRight + clearance
+ * which puts "Kevin" a clearance past the left edge at the end. Offsets,
+ * not rects: the scrub's transforms must not feed back into the plan.
+ */
+function boxPlanOf(root: HTMLElement | null) {
+  const lockup = root?.querySelector<HTMLElement>("[data-hero-lockup]");
+  const word = lockup?.querySelector<HTMLElement>("[data-hero-letters]");
+  const width = window.innerWidth;
+  const clearance = width * BOX_CLEARANCE;
+  if (!lockup || !word) return { startAt: 0, travel: width / 2 + clearance };
+  const kevinRight = lockup.offsetLeft + word.offsetLeft + word.offsetWidth;
+  const travel = kevinRight + clearance;
+  return {
+    startAt: clampStart((kevinRight - (width / 2 - clearance)) / travel),
+    travel,
+  };
+}
+// Never past 0.9: a layout so wide the words could not clear the centre
+// in time would otherwise leave the box no window at all.
+const clampStart = (value: number) => Math.min(Math.max(value, 0), 0.9);
+/**
  * How far a narration line is carried sideways, as a fraction of the
  * viewport's width, either side of its centred rest.
  *
@@ -517,8 +557,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // strip fades, the name sinks out of the bottom of the frame, and the
   // tree sinks out too while the camera orbits it counter-clockwise
   // through 60% of the intro's sweep; once the name has arrived in the
-  // middle, a viewport-sized panel grows out of the gap between its two
-  // words until it fills the frame, pushing them off the sides as it goes.
+  // middle its two words are pushed off the sides, and a viewport-sized
+  // panel grows from the centre behind them until it fills the frame.
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
@@ -555,32 +595,22 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       const words = gsap.utils.toArray<HTMLElement>(
         lockup.querySelectorAll("[data-hero-letters]"),
       );
-      // The box grows out of the GAP between the two words, not the middle
-      // of the screen. "Kevin" is set at 0.58 of a width that fills the
-      // line, so its last letter sits about 8% of the screen past the
-      // centre: a box scaled from the centre opens under the "n" on its
-      // very first pixel, and no rate of exit can undo an overlap that is
-      // already there at scale 0. From the gap's centre both words start
-      // half a gap clear of the box's edges — and each is pushed at exactly
-      // its own edge's speed (see the word tweens), so that half gap holds
-      // for the whole growth and the box never touches the type.
-      //
-      // The panel is the full viewport scaled about this point, so its
-      // edges still all reach the screen's edges together at scale 1. Set
-      // straight on the style rather than tweened: gsap smooths a change of
-      // origin with a compensating translate, which at scale 0 is the
-      // wrong thing.
-      const wordRight = () =>
-        lockup.offsetLeft + words[0].offsetLeft + words[0].offsetWidth;
-      const wordLeft = () => lockup.offsetLeft + words[1].offsetLeft;
-      const gapCentre = () => (wordRight() + wordLeft()) / 2;
-      const placeOrigin = () => {
-        panel.style.transformOrigin = `${gapCentre()}px 50%`;
+      // The box grows from the MIDDLE of the screen, once the words are
+      // out of its way: see boxPlanOf. One scrubbed number, `growth`,
+      // drives both the words' exit and the box's scale, so the two
+      // cannot drift apart under the scrub; the plan is re-read from the
+      // layout on every refresh.
+      const growth = { progress: 0 };
+      let plan = boxPlanOf(root);
+      const replan = () => {
+        plan = boxPlanOf(root);
       };
-      // Where each word has to be at scale 1: exactly one edge's travel
-      // away, which leaves it half a gap past the side of the frame.
-      const outLeft = () => -gapCentre();
-      const outRight = () => window.innerWidth - gapCentre();
+      const applyGrowth = () => {
+        const p = growth.progress;
+        gsap.set(panel, { scale: Math.max((p - plan.startAt) / (1 - plan.startAt), 0) });
+        gsap.set(words[0], { x: -plan.travel * p });
+        gsap.set(words[1], { x: plan.travel * p });
+      };
       const tl = gsap.timeline({
         defaults: { ease: "none" },
         onUpdate: () => {
@@ -597,7 +627,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           // This used to carry all the smoothing at 1.4, which on top of an
           // eased scroll would smooth twice and read as the scene dragging
           // behind the page. Enough is left to take the edge off.
-          onRefreshInit: placeOrigin,
+          onRefreshInit: replan,
           scrub: prefersReducedMotion ? true : 0.3,
           start: "top top",
           trigger: scrollSpace,
@@ -614,8 +644,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // the full scroll and every cue landed ~1.4x later than it reads here,
       // with the robot cutting in before the name had finished leaving.
       tl.set({}, {}, 1);
-      placeOrigin();
-      gsap.set(panel, { scale: 0 });
+      gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
       tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
         // Up to the middle over the WHOLE of the tree's fall, on the TREE'S
         // OWN EASE so the two move as one thing. Sharing only a start and an
@@ -642,33 +671,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { halftone: 0, duration: PANEL_GROW_AT, ease: "power1.in" },
           0,
         )
-        // The box grows out of NOTHING — it starts at scale 0 and is never
-        // set to any other size, so there is nothing to pop. The ease is
-        // linear on purpose: an ease with no slope at its start (power2.inOut,
-        // what this was) leaves the box under 1% of the screen for the first
-        // 23vh, which reads as a gap rather than a growth. Linear crosses
-        // 20px within about 4vh and climbs steadily from there.
+        // The growth, linear on the scroll: the box grows out of NOTHING —
+        // it starts at scale 0 and is never set to any other size, so there
+        // is nothing to pop — and the ease is linear on purpose: an ease
+        // with no slope at its start leaves the box under 1% of the screen
+        // for tens of vh, which reads as a gap rather than a growth. The
+        // words leave first, pushed outward at the pace the box's edges
+        // will have; the box opens at the middle once "Kevin" is a tenth
+        // of the screen clear of it, and from then on a word and its edge
+        // move as one thing, that tenth between them to the last frame.
         .to(
-          panel,
-          { duration: PANEL_GROW_DURATION, ease: "none", scale: 1 },
-          PANEL_GROW_AT,
-        )
-        // Pushed apart by the box, at the box's own pace: the same linear
-        // ease over the same duration, each word travelling exactly as far
-        // as the edge of the box nearest it. A word and its edge therefore
-        // move as one thing, and the half gap between them at the first
-        // pixel of growth is the half gap between them at the last. They
-        // used to accelerate out ahead of the box (power2.in over half the
-        // growth), which put them clear early but let the box open under
-        // the type while they were still gathering speed.
-        .to(
-          words[0],
-          { x: outLeft, duration: PANEL_GROW_DURATION, ease: "none" },
-          PANEL_GROW_AT,
-        )
-        .to(
-          words[1],
-          { x: outRight, duration: PANEL_GROW_DURATION, ease: "none" },
+          growth,
+          {
+            progress: 1,
+            duration: PANEL_GROW_DURATION,
+            ease: "none",
+            onUpdate: applyGrowth,
+          },
           PANEL_GROW_AT,
         )
         // The box's growth as a number the stage can cut on: the same
@@ -903,7 +922,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     // viewport to its bottom at the bottom.
     const heroStart = documentTop(scrollSpace);
     const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
-    const growStart = heroStart + heroLength * PANEL_GROW_AT;
+    // The box's first pixel: a way into the growth window, after the words
+    // have made room for it (boxPlanOf).
+    const growStart =
+      heroStart +
+      heroLength * (PANEL_GROW_AT + PANEL_GROW_DURATION * boxPlanOf(rootRef.current).startAt);
     const pageEnd = heroStart + heroLength;
     const narrationSpace = narrationSpaceRef.current;
     // The last frame of the stage anyone sees is where the black shuts:
@@ -1030,9 +1053,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         {children}
       </div>
 
-      {/* The next page's panel: exactly the stage, grown by the scroll
-          timeline from the gap between the name's two words (the timeline
-          sets the origin from the laid-out type). Above the canvas,
+      {/* The next page's panel: exactly the stage, grown from the centre
+          by the scroll timeline once the name has made room. Above the canvas,
           below the type layer. Inside it, The Thinker: its own canvas,
           scaled with the panel. */}
       <div
