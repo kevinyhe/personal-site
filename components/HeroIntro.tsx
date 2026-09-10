@@ -19,6 +19,8 @@ import ThinkerStage, {
 } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
+import SakuraStage from "@/components/SakuraStage";
+import { makeNarrationTree } from "@/components/sakuraTree";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
@@ -1135,19 +1137,34 @@ export default function HeroIntro({ children }: HeroIntroProps) {
               Its own height is what extends the pin container, so the
               statue stays behind it for exactly as long as there are words,
               and the padding is the beat before the first line and after
-              the last. relative + z so it paints over the sticky stage,
-              which is positioned and would otherwise cover it. */}
+              the last. relative so it paints over the sticky stage (later
+              in the tree, so it wins), but NO z-index: a z-index would make
+              this block a stacking context, and the tree's canvas inside it
+              (SakuraStage, fixed, mix-blend-lighten) would then blend with
+              nothing and paint its black frame over the statue — measured
+              as a black screen the moment the narration came within a
+              screen of the fold. Without one the canvas lightens the stage
+              itself, and its black adds nothing. */}
           <div
-            className="relative z-10 px-6 py-[45vh] text-center text-[#f0f0f0] sm:px-16"
+            className="relative px-6 py-[45vh] text-center text-[#f0f0f0] sm:px-16"
             id="info"
             ref={narrationSpaceRef}
           >
             <h2 className="sr-only">About</h2>
-            <Narration stage>
-              {HERO_NARRATION.map((lines, index) => (
-                <Stanza center key={index} lines={lines} slide />
-              ))}
-            </Narration>
+            {/* The intro's tree behind the words: its own stage, booted as
+                this block comes within a screen of the fold and gated on
+                it. The stage's canvas is fixed and z-0 in this block's own
+                stacking context (the block is z-10), so it paints over the
+                black the scrim leaves and under the lines, which sit at
+                z-[1] for exactly that reason. */}
+            <SakuraStage elements={[makeNarrationTree]} gateSelector="#info" />
+            <div className="relative z-[1]">
+              <Narration stage>
+                {HERO_NARRATION.map((lines, index) => (
+                  <Stanza center key={index} lines={lines} slide />
+                ))}
+              </Narration>
+            </div>
           </div>
         </div>
       </div>
