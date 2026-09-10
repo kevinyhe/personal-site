@@ -1,7 +1,9 @@
 /**
  * The VEX robot's entrance: a reverse-entry drift computed by a small rigid
  * body simulation, baked to frames the stage plays back. Pure TypeScript, no
- * DOM, no three.js — importable from Node for offline auditing.
+ * DOM, no three.js of its own (the one import, robotConstants, brings
+ * three's Vector3 for a type the drift never touches) — importable from
+ * Node for offline auditing.
  *
  * World and units:
  * - Distances are robot lengths (1 = one robot); the scene applies scale.
@@ -59,6 +61,8 @@
  *   where it came from and the camera, which pans one way the whole run,
  *   ends up chasing it.
  */
+
+import { DRIFT_FINISH as PARKED_FINISH } from "@/components/robotConstants";
 
 export type RobotDriftFrame = {
   /** Robot heading, radians, 0 along +z (toward camera), increasing counter-clockwise seen from above. */
@@ -612,6 +616,27 @@ const RUN = (() => {
  * off square, at a dead stop.
  */
 export const DRIFT_FINISH: { heading: number; position: [number, number] } = RUN.finish;
+
+// ThinkerStage parks its outro camera on a written-down copy of the finish
+// (robotConstants.DRIFT_FINISH) rather than importing this module, so the
+// home page never runs the simulation above. Retuning the run without
+// updating the copy would put the parked camera a few degrees off square
+// and nothing would say so; this does, whenever the drift is loaded (the
+// outro mounting, or a Node audit).
+{
+  const [x, z] = RUN.finish.position;
+  const drift = Math.max(
+    Math.abs(RUN.finish.heading - PARKED_FINISH.heading),
+    Math.abs(x - PARKED_FINISH.position[0]),
+    Math.abs(z - PARKED_FINISH.position[1]),
+  );
+  if (drift > 1e-6) {
+    console.warn(
+      `robotDrift: the run finishes at ${JSON.stringify(RUN.finish)}, but ` +
+        `robotConstants.DRIFT_FINISH says ${JSON.stringify(PARKED_FINISH)}; update it.`,
+    );
+  }
+}
 
 /**
  * Ball pickups: the moment the intake takes each ball, and the ground
