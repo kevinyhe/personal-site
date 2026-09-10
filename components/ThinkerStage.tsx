@@ -1323,18 +1323,18 @@ function StageLights({
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
     if (ambientRef.current) ambientRef.current.intensity = 0.01 * statueLight;
-    if (skyRef.current) skyRef.current.intensity = 0.13 * statueLight;
+    if (skyRef.current) skyRef.current.intensity = 0.2 * statueLight;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
       keyLightRef.current.intensity = (20.5 + breakup * 5.5 + pulse) * statueLight;
       // The cone opens as the pieces spread, so none fly out of the light.
       keyLightRef.current.angle = 0.36 + breakup * 0.3;
     }
-    if (fillLightRef.current) fillLightRef.current.intensity = 1.0 * statueLight;
+    if (fillLightRef.current) fillLightRef.current.intensity = 1.2 * statueLight;
     if (rimLightRef.current) {
       rimLightRef.current.intensity = (4.2 + breakup * 2.8) * statueLight;
     }
-    if (bounceLightRef.current) bounceLightRef.current.intensity = 0.25 * statueLight;
+    if (bounceLightRef.current) bounceLightRef.current.intensity = 0.35 * statueLight;
   });
 
   return (
@@ -1344,7 +1344,7 @@ function StageLights({
           only the four punctual lights, the brow, eye socket and nose were
           one solid black wedge.
 
-          0.55 at first, and now 0.13: asked for the figure much darker and
+          0.55 at first, then 0.13, and now 0.20: asked for the figure much darker and
           with much more contrast, which is this light's job to give back
           along with the exposure below. Measured over the panel at 1280x800
           (swiftshader), before -> after: at hero fraction 0.62 the mean
@@ -1360,6 +1360,22 @@ function StageLights({
           ridge and the nose and cheekbone stay separate forms in the
           capture, which is the thing the grain and the roughness bought and
           must not be spent.
+
+          0.20, with the fill at 1.2, the bounce at 0.35, the key's shadow at
+          0.6 and the exposure at 0.85, after "reduce the contrast slightly
+          like in lukebaffait.fr". Slightly is the whole of it: the
+          reference's flying pieces sit at luminance 96 / 165 / 228 (p10 /
+          p50 / p90 of its stone, measured on its own frames at 960 px wide)
+          where ours were 25 / 139 / 200, and going all the way there is the
+          flat grade 30c342c was asked to fix. Measured on the RTX 5060 at
+          1280x800, before -> after: the standing figure 21 / 139 / 203 ->
+          28 / 150 / 205, its spread 182 -> 177; the head crop on the opening
+          shot (brow, eye socket, nose) 20 / 103 / 202 -> 25 / 108 / 204 with
+          the share of it under luminance 30 — the black wedge — 38% -> 28%,
+          so the forms are still cut by shadow; the flying pieces 25 / 139 /
+          200 -> 50 / 155 / 202, their spread 175 -> 152 and the share of
+          them under 30 22% -> 10%. Most of that last one is the cut faces,
+          not this light: see the emissive in marbleMaterials.
 
           A hemisphere light and not an environment map: a PMREM'd dome did
           the same job visually but sampled per fragment, and this page is
@@ -1391,16 +1407,18 @@ function StageLights({
         position={[-3.4, 3.2, 2.8]}
         shadow-bias={-0.0005}
         // Held back from full, because the figure receives now and this is
-        // the dominant light (intensity 20.5 against a 0.13 hemisphere and a
-        // 1.0 fill). At full strength the cloud overhead put the whole chest
+        // the dominant light (intensity 20.5 against a 0.20 hemisphere and a
+        // 1.2 fill). At full strength the cloud overhead put the whole chest
         // into near-black — measured against the same build with the figure
         // not receiving, at 1280x800, hero fraction 0.85: 66,600 pixels
         // darkened by a mean of 97 levels of 255 — which reads as the body
         // being unlit rather than as pieces passing over it. At 0.55 the
         // same frame is 63,666 pixels at a mean of 31, so the shadow covers
         // the same ground at a third of the depth and the marble under it
-        // keeps its own modelling. 0.7 is between the two.
-        shadow-intensity={0.7}
+        // keeps its own modelling. 0.7 was between the two; 0.6 with the
+        // grade above, since a piece crossing another piece was one of the
+        // places the cloud went solid black.
+        shadow-intensity={0.6}
         // 1024, from 2048. It was a quarter of the texels for no visible
         // change on the 1280x800 capture back when the only receiver was
         // the floor — a soft blob under the figure, and the floor is not
@@ -1641,9 +1659,9 @@ function ChunkedFigure({
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
       // The tumble. `turn` used to be `Math.min(travel, 1.5)` alone, and the
-      // cap was not what held it back: with travelWindow at 0.55 and `shown`
-      // never past about 0.34 while the stage is drawn, travel reaches 0.84
-      // at the very most on screen and 1.25 at the end of the whole run, so
+      // cap was not what held it back: with travelWindow at 0.35 and `shown`
+      // never past about 0.51 while the stage is drawn, travel reaches 1.05
+      // at the very most on screen and 1.19 at the end of the whole run, so
       // 1.5 never binds. What held it back is that travelAt decelerates
       // (x(2-x), slope 0 at x=1): a piece turns while it is leaving and then
       // sets into a pose. Measured on the bake, the spin magnitudes are
@@ -1981,14 +1999,19 @@ function ThinkerCanvas({
       gl={{ antialias: true, powerPreference: "low-power" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        // 1.18 before: the cleanest control there is for "darker", because
-        // ACES rolls the highlights off rather than clipping them, so the
-        // whole figure comes down without the lit side flattening. The fill
-        // and bounce lights came down with it (1.8 -> 1.0, 0.6 -> 0.25) and
-        // the key went UP (17.5 -> 20.5): that is what makes it more
-        // contrast rather than only less light. See the hemisphere light
-        // above for the measurements.
-        gl.toneMappingExposure = 0.82;
+        // 1.18 before, then 0.82: the cleanest control there is for "darker",
+        // because ACES rolls the highlights off rather than clipping them, so
+        // the whole figure comes down without the lit side flattening. The
+        // fill and bounce lights came down with it (1.8 -> 1.0, 0.6 -> 0.25)
+        // and the key went UP (17.5 -> 20.5): that is what makes it more
+        // contrast rather than only less light.
+        //
+        // 0.85 now, with the fill and bounce back up a little (1.0 -> 1.2,
+        // 0.25 -> 0.35) and the hemisphere at 0.20: "reduce the contrast
+        // slightly", a fifth of the way back toward the grade 30c342c
+        // replaced, not the whole way. See the hemisphere light above for the
+        // measurements.
+        gl.toneMappingExposure = 0.85;
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
         stageProbe.renderer = gl;
