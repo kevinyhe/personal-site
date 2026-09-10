@@ -456,6 +456,15 @@ export type BuildSolidChunkOptions = {
    */
   releaseFrom?: [number, number, number];
   /**
+   * How distance from `releaseFrom` is measured for the order: a step
+   * UP counts `up` times, a step down `down` times, a step in depth (z)
+   * `across` times, a sideways step once. With `up` above 1 the parts
+   * above the origin come later than the parts level with it — so a
+   * break that starts at a shoulder spreads across the body before it
+   * reaches the head. All 1 when left out.
+   */
+  releaseWeights?: { up: number; down: number; across: number };
+  /**
    * A direction in figure units: when set, the break is a plane sweeping
    * along it — pieces come loose in order of how far along this axis they
    * sit, from the far end back. Given the flight's own direction reversed,
@@ -1989,7 +1998,14 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // order is how far its seed sits from where the break is watched from
   // (the camera's opening eye; the blow itself when none is given).
   const releaseFrom = options.releaseFrom ? new THREE.Vector3(...options.releaseFrom) : impact;
-  const farthest = Math.max(...kept.map((point) => point.distanceTo(releaseFrom)), 1e-6);
+  const weights = options.releaseWeights ?? { across: 1, down: 1, up: 1 };
+  const spreadFrom = (point: THREE.Vector3) => {
+    const dx = point.x - releaseFrom.x;
+    const dy = (point.y - releaseFrom.y) * (point.y > releaseFrom.y ? weights.up : weights.down);
+    const dz = (point.z - releaseFrom.z) * weights.across;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  };
+  const farthest = Math.max(...kept.map((point) => spreadFrom(point)), 1e-6);
   const sweep = options.releaseSweep
     ? new THREE.Vector3(...options.releaseSweep).normalize()
     : null;
@@ -2005,7 +2021,7 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   const rankOf = (point: THREE.Vector3) =>
     sweep
       ? (point.dot(sweep) - sweepMin) / Math.max(sweepMax - sweepMin, 1e-6)
-      : point.distanceTo(releaseFrom) / farthest;
+      : spreadFrom(point) / farthest;
   const seeds: Seed[] = kept.map((point) => ({
     phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
     point,
