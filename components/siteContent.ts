@@ -181,15 +181,11 @@ export const HERO_NARRATION: {
     { indent: 0, runs: [{ text: "The Actually Company", voice: "strong" }] },
   ],
   [
-    { indent: 12, runs: [{ text: "Before that,", voice: "soft" }] },
-    { indent: 0, runs: [{ text: "four seasons of VEX" }] },
-    { indent: 14, runs: [{ text: "and a summer" }] },
-    { indent: 6, runs: [{ text: "in San Francisco" }] },
-  ],
-  [
-    { indent: 16, runs: [{ text: "Also", voice: "soft" }] },
-    { indent: 0, runs: [{ text: "computer engineering", voice: "strong" }] },
-    { indent: 10, runs: [{ text: "at the University" }] },
+    { indent: 16, runs: [{ text: "Currently studying", voice: "soft" }] },
+    { indent: 0, runs: [{ text: "Computer Engineering", voice: "strong" }] },
+    // "at", not "@": the display serif is a DEMO cut that draws a flower
+    // for @ (see the note at the top of components/Narration.tsx).
+    { indent: 10, runs: [{ text: "at University" }] },
     { indent: 14, runs: [{ text: "of Toronto" }] },
   ],
 ];
