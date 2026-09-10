@@ -101,16 +101,17 @@ function boxPlanOf(root: HTMLElement | null) {
 const clampStart = (value: number) => Math.min(Math.max(value, 0), 0.9);
 /**
  * How far a narration line is carried sideways, as a fraction of the
- * viewport's width, either side of its centred rest.
+ * viewport's width, either side of its centred rest, alternate lines the
+ * opposite way.
  *
- * Two percent: a fifth of a screen width of travel at 0.07 was right for a
- * staircase set in a column beside the figure, where the motion had a
- * margin to happen in. The lines are now centred over the statue, which
- * stays in the middle of the frame, and the same travel would walk them
- * off it — this is enough that the block is never quite still, and no
- * more.
+ * It was 0.07 for a staircase in a column beside the figure, 0.02 once
+ * the lines were centred ("much less"), and is 0.045 now: asked for more
+ * of the movement portfolio-2021.etiennepharabot.fr's intro has, whose
+ * lines are carried sideways by the scroll at alternating speeds, without
+ * scattering their resting positions. Nine percent of the width of travel
+ * per line, centred, keeps every line on the screen.
  */
-const NARRATION_DRIFT = 0.02;
+const NARRATION_DRIFT = 0.045;
 /**
  * And less again on a phone, where 2% of the width is under 8px and the
  * lines already fill the screen: measured before, the leftmost line sat
@@ -118,7 +119,7 @@ const NARRATION_DRIFT = 0.02;
  * is clipped rather than added to scrollWidth, so an overflow check does
  * not catch it.
  */
-const NARRATION_DRIFT_NARROW = 0.01;
+const NARRATION_DRIFT_NARROW = 0.02;
 const narrationDrift = () =>
   window.innerWidth *
   (window.innerWidth < 700 ? NARRATION_DRIFT_NARROW : NARRATION_DRIFT);
