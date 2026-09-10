@@ -949,17 +949,17 @@ function CameraRig({
     // Linear in the scroll: a slow, even zoom-out and pan.
     const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
     const compact = size.width < 720;
-    // The pull-out holds the tight framing for a beat — long enough to
-    // watch the hand itself come apart — then opens through the middle of
-    // the run and settles at the end. Smoothstep, not linear.
+    // The pull-out is LINEAR on the scroll, like the swing: it used to
+    // ride a smoothstep of the breakup (a held beat on the hand, then an
+    // opening that accelerated through the middle), which read as the
+    // camera speeding up along with the exponential release of the
+    // pieces. The release keeps its ramp; the camera moves evenly.
     //
     // Reduced motion pins breakup to 0, which is the hand close-up. That
     // would strand those users in an extreme close-up they can never move
     // out of, so they get the settled wide framing instead: the figure
     // whole, from the far end of the same arc.
-    const open = reducedMotion
-      ? 1
-      : breakup * breakup * (3 - 2 * breakup);
+    const open = reducedMotion ? 1 : breakup;
     const distance = compact
       ? THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, open)
       : THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE, CAMERA_DISTANCE_BROKEN, open);

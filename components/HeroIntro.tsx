@@ -1168,8 +1168,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
             />
             {/* The loose petals the work sections have, falling out of the
                 tree's lowest twigs (it publishes them the way the bough
-                does) and off the top edge otherwise. */}
-            <PetalDrift gateSelector="#info" />
+                does) and off the top edge otherwise. Mounted only once the
+                scrim has shut over the statue: the field is fixed and
+                full-viewport, and would otherwise rain over the statue's
+                last frames. */}
+            {scrimCovered ? <PetalDrift gateSelector="#info" /> : null}
             <div className="relative z-[1]">
               <Narration stage>
                 {HERO_NARRATION.map((lines, index) => (
