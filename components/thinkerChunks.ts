@@ -580,7 +580,9 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  */
 // 9: the release texture, the flight scatter and its repairs, the spin
 // spread (all option-gated, but the order's guard was restructured).
-export const FRACTURE_VERSION = 9;
+// 10: cut-face normals rebuilt from the bent triangles, seal lids wound
+// outward (same pieces, same release order; only the normals differ).
+export const FRACTURE_VERSION = 10;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
