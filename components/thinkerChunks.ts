@@ -337,6 +337,66 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // 0.201 against 0.306, and the 40-degree plane widens the gap on its own
   // (a downward plane reaches the head first anyway).
   earlyBand: { above: 0.84, toward: 0.27 },
+  // WHEN pieces go, within the plane: patches and small clusters instead of
+  // a clean line. Asked for "more natural selection of when pieces break"
+  // after the order above measured 0.990 against the sweep, which read as
+  // mechanical.
+  //
+  // What lukebaffait.fr does, measured off its hero (a pre-rendered
+  // 341-frame JPEG sequence the page scrubs with the scroll): the frame at
+  // which each block of the figure first changes, with the camera tracked
+  // out, fits a straight front with a rank correlation of 0.62 (0.70 at
+  // blocks the size of its pieces), 0.65 over the first quarter of the
+  // front alone. What is left after the fit correlates 0.53 between blocks
+  // a piece apart, 0.34 at one and a half, 0.13 at two to three, 0 past
+  // that: patches of a few pieces going together. It does not accelerate:
+  // 5-25% of the area goes in 41 frames, 25-50% in 24, 50-75% in 24, 75-95%
+  // in 49.
+  //
+  // `grain` is about one of the pieces seen breaking (they are ~0.2 across)
+  // and `shared` puts 70% of the unevenness in patches. At a grain of 0.28
+  // (a piece and a half, the reference's own patch size) the patches were
+  // big enough to hold back the whole chest while the head went: the
+  // front's path, fitted on pixels with the camera held still, steepened
+  // from 42-45 degrees below horizontal to 53-54. At 0.2 it measured 42-43.
+  // `amount` is held to what keeps the break cohesive, since the cohesive
+  // front was asked for over several rounds: on the bake the plane's rank
+  // correlation is 0.962 over the body and 0.925 over the part seen to
+  // break (0.990 / 0.970 without it). More costs the flights: at grain 0.28,
+  // 0.12 and 0.14 put 7 and 10 flights a quarter or more inside standing
+  // marble at some moment, against 4 at 0.1. The reference, measured on
+  // pixels, scores about 0.6-0.7 on the same test. The clusters take the
+  // spread of the gaps between releases over the visible break from 0.12
+  // to 0.31 (coefficient of variation).
+  //
+  // What it costs the asks above, on the bake with the scatter below: the
+  // first 45 pieces off average z 0.625 (0.610 without), 43 of 45 forward
+  // of z 0.4 (41); head percentile 0.168 against mid torso 0.403 (0.174 /
+  // 0.397); plinth 0.790, earliest 0.555 (0.790 / 0.557); the front's path
+  // fitted on screen 46 degrees below horizontal (44), 42-43 on pixels
+  // (42-45); pieces released by the time the statue stops being drawn, 91
+  // (91).
+  releaseTexture: { amount: 0.1, grain: 0.2, shared: 0.7, taper: 0.15, clusters: 3 },
+  // WHICH WAY pieces fly: a smooth field of turns over the figure, so pieces
+  // near each other fly nearly parallel and pieces apart differ. See
+  // scatterFlights for the reference's numbers (13 / 20 / 38 degrees off its
+  // cloud's mean, median / p75 / p90, where ours were 4 / 10 / 12), and the
+  // repairs in planReleaseOrder and straightenCrossingFlights for why only
+  // part of it survives: before them the first 120 pieces off measured
+  // 13 / 21 / 33 degrees on screen, after them 6 / 11 / 22 against the old
+  // 3.5 / 5 / 7 (computed from the bake through the stage's camera). The
+  // turns taken back are the ones that flew pieces from the shoulder down
+  // through the body or through each other, so what survives leans up: the
+  // seen stream's mean direction lifts by 5 degrees. Still straight paths.
+  flightScatter: { tilt: 0.4, yaw: 0.2, grain: 0.8, shares: [0.97, 0, 0.03] },
+  // The pieces' spin rates spread out: most turn a little slower, a few
+  // clearly faster. The reference's pieces turned, in the picture plane,
+  // 0.08 / 0.23 / 0.62 / 1.41 degrees a frame pair at p25 / median / p75 /
+  // p90; ours measured the same way turned 0.11 / 0.30 / 0.67 / 1.31, with
+  // the baked spin itself tight (p75 over p25 1.57). This takes the baked
+  // spin to p10 0.119, median 0.216, p90 0.394 radians, from 0.149 / 0.267
+  // / 0.356: a lower middle and a longer top, the reference's shape.
+  spinSpread: [0.6, 1.5],
   // The cells are graded along the order rather than around a point: see
   // the spacing notes below.
   gradeAlongSweep: true,
@@ -518,7 +578,9 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  * lives) and a version of the cut itself, bumped by hand when the fracture
  * code changes what it makes from the same options.
  */
-export const FRACTURE_VERSION = 8;
+// 9: the release texture, the flight scatter and its repairs, the spin
+// spread (all option-gated, but the order's guard was restructured).
+export const FRACTURE_VERSION = 9;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
