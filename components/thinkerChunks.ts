@@ -198,12 +198,41 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // the plane into depth therefore starts the break at the FRONT and
   // FLATTENS its path at the same time.
   //
+  // THE ANGLE ASKED FOR IS 40 DEGREES OFF HORIZONTAL ON SCREEN, after
+  // lukebaffait.fr, whose break runs as a clear diagonal across the frame.
+  // Not 40 degrees in the figure's axes: in the figure's own frame this
+  // line is 55 degrees off horizontal, and the two numbers are unrelated
+  // because of the projection above.
+  //
   // Against that projection, over the pieces the plane still owns (the
   // body, less the base on `lateFrom` and less the head on `earlyBand`),
-  // the BAKED release correlates -0.83 with screen x and +0.26 with
-  // screen y, and the plane's own front travels 0.7 degrees ABOVE
-  // horizontal — against -0.93 / +0.54 and 8.7 degrees BELOW at z -0.570
-  // and y -0.244. Half the downward travel, still sideways.
+  // the BAKED release correlates -0.64 with screen x and +0.75 with screen
+  // y, and the plane's own front travels 39.9 degrees BELOW horizontal:
+  // upper right to lower left. Fitting the baked release as a linear
+  // function of screen x and y over those same pieces — which is the angle
+  // the eye is actually offered — puts the front's path at 46.3 degrees
+  // below horizontal and the CRACK, the line between gone and still there,
+  // at 43.7 degrees from horizontal. The two are complements, so near 45
+  // it does not matter which of them "40 degrees" meant; at the flat sweep
+  // they were 2.8 and 87.2, a front sliding sideways behind a vertical
+  // edge. That is the change: the edge rotated 43 degrees. Going DOWN and not up is the only sign
+  // available — the sweep has to reach the plinth, `lateFrom` holds the
+  // plinth back rather than reordering it, and a statue that was dropped
+  // opens downward — and it is the sign the reference runs.
+  //
+  // The three rounds this line went through, kept because each set of
+  // numbers is what the next was bought against:
+  //   z -0.570, y -0.244:  -0.93 / +0.54,  8.7 deg BELOW horizontal
+  //   z -1.250, y -0.200:  -0.83 / +0.26,  0.7 deg ABOVE  (asked flatter)
+  //   z -1.870, y -2.010:  -0.64 / +0.75, 39.9 deg BELOW  (asked for 40)
+  // The sideways correlation HAS to fall going from flat to 40 degrees:
+  // at 40 degrees only cos 40 = 0.77 of the travel is sideways at all.
+  // -0.64 is what a clean 40-degree diagonal measures, not a loss of the
+  // leftward read; the front still crosses the frame right to left. (The
+  // two correlations taken together give atan2(0.75, 0.64) = 49.6 degrees,
+  // steeper than the travel angle, because they are rank correlations over
+  // a figure that is taller than it is wide; the travel angle is the one
+  // that says what the front's path on screen looks like.)
   //
   // Two other counts, because they read worse and the reason matters.
   // Over the whole BODY the numbers are -0.33 / +0.40 against -0.92 /
@@ -215,13 +244,24 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // does. Neither is the plane's path, which is what "sideways, not down"
   // is about; the plane-only figures above are.
   //
-  // WHERE IT STARTS is the depth term's other job. The first 45 pieces off
-  // now average z 0.704 against the figure's own 0.325, with ALL 45
-  // forward of z 0.4 and not one behind z 0.15; at z -0.570 it was 0.380
+  // WHERE IT STARTS is the depth term's other job, and it is why the 40
+  // degrees was bought by growing y AND z together rather than by adding y
+  // alone. At [-0.887, -1.6, -1.25] — y alone, the same 40 degrees — the
+  // first 45 pieces fall to mean z 0.540 with 33 of 45 forward of z 0.4
+  // and two behind z 0.15: the plane is steep enough that it stops caring
+  // which way the figure faces. Scaling both terms holds the depth's share
+  // of the axis, and at [-0.887, -2.01, -1.87] the first 45 are back to
+  // mean z 0.599, 38 of 45 forward, none behind.
+  //
+  // On the bake the first 45 pieces off average z 0.610 against the figure's
+  // own 0.322, with 41 of 45 forward of z 0.4 and not one behind z 0.15;
+  // the flat version was 0.704 and 45 of 45, and at z -0.570 it was 0.380
   // against 0.246, with 20 forward and 8 behind, and the break was still
-  // read as opening on the shoulder BLADE rather than the chest. Their
-  // mean y is 0.96: the front of the chest and of the left shoulder, which
-  // is where the sweep is meant to enter.
+  // read as opening on the shoulder BLADE rather than the chest. The four
+  // pieces that are no longer forward of 0.4 are the cost of the 40
+  // degrees and they are the whole of it. Their mean y is 1.22, up from
+  // 0.96: a plane this steep enters at the CROWN of the left shoulder
+  // rather than across the chest, and runs down the front from there.
   //
   // The earlier record of this line, kept because it is what the numbers
   // above were bought against: the plane was 13 degrees off horizontal IN
@@ -242,18 +282,21 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // hands, `earlyBand` does the same for the head, and the plane is free to
   // be as flat as it is.
   //
-  // The y term is -0.200 rather than the -0.244 it was: with the depth term
-  // this large the plane's screen path already sits a shade above
-  // horizontal, and taking more y out slides the START down the figure (at
-  // y -0.10 the first 45 average y 0.83, no longer the shoulder) for no
-  // further gain.
+  // The y term went -0.244, then -0.200 (with the depth term this large the
+  // plane's screen path already sat a shade above horizontal, and taking
+  // more y out slid the START down the figure — at y -0.10 the first 45
+  // averaged y 0.83, no longer the shoulder), and now -2.010, because the
+  // ask changed from "flatter" to a 40-degree diagonal. Screen travel
+  // against the y term at z -1.25: -0.2 gives -0.7 deg, -0.8 gives 20.7,
+  // -1.2 gives 32.0, -1.6 gives 40.7. Then z was scaled with it to hold the
+  // front-opening, see above.
   //
   // (An earlier plane sweep was tried and always started at the head.
   // That was a level axis, and it was also before the flight's constraint
   // graph was graded — ungraded, the graph overrode any sweep outright.
   // A spread from the camera's opening eye, OPENING_EYE, came before
   // that.)
-  releaseSweep: [-0.887, -0.2, -1.25],
+  releaseSweep: [-0.887, -2.01, -1.87],
   // The base and the legs are ordered after the whole body, whatever the
   // plane says: 0.4 of the figure's height is the same floor `legsFrom`
   // uses, y = -0.31. That is what lets the plane above be flat. Measured
@@ -261,8 +304,9 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // twelve pieces stay at the left shoulder down to about 12 degrees of
   // tilt and slide to mid-torso by 5; without it they had left the
   // shoulder by 20 degrees and were at the knee by 10. On the bake the
-  // plinth's mean release percentile is 0.78 and the earliest plinth piece
-  // is at 0.57 — it is still the last thing to go, as it was.
+  // plinth's mean release percentile is 0.790 and the earliest plinth piece
+  // is at 0.557 — it is still the last thing to go, as it was, and the
+  // 40-degree plane did not move it (0.78 / 0.57 at the flat sweep).
   lateFrom: 0.4,
   // The head, ordered BEFORE the plane reaches it. Above 0.84 of the
   // figure's height (y = 1.05) and past 0.27 of its width from the
@@ -287,9 +331,11 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // overlaps the body's on purpose: the head comes apart while the front
   // is still crossing the shoulder and the upper chest, so it reads as the
   // break continuing upward, not as a separate event. Measured on the
-  // bake: head percentile 0.20 (83 pieces at y > 1.05, x < -0.6), mid
-  // torso 0.31 (81 pieces at 0.2 < y < 0.85, x > -0.6). Before it was 0.45
-  // against 0.24 — the wrong way round.
+  // bake: head percentile 0.174 (80 pieces at y > 1.05, x < -0.6), mid
+  // torso 0.397 (48 pieces at 0.2 < y < 0.85, x > -0.6). Before the band it
+  // was 0.45 against 0.24 — the wrong way round; at the flat sweep it was
+  // 0.201 against 0.306, and the 40-degree plane widens the gap on its own
+  // (a downward plane reaches the head first anyway).
   earlyBand: { above: 0.84, toward: 0.27 },
   // The cells are graded along the order rather than around a point: see
   // the spacing notes below.
@@ -324,8 +370,12 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // upper body, and the plinth, the legs and the far side are cut coarse:
   // they are drawn intact for the whole shot and never seen to break.
   // 0.075/0.155 graded around the shoulder was 476 pieces, mean radius
-  // 0.230 and 0.260 among the first 45 released; this is 506 pieces, mean
-  // radius 0.224 and 0.198 among the first 45, in a 50 s cut.
+  // 0.230 and 0.260 among the first 45 released; at the flat sweep this was
+  // 493 pieces, mean radius 0.217 and 0.162 among the first 45. At the
+  // 40-degree sweep it is 421 pieces, 0.223 and 0.169, in a 54 s cut: the
+  // order changed, so the fine end of the grading moved with it and 72
+  // coarse pieces in the never-seen part of the figure merged away. The
+  // pieces the break opens with are the same size they were.
   //
   // The near end only bites with the two settings below it. At 4200
   // candidates and variationNear 1 (the field at full strength), halving
@@ -468,7 +518,7 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  * lives) and a version of the cut itself, bumped by hand when the fracture
  * code changes what it makes from the same options.
  */
-export const FRACTURE_VERSION = 7;
+export const FRACTURE_VERSION = 8;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
