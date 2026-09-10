@@ -158,8 +158,8 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // 0.07 row is the one to take if the wait stops mattering. The old "~110 seeds and the carve loses cells" wall was
   // measured again: 0.00% of the figure's volume lost at every row up to
   // 205 seeds, 2 dust slivers dropped here (was 1).
-  spacingNear: 0.066,
-  spacingFar: 0.33,
+  spacingNear: 0.055,
+  spacingFar: 0.275,
   // Cells are most of the way to full size about a third of the figure's
   // height away from the blow.
   spacingFalloff: 0.9,
@@ -200,7 +200,7 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // at ~132 seeds with the spacing above, so this is headroom rather than
   // the number it lands on — it is here so a later spacing change cannot
   // quietly double the wait. Was 110; the 0.07 / 0.35 row above needs 180.
-  maxPieces: 240,
+  maxPieces: 320,
   // The hand, placed by hand. The break has to open with the hand itself
   // coming apart into several pieces before anything else moves, and left
   // to the sampler it only ever put two cells there — the third piece to go

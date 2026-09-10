@@ -50,6 +50,10 @@ const PANEL_GROW_AT = TREE_DROP_DURATION;
 // PANEL_GROW_AT moved, and the spacer below is the same height, so the
 // television, the tree's fall and the name's rise keep their exact pacing.
 const HERO_CUT_AT = 0.796;
+// How many times the visible stretch of the stage (the panel's first beat
+// to the black) the break is paced against. 2: the break is half done when
+// the black shuts.
+const BREAK_STRETCH = 2;
 const PANEL_GROW_DURATION = HERO_CUT_AT - PANEL_GROW_AT;
 /**
  * How far a narration line is carried sideways, as a fraction of the
@@ -902,17 +906,20 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     const growStart = heroStart + heroLength * PANEL_GROW_AT;
     const pageEnd = heroStart + heroLength;
     const narrationSpace = narrationSpaceRef.current;
-    // The statue's run ends where the black does: the narration scrim is
-    // shut once the narration's top reaches a fifth of the way down the
-    // viewport (its timeline's `end: "top 20%"`, above), and that is the
-    // last frame of the stage anyone sees. So the break is stretched over
-    // the whole of it — the panel's growth AND the stretch under the
-    // narration — with the camera carrying on its pull-out and swing the
-    // whole way and no cut. It used to end as the box reached the full
-    // screen (HERO_CUT_AT), which is now about half way through.
-    const statueEnd = narrationSpace
+    // The last frame of the stage anyone sees is where the black shuts:
+    // the narration scrim is opaque once the narration's top reaches a
+    // fifth of the way down the viewport (its timeline's `end: "top 20%"`,
+    // above). The break is paced against TWICE that stretch — the panel's
+    // growth and the scroll under the narration, and as much again that
+    // nobody scrolls — so it runs at half speed and is half done, the
+    // camera half way through its pull-out and swing, when the black
+    // closes over it. It used to finish as the box reached the full screen
+    // (HERO_CUT_AT), then at the black; each halving was asked for after
+    // watching it. No cut anywhere in it.
+    const blackAt = narrationSpace
       ? documentTop(narrationSpace) - viewportHeight * 0.2
       : Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
+    const statueEnd = growStart + (blackAt - growStart) * BREAK_STRETCH;
     const end = pageEnd;
     // The story's stretch, which only the camera reads now (and only after
     // a cut, see ThinkerStage): from the break's end to the narration's.
