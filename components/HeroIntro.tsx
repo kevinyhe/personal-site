@@ -19,7 +19,9 @@ import ThinkerStage, {
 } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
+import PetalDrift from "@/components/PetalDrift";
 import SakuraStage from "@/components/SakuraStage";
+import { makeNarrationBlossomMarks } from "@/components/sakuraBlossomMarks";
 import { makeNarrationTree } from "@/components/sakuraTree";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
@@ -1160,7 +1162,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
                 rather than an empty context (see the note on the block).
                 (The work sections' bough-and-dot-field backdrop stood here
                 briefly and was the wrong tree for this part.) */}
-            <SakuraStage elements={[makeNarrationTree]} gateSelector="#info" />
+            <SakuraStage
+              elements={[makeNarrationTree, makeNarrationBlossomMarks]}
+              gateSelector="#info"
+            />
+            {/* The loose petals the work sections have, falling out of the
+                tree's lowest twigs (it publishes them the way the bough
+                does) and off the top edge otherwise. */}
+            <PetalDrift gateSelector="#info" />
             <div className="relative z-[1]">
               <Narration stage>
                 {HERO_NARRATION.map((lines, index) => (
