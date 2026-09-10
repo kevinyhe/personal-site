@@ -136,14 +136,12 @@ const BREAK_END = 0.96;
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
 // The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.2) ends
-// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3), then
-// 6.2 / 7.4. Asked for 150% of "the zoom currently": the break is paced
-// to be half done when the black shuts, so the pull-out is seen only to
-// about half (open ~0.49), where 6.2 gave a distance of 4.2; 10.6 gives
-// 6.3 there, the 150%.
+// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3); asked
+// to zoom out more, it opens to 6.2 / 7.4 from a closer start. (A 150%
+// version, 10.6 / 12.7, was tried and reverted.)
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 10.6;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 12.7;
+const CAMERA_DISTANCE_BROKEN = 6.2;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 7.4;
 // The shot OPENS on the blow — where the figure struck the floor, the point
 // the whole fracture is measured from — and pulls out from there. The
 // position comes from the build itself (`breakOrigin`), turned into world
