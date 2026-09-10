@@ -206,7 +206,22 @@ function buildBudArrays(
   return { normals, positions };
 }
 
-const makeSakuraBlossomMarks: StageElementFactory = () => {
+/**
+ * The narration's marks: the same flowers along the block that carries the
+ * "Hello, I'm Kevin He" lines, kept to the outer margins so they sit beside
+ * the centred type rather than on it. Fractions of that block's box.
+ */
+const NARRATION_MARK_GROUPS: MarkGroup[] = [
+  { selector: "#info", x: 0.06, y: 0.08, depth: -2.6, sizePx: 60 },
+  { selector: "#info", x: 0.93, y: 0.2, depth: -4.0, sizePx: 44 },
+  { selector: "#info", x: 0.1, y: 0.37, depth: -3.2, sizePx: 52 },
+  { selector: "#info", x: 0.95, y: 0.5, depth: -5.4, sizePx: 34 },
+  { selector: "#info", x: 0.05, y: 0.66, depth: -4.6, sizePx: 40 },
+  { selector: "#info", x: 0.9, y: 0.8, depth: -2.8, sizePx: 58 },
+  { selector: "#info", x: 0.12, y: 0.94, depth: -5.0, sizePx: 36 },
+];
+
+function makeBlossomMarks(table: MarkGroup[]): StageElement {
   let mesh: THREE.InstancedMesh | null = null;
   let material: THREE.MeshStandardMaterial | null = null;
   let geometry: THREE.BufferGeometry | null = null;
@@ -226,7 +241,7 @@ const makeSakuraBlossomMarks: StageElementFactory = () => {
   const build = (ctx: StageBuildContext) => {
     const quality: StageQuality = ctx.quality;
     const lowDetail = quality === "low";
-    const groups = lowDetail ? MARK_GROUPS.slice(0, LOW_QUALITY_MARKS) : MARK_GROUPS;
+    const groups = lowDetail ? table.slice(0, LOW_QUALITY_MARKS) : table;
 
     const openGeometry = createSakuraBlossomGeometry(1, lowDetail);
     const budGeometry = createSakuraBlossomGeometry(BUD_OPENNESS, lowDetail);
@@ -418,5 +433,11 @@ const makeSakuraBlossomMarks: StageElementFactory = () => {
   };
   return element;
 };
+
+const makeSakuraBlossomMarks: StageElementFactory = () => makeBlossomMarks(MARK_GROUPS);
+
+/** The narration's own marks, for the stage behind the narration. */
+export const makeNarrationBlossomMarks: StageElementFactory = () =>
+  makeBlossomMarks(NARRATION_MARK_GROUPS);
 
 export default makeSakuraBlossomMarks;
