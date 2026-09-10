@@ -17,8 +17,8 @@ import {
   CAMERA_DISTANCE_CLOSE,
   CAMERA_OFFSET,
   CAMERA_OFFSET_CLOSE,
-  IMPACT_AIM_LIFT,
   OPENING_AIM_POINT,
+  SEEN_AIM_POINT,
   loadThinkerChunks,
   THINKER_BASE_YAW,
 } from "@/components/thinkerChunks";
@@ -140,38 +140,50 @@ export type ThinkerTiming = () => {
 // the camera reads it, and only after a cut (CUT_TO_TREE, off); the
 // pieces stay gone.
 
-// Camera distance to what it looks at: at rest, close on the upper two
-// thirds of the figure; over the breakup it eases slightly closer while
-// dollying to the left (on the scroll, not the pieces' easing), letting
-// the debris stream past the frame's edge, as on lukebaffait.fr.
-// The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.2) ends
-// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3); asked
-// to zoom out more, it opens to 6.2 / 7.4 from a closer start. (A 150%
-// version, 10.6 / 12.7, was tried and reverted.)
+// Where the camera sits before the stage's chunks arrive (the Canvas's
+// initial camera; CameraRig takes over on its first frame).
 const CAMERA_DISTANCE = 5.0;
+// The settled wide shot, the figure whole: reduced motion only now (see
+// CameraRig). It used to be where the break's pull-out was headed, 2.2 ->
+// 6.2 over the whole breakup, which is 2.2 -> 3.56 over the part anyone
+// sees — a 62% pull-out that kept shrinking the pieces as they came off.
 const CAMERA_DISTANCE_BROKEN = 6.2;
 const CAMERA_DISTANCE_COMPACT_BROKEN = 7.4;
-// The shot OPENS on the blow — the hand, the nearest part of the figure to
-// the lens — and pulls out from there. It used to follow the build's own
-// `breakOrigin`, which was the same point; the fracture's grading point
-// has since moved up to the shoulder where the break starts, and the shot
-// must NOT follow it there, because lifted by IMPACT_AIM_LIFT the aim
-// would land above the head. So the aim is OPENING_AIM_POINT, beside the
-// flight direction in thinkerChunks.
-// The opening shot's offset, distance and aim lift live in thinkerChunks,
-// beside the flight direction: the break's order is measured from that
-// same eye, so the two cannot drift apart.
-const CAMERA_DISTANCE_CLOSE_COMPACT = 3.2;
+// The break's lens pulls back by this much between the first release and
+// BREAK_SEEN_AT, linearly, from CAMERA_DISTANCE_CLOSE (thinkerChunks).
+//
+// After lukebaffait.fr, whose close-up pulls back about 26%. Its camera is
+// what makes its break read as big: the pieces are LARGE in the frame,
+// pass the lens, and by the end the frame is fragments. Ours was a figure
+// in the middle distance with a cloud over its head. Measured through the
+// page's own camera at breakup 0.34 (1280x720, every released piece's
+// bounding sphere projected), before -> after this camera, on the same
+// release schedule: released pieces on screen 47 -> 74 of 91, their median
+// diameter 14.5% -> 23% of the frame's width, and the cloud's centre from
+// 0.67 of the way up the frame (over the head, half of it already out of
+// the top) to 0.24. With the even release (RELEASE_ACCELERATION), 104 of
+// 141 on screen. The nearest piece stays 0.54 figure units off the lens up
+// to the frame the stage stops drawing (breakup 0.51), so nothing reaches
+// the near plane (0.1); nor does any piece's projection pass half the
+// frame's width.
+const CAMERA_SEEN_PULL_BACK = 1.26;
+// Where the narration's black starts to rise over the stage, as breakup,
+// at 1280x800 (the scrim's opacity is 0 at 0.331 and 0.05 at 0.363). The
+// camera's move is keyed to it so the framing the move is tuned for is the
+// last one seen in the clear; past it the move carries on the same line
+// under the black, which is shut by 0.51.
+const BREAK_SEEN_AT = 0.34;
+// The narrow (portrait) screen's opening distance: 2.7, from 3.2. Not the
+// wide screen's 0.705 cut (2.26): a 400x860 frame is 0.28 of its distance
+// wide, and at 2.26 the opening frame was a cheek and a shoulder with the
+// face cut off; 2.7 holds the head, the hand and the shoulder. Released
+// pieces on screen at breakup 0.34 (400x860): 55 before, 76 after.
+const CAMERA_DISTANCE_CLOSE_COMPACT = 2.7;
 // The stage group's own rotation. Shared with ChunkedThinker's <group> so
 // the camera and the figure cannot drift apart.
 const STAGE_ROTATION: [number, number, number] = [-0.08, THINKER_BASE_YAW, 0.012];
-// Where the camera aims (figure height, centre 0): the pan runs impact ->
-// chest -> middle as a quadratic Bezier, so the aim ARCS up the figure and
-// back down instead of sliding along a straight line between two points.
-const LOOK_AT_Y = 0.85;
-const LOOK_AT_Y_BROKEN = -0.05;
-const LOOK_AT_MID = new THREE.Vector3(0.05, LOOK_AT_Y + 0.1, 0.35);
-const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
+// What the reduced-motion wide shot looks at: the middle of the figure.
+const LOOK_AT_END = new THREE.Vector3(0, -0.05, 0);
 // How far the camera swings around the figure over the breakup (radians
 // about the vertical, negative = around to the left), aim staying put.
 // The swing rides the RAW breakup while the zoom rides its smoothstep, so
@@ -913,6 +925,7 @@ function ScrollSync({
 function CameraRig({
   cloudDrift,
   openAim,
+  seenAim,
   progressRef,
   reducedMotion,
   robotState,
@@ -924,8 +937,10 @@ function CameraRig({
    * keeps the stage past the cut.
    */
   cloudDrift: THREE.Vector3;
-  /** Where the shot opens: the blow, lifted clear of the floor. */
+  /** Where the shot opens: between the head and the shoulder that breaks first. */
   openAim: THREE.Vector3;
+  /** Where the aim has climbed to as the narration's black starts to rise. */
+  seenAim: THREE.Vector3;
   progressRef: ProgressRef;
   reducedMotion: boolean;
   robotState: RobotCameraState;
@@ -997,21 +1012,31 @@ function CameraRig({
     // would strand those users in an extreme close-up they can never move
     // out of, so they get the settled wide framing instead: the figure
     // whole, from the far end of the same arc.
-    const open = reducedMotion ? 1 : breakup;
-    const distance = compact
-      ? THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE_COMPACT, CAMERA_DISTANCE_COMPACT_BROKEN, open)
-      : THREE.MathUtils.lerp(CAMERA_DISTANCE_CLOSE, CAMERA_DISTANCE_BROKEN, open);
-    // Aim: quadratic Bezier hand -> chest -> middle.
-    const u = 1 - open;
-    lookAt
-      .copy(openAim)
-      .multiplyScalar(u * u)
-      .addScaledVector(LOOK_AT_MID, 2 * u * open)
-      .addScaledVector(LOOK_AT_END, open * open);
-    // The eye swings from nearly head-on and below the hand round to the
-    // high three-quarter view, and keeps orbiting left after the zoom has
-    // settled.
-    scratch.offset.copy(CAMERA_OFFSET_CLOSE).lerp(CAMERA_OFFSET, open).normalize();
+    let distance: number;
+    if (reducedMotion) {
+      // Reduced motion pins breakup to 0, which is the opening close-up.
+      // That would strand those users in an extreme close-up they can never
+      // move out of, so they get the settled wide framing instead: the
+      // figure whole, from the high three-quarter view.
+      distance = compact ? CAMERA_DISTANCE_COMPACT_BROKEN : CAMERA_DISTANCE_BROKEN;
+      lookAt.copy(LOOK_AT_END);
+      scratch.offset.copy(CAMERA_OFFSET);
+    } else {
+      // Close, and LINEAR on the scroll. `seen` is 0 at the first release
+      // and 1 where the narration's black starts to rise (BREAK_SEEN_AT):
+      // over that stretch the lens pulls back by a quarter while the aim
+      // climbs from the shoulder to where the cloud is headed. See
+      // CAMERA_SEEN_PULL_BACK for why it is this close.
+      const seen = breakup / BREAK_SEEN_AT;
+      const scale = stageScaleOf(size.width);
+      distance =
+        (compact ? CAMERA_DISTANCE_CLOSE_COMPACT : CAMERA_DISTANCE_CLOSE) *
+        THREE.MathUtils.lerp(1, CAMERA_SEEN_PULL_BACK, seen);
+      lookAt.copy(openAim).lerp(seenAim, seen).multiplyScalar(scale);
+      // The eye swings from the opening offset round towards the high
+      // three-quarter view, and orbits left, both on the whole breakup.
+      scratch.offset.copy(CAMERA_OFFSET_CLOSE).lerp(CAMERA_OFFSET, breakup).normalize();
+    }
     target
       .copy(scratch.offset)
       .applyAxisAngle(UP, (compact ? ORBIT_LEFT_COMPACT : ORBIT_LEFT) * breakup)
@@ -1727,11 +1752,19 @@ function ChunkedFigure({
           }}
           position={chunk.center}
         >
-          {/* The third draw call is this mesh's shadow, and it is not
-              culled: the stage stops being drawn at a spread of about 0.33
-              (panel progress 0.35 of BREAK_END's 0.96, just past hero
-              fraction 1.0 at 1280x800), where every piece is still part of
-              the figure's silhouette. No frame where dropping it is free.
+          {/* Frustum-culled, which they were not until the close camera.
+              Every chunk's two meshes and their shadows were drawn whatever
+              the lens could see; from 1.55 away most of the figure is out of
+              frame, and with the cut faces casting and the even release
+              exposing more of them, the page went from 7.7 to 9.5 ms a frame
+              (p50, RTX 5060, 1280x800, stage value 0.35; p95 9.4 -> 11.9),
+              past a 120 Hz display's 8.3. Culled: 6.6 / 8.0 ms, and the
+              frame is identical to the pixel (held camera, frozen clock,
+              breakup 0.3, 1920x1080). The shadow pass culls against the
+              key's own frustum, not the camera's, so a piece out of frame
+              still shadows the body.
+
+              The third draw call is each mesh's shadow.
 
               `receiveShadow` is new, and it is the whole reason any shadow
               is visible. It used to be that the ONLY receiver was the floor
@@ -1774,14 +1807,12 @@ function ChunkedFigure({
               and its own lit faces do not self-shadow. */}
           <mesh
             castShadow
-            frustumCulled={false}
             geometry={chunk.surfaceGeometry}
             material={marble.surface}
             receiveShadow
           />
           <mesh
             castShadow
-            frustumCulled={false}
             geometry={chunk.interiorGeometry}
             material={marble.interior}
             receiveShadow
@@ -1891,14 +1922,14 @@ function ThinkerCanvas({
   // Where the blow landed, in world space: the build reports it in the
   // figure's own coordinates, so it has to go through the stage group's
   // rotation before the camera can aim at it.
-  const openAim = useMemo(() => {
-    const point = OPENING_AIM_POINT.clone();
-
-    point.applyEuler(new THREE.Euler(...STAGE_ROTATION));
-    point.y += IMPACT_AIM_LIFT;
-
-    return point;
-  }, []);
+  const openAim = useMemo(
+    () => OPENING_AIM_POINT.clone().applyEuler(new THREE.Euler(...STAGE_ROTATION)),
+    [],
+  );
+  const seenAim = useMemo(
+    () => SEEN_AIM_POINT.clone().applyEuler(new THREE.Euler(...STAGE_ROTATION)),
+    [],
+  );
   // Where the cloud ends up, in world space. The build reports the mean of
   // the chunks' offsets in the figure's own coordinates, so it goes through
   // the stage group's rotation like the blow does.
@@ -2011,6 +2042,7 @@ function ThinkerCanvas({
       <CameraRig
         cloudDrift={cloudDrift}
         openAim={openAim}
+        seenAim={seenAim}
         progressRef={progressRef}
         reducedMotion={reducedMotion}
         robotState={robotState}

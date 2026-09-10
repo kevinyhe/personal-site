@@ -674,33 +674,32 @@ const SHELL_START = 0.75;
 // The last piece releases this far into the breakup.
 const RELEASE_END = 0.86;
 // The first gap between releases is this many times the last, so the gaps
-// shrink and the whole thing accelerates away: a piece here and there to
-// begin with, then the figure going at once.
+// shrink and the break gathers pace.
 //
-// Set by measuring how much has let go partway through: at 3 a fifth was out
-// a quarter of the way in and half by 0.54, which spread the break evenly
-// over the run. At 10 it was a tenth and 0.63. Then 50, to keep the start
-// sparse over a run that is now the whole page — a piece now and then for
-// a long while, then the figure going at once.
+// History: 3, then 10, then 50 (a piece now and then for a long while, then
+// the figure going at once), then 6, because at 50 almost none of the break
+// was ever seen. Every value was judged against the end of a run nobody
+// watches: the stage is drawn clear to a breakup of about 0.34 and under
+// the narration's rising black to 0.51 (1280x800), and RELEASE_END puts the
+// last slot at 0.86, so an accelerating schedule spends its pace where the
+// room is already dark.
 //
-// 6, from 50, because at 50 almost none of the break was ever SEEN. The
-// statue stops being drawn at a panel value of about 0.35, which is a break
-// measure of 0.34 (see CHUNK_DELAY_VIEWPORTS in HeroIntro); everything past
-// that plays to an empty room. Counted over the 406 release slots of the
-// 421-piece bake, pieces released by a break measure of 0.352 (which is
-// value 0.35 with the new CHUNK_DELAY_VIEWPORTS):
-//   acceleration 50 -> 53    20 -> 67    10 -> 81
-//                 6 -> 95     4 -> 108    3 -> 118
-// 6 nearly doubles what is seen and still accelerates six to one from the
-// first gap to the last (0.0046 of the break to 0.00076), so it keeps the
-// shape
-// the 50 was for. Below about 4 the gaps are even enough that the figure
-// stops reading as gathering pace and starts reading as crumbling steadily,
-// which is what the 3 above was rejected for.
+// 1.5, from 6. lukebaffait.fr's release does not accelerate — measured off
+// its frames, 5-25% of the figure's area goes in 41 frames, 25-50% in 24,
+// 50-75% in 24, 75-95% in 49 — and Kevin asked for the break to start
+// earlier. Counted over this bake's release slots, pieces released by
+// breakup 0.1 / 0.2 / 0.34 / 0.51:
+//   acceleration 6 -> 27 / 52 / 91 / 154
+//              1.5 -> 43 / 82 / 141 / 234 (estimated from the slots; see
+//                     the bake's own counts in the commit)
+//                1 -> 51 / 95 / 160 / 254
+// Not 1: the last half of a schedule is the plinth and the legs, which the
+// close camera never frames, and 1.5 keeps the upper figure, which it does,
+// a little quicker at its end than at its start.
 //
 // It does NOT change when the break finishes: RELEASE_END still holds the
-// last slot. This front-loads the same run.
-const RELEASE_ACCELERATION = 6;
+// last slot.
+const RELEASE_ACCELERATION = 1.5;
 // How much of the breakup a piece's flight takes once released. Doubled
 // from 0.275 with the run: a piece's flight is a share of the break, and
 // the break is twice as long, so this keeps each piece's own pace and
@@ -714,8 +713,8 @@ const CLUSTER_STAGGER = 0.5;
 // `releaseTexture.amount` (the noise itself has unit spread): see planSeeds.
 const RELEASE_TEXTURE_LEAD = -0.3;
 // How far into the order (rank, 0..1) the texture's local lean is taken out:
-// past the ~91 pieces released while the stage is drawn, which reach about
-// 0.2 of the body's rank. See planSeeds.
+// past the pieces released while the stage was drawn when this was set (~91,
+// about 0.2 of the body's rank). See planSeeds.
 const RELEASE_TEXTURE_SEEN = 0.3;
 // How much later than the plane put it a piece in a mover's path may be
 // made by the texture (see planReleaseOrder), in rank.
