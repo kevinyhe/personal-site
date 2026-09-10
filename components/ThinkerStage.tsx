@@ -135,12 +135,12 @@ const BREAK_END = 0.96;
 // thirds of the figure; over the breakup it eases slightly closer while
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
-// The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.6) ends
-// here; 4.6 and 5.68 are four fifths of the pull-outs they replace (to
-// 5.1 and 6.3), the whole camera move having been scaled to 80%.
+// The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.2) ends
+// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3); asked
+// to zoom out more, it now opens to 6.2 / 7.4 from a closer start.
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 4.6;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 5.68;
+const CAMERA_DISTANCE_BROKEN = 6.2;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 7.4;
 // The shot OPENS on the blow — where the figure struck the floor, the point
 // the whole fracture is measured from — and pulls out from there. The
 // position comes from the build itself (`breakOrigin`), turned into world
@@ -1278,23 +1278,23 @@ function StageLights({
     const pulse = reducedMotion
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
-    if (ambientRef.current) ambientRef.current.intensity = 0.035 * statueLight;
+    if (ambientRef.current) ambientRef.current.intensity = 0.01 * statueLight;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
-      keyLightRef.current.intensity = (15.5 + breakup * 5.5 + pulse) * statueLight;
+      keyLightRef.current.intensity = (17.5 + breakup * 5.5 + pulse) * statueLight;
       // The cone opens as the pieces spread, so none fly out of the light.
       keyLightRef.current.angle = 0.36 + breakup * 0.3;
     }
-    if (fillLightRef.current) fillLightRef.current.intensity = 5 * statueLight;
+    if (fillLightRef.current) fillLightRef.current.intensity = 1.8 * statueLight;
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = (3.2 + breakup * 2.8) * statueLight;
+      rimLightRef.current.intensity = (4.2 + breakup * 2.8) * statueLight;
     }
-    if (bounceLightRef.current) bounceLightRef.current.intensity = 1.65 * statueLight;
+    if (bounceLightRef.current) bounceLightRef.current.intensity = 0.6 * statueLight;
   });
 
   return (
     <group ref={groupRef}>
-      <ambientLight ref={ambientRef} intensity={0.035} />
+      <ambientLight ref={ambientRef} intensity={0.01} />
       <spotLight
         ref={keyLightRef}
         angle={0.36}
@@ -1302,7 +1302,7 @@ function StageLights({
         color="#ffffff"
         decay={1.05}
         distance={12}
-        intensity={15.5}
+        intensity={17.5}
         penumbra={0.06}
         position={[-3.4, 3.2, 2.8]}
         shadow-bias={-0.0005}
@@ -1315,20 +1315,20 @@ function StageLights({
         color="#f4f5ff"
         decay={1.2}
         distance={10}
-        intensity={5}
+        intensity={1.8}
         penumbra={0.05}
         position={[3.2, 2.1, -1.5]}
       />
       <directionalLight
         ref={rimLightRef}
         color="#ffffff"
-        intensity={3.2}
+        intensity={4.2}
         position={[2.7, 1.8, -3.8]}
       />
       <pointLight
         ref={bounceLightRef}
         color="#ffffff"
-        intensity={1.65}
+        intensity={0.6}
         position={[-1.45, -1.05, 2.4]}
       />
     </group>
@@ -1758,7 +1758,7 @@ function ThinkerCanvas({
       gl={{ antialias: true, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.38;
+        gl.toneMappingExposure = 1.18;
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
       }}

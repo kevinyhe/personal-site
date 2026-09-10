@@ -31,18 +31,19 @@ export const CAMERA_OFFSET = new THREE.Vector3(0.85, 0.3, 1).normalize();
  * hard to the RIGHT of the figure, so the move out to CAMERA_OFFSET's high
  * three-quarter view is a real tilt and swing rather than a straight
  * dolly back (both sit well to the right, and the swing runs leftward, so
- * the whole move reads right-to-left). The eye has been raised twice, by
- * a fifth and then a quarter of the offset's length (y 0.18 -> 0.46 ->
- * 0.82 per unit, before normalising): from below the hand the face was
- * cut off by the top of the frame and the shot opened on a chin; now it
- * looks down on the head from above the hand.
+ * the whole move reads right-to-left). The eye was raised twice, by a
+ * fifth and then a quarter of the offset's length (y 0.18 -> 0.46 ->
+ * 0.82 per unit, before normalising) to get the face into the frame,
+ * then brought back down to 0.55 with the aim left where it was
+ * (IMPACT_AIM_LIFT): the shot looked too steeply down on the head, and
+ * lowering the eye against a fixed aim levels it without losing the face.
  */
-export const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.82, 1).normalize();
+export const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.55, 1).normalize();
 /**
- * Far enough back that the blow reads in context — the base and the legs
- * above it — rather than filling the frame with anatomy you cannot place.
+ * Close on the head: 2.2 rather than the 2.6 that framed the hand with
+ * the base and legs around it, since the shot now opens on the face.
  */
-export const CAMERA_DISTANCE_CLOSE = 2.6;
+export const CAMERA_DISTANCE_CLOSE = 2.2;
 /**
  * The opening aim sits well above the blow rather than straight at it, so
  * the face — the hand is under the chin — is in the frame rather than
@@ -81,12 +82,15 @@ const OPENING_EYE = (() => {
 // lift in it; the drift takes that out, so that the chest is not in the
 // hand's path nor the knees in the chest's. Turned back through the
 // stage's yaw so the builder can plan it in the figure's own space.
+// The y was -0.216, which took the camera's lift out and sent the pieces
+// level; now +0.3, so the sum lifts at about 30 degrees and the pieces
+// climb as they come, as asked.
 // Compensated when the camera moved right (0.42 -> 0.85): the flight is
 // defined as CAMERA_OFFSET + this, so moving the camera would otherwise have
 // swung the pieces' path with it — and the pieces' motion was to stay exactly
 // as it was. Solved so the sum, and therefore the flight direction in figure
 // space, is unchanged to 0.0000 degrees.
-const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, -0.216, 0.146);
+const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, 0.3, 0.146);
 
 function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
@@ -122,6 +126,9 @@ function fraction(x: number, y: number, z: number): [number, number, number] {
 }
 
 export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
+  // Cut ahead of time by `npm run bake:chunks`; re-run it after changing
+  // anything below (the loader checks, and cuts live if the bake is stale).
+  bakedPath: "/model/thinker/chunks",
   // Where the figure struck: the HAND itself, hanging over the knee. It is
   // the part of the figure nearest the lens, so it is both what a forward
   // topple lands on and the one place the break can start with nothing in
@@ -149,11 +156,14 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // radial stretch and size variation 3.0: ~290 slivers and slabs, a
   // 32-36 s build) with the reference's look. The build's cost is the seed
   // count, ~70 ms a seed in a worker: 0.22 / 0.3 came to ~170 seeds and
-  // 179 pieces (17 s in Node, mean piece radius 0.34); this, asked for as
-  // "smaller on average", is about a quarter finer on each axis: 283 seeds
-  // and 291 pieces, mean radius 0.30, 28 s in Node, volume still exact.
-  spacingNear: 0.17,
-  spacingFar: 0.23,
+  // 179 pieces (17 s in Node, mean piece radius 0.34); 0.17 / 0.23 was a
+  // quarter finer (291 pieces, mean radius 0.30, 28 s). Asked for pieces
+  // two thirds of THAT size: 0.112 / 0.152 measured only 0.24 (600 pieces,
+  // 62 s — the sampler packs finer cells less than proportionally), so
+  // this is the spacing that lands the mean radius at ~0.2. A cut this
+  // fine is what made baking it necessary (bakedPath).
+  spacingNear: 0.09,
+  spacingFar: 0.122,
   // Cells reach full size within about a third of the figure's height of
   // the blow; with near and far this close it hardly shows.
   spacingFalloff: 0.9,
@@ -162,12 +172,16 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // No radial grain: the reference's cells are as wide as they are long
   // (1 is none; the sampler clamps below it).
   radialStretch: 1,
-  // A little unevenness so the cells are not a lattice — e^±0.5 on the
-  // target spacing — against the reference's near-uniform pieces with the
-  // odd small fragment.
-  sizeVariation: 0.5,
-  // Safety cap; the spacing stops the sampler first.
-  maxPieces: 320,
+  // Unevenness on the target spacing, e^±this: the reference's pieces are
+  // nearly uniform, but at 0.5 ours read as a lattice ("too uniform"), so
+  // this is back up to where slabs sit beside small fragments without the
+  // slivers the old 3.0 made — 1.5 first, then 2.2 when 1.5 still read as
+  // even.
+  sizeVariation: 2.2,
+  // Safety cap; the spacing stops the sampler first. A cut this fine is
+  // only affordable because it is baked (bakedPath): live it would be
+  // minutes in a worker, longer than the reveal's failure net.
+  maxPieces: 800,
   // The hand, placed by hand. The break has to open with the hand itself
   // coming apart into several pieces before anything else moves, and left
   // to the sampler it only ever put two cells there — the third piece to go
@@ -256,6 +270,130 @@ function buildInWorker(options: BuildSolidChunkOptions) {
   return run;
 }
 
+/**
+ * A fingerprint of everything that decides a build's result, so a baked
+ * copy is only trusted while it matches: the options (minus where the bake
+ * lives) and a version of the cut itself, bumped by hand when the fracture
+ * code changes what it makes from the same options.
+ */
+export const FRACTURE_VERSION = 2;
+
+export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
+  const rest: Partial<BuildSolidChunkOptions> = { ...options };
+  delete rest.bakedPath;
+  const text = `${FRACTURE_VERSION}:${JSON.stringify(rest)}`;
+  // FNV-1a, 32-bit; the same in scripts/bake-chunks.mjs by construction
+  // (it imports this function).
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/** The bake's binary layout; a bake in any other layout is cut live instead. */
+export const BAKED_FORMAT = "q16n8";
+
+type BakedChunkRecord = {
+  center: [number, number, number];
+  offset: [number, number, number];
+  phase: "head" | "upper" | "lower";
+  radius: number;
+  releaseAt: number;
+  scale: number;
+  spin: [number, number, number];
+  travel: number;
+  /**
+   * Byte offset and element count of each array in the .bin: positions as
+   * int16 against `positionRange` (about the chunk's centre), normals as
+   * int8 over -1..1.
+   */
+  surfacePositions: [number, number];
+  surfaceNormals: [number, number];
+  interiorPositions: [number, number];
+  interiorNormals: [number, number];
+};
+
+export type BakedChunksHeader = {
+  format: string;
+  fingerprint: string;
+  /** The largest |coordinate| of any position about its chunk's centre. */
+  positionRange: number;
+  breakOrigin: [number, number, number];
+  drift: [number, number, number];
+  stats: ThinkerChunkBuild["stats"];
+  chunks: BakedChunkRecord[];
+  byteLength: number;
+};
+
+/**
+ * A build that was cut ahead of time (scripts/bake-chunks.mjs): the JSON
+ * header and one binary of every chunk's arrays. The cut is deterministic,
+ * so this is the same build the worker would make, in a fraction of a
+ * second instead of tens of them — and the television no longer holds on
+ * the fracture. Rejected, and the live cut used instead, when the header's
+ * fingerprint is not these options'.
+ */
+async function loadBakedChunks(options: BuildSolidChunkOptions): Promise<ThinkerChunkBuild> {
+  const path = options.bakedPath;
+  if (!path) throw new Error("no baked path");
+  const [headerResponse, binResponse] = await Promise.all([
+    fetch(`${path}.json`),
+    fetch(`${path}.bin`),
+  ]);
+  if (!headerResponse.ok || !binResponse.ok) {
+    throw new Error(`baked chunks missing at ${path}`);
+  }
+  const header = (await headerResponse.json()) as BakedChunksHeader;
+  if (header.format !== BAKED_FORMAT) {
+    throw new Error(`baked chunks are in layout ${header.format}, want ${BAKED_FORMAT}`);
+  }
+  const expected = chunkOptionsFingerprint(options);
+  if (header.fingerprint !== expected) {
+    throw new Error(`baked chunks are stale (${header.fingerprint}, want ${expected})`);
+  }
+  const bin = await binResponse.arrayBuffer();
+  if (bin.byteLength !== header.byteLength) {
+    throw new Error(`baked chunks binary is ${bin.byteLength} bytes, header says ${header.byteLength}`);
+  }
+  // Back to floats: the geometry wants float32 attributes, and the file
+  // is a third the size for the trip.
+  const positionScale = header.positionRange / 32767;
+  const positions = ([offset, count]: [number, number]) => {
+    const packed = new Int16Array(bin, offset, count);
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) out[i] = packed[i] * positionScale;
+    return out;
+  };
+  const normals = ([offset, count]: [number, number]) => {
+    const packed = new Int8Array(bin, offset, count);
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) out[i] = packed[i] / 127;
+    return out;
+  };
+  return {
+    breakOrigin: header.breakOrigin,
+    chunks: header.chunks.map((record, index) => ({
+      center: record.center,
+      debug: { capStats: [], sourceIndex: index },
+      interiorNormals: normals(record.interiorNormals),
+      interiorPositions: positions(record.interiorPositions),
+      offset: record.offset,
+      phase: record.phase,
+      radius: record.radius,
+      releaseAt: record.releaseAt,
+      scale: record.scale,
+      spin: record.spin,
+      surfaceNormals: normals(record.surfaceNormals),
+      surfacePositions: positions(record.surfacePositions),
+      travel: record.travel,
+    })),
+    drift: header.drift,
+    stats: header.stats,
+  };
+}
+
 const pending = new Map<string, Promise<ThinkerChunkBuild>>();
 
 /**
@@ -269,7 +407,7 @@ export function loadChunks(key: string, options: BuildSolidChunkOptions) {
   let promise = pending.get(key);
 
   if (!promise) {
-    const attempt =
+    const cutLive = () =>
       typeof Worker === "undefined"
         ? buildOnMainThread(options)
         : buildInWorker(options).catch((error: unknown) => {
@@ -277,6 +415,14 @@ export function loadChunks(key: string, options: BuildSolidChunkOptions) {
             console.warn(`Chunk worker failed for "${key}"; building on the main thread.`, error);
             return buildOnMainThread(options);
           });
+    // The baked copy first, when there is one; a live cut only as the
+    // fallback, with a warning so a stale bake is noticed in development.
+    const attempt = options.bakedPath
+      ? loadBakedChunks(options).catch((error: unknown) => {
+          console.warn(`Baked chunks unusable for "${key}"; cutting live.`, error);
+          return cutLive();
+        })
+      : cutLive();
 
     promise = attempt.catch((error: unknown) => {
       console.error(`Unable to build the "${key}" chunks.`, error);

@@ -428,6 +428,14 @@ export type BuildSolidChunkOptions = {
    */
   modelPath?: string;
   /**
+   * Where a baked copy of this build lives, as a URL under public/ without
+   * its extension (`<path>.json` and `<path>.bin`, written by
+   * scripts/bake-chunks.mjs). Loaded instead of cutting live when its
+   * fingerprint matches these options; otherwise the cut runs as before.
+   * Not read by the cut itself.
+   */
+  bakedPath?: string;
+  /**
    * What the model's longest extent is scaled to before the cut, in figure
    * units. FIGURE_EXTENT (3.1) when left out, and there is no reason to
    * pass anything else: the spacings below are in these units.
@@ -560,10 +568,13 @@ const RELEASE_PROBE_FRACTION = 0.03;
 // The flight, in multiples of `spread`: the push every piece gets along the
 // direction; the extra the piece furthest along it gets over the piece
 // furthest behind; and the fraction of a piece's sideways distance from the
-// centre it moves outward.
-const FLIGHT_PUSH = 0.15;
+// centre it moves outward. The push was 0.15 and the sideways share 0.3
+// until the pieces were asked, twice, to sit further apart in the air:
+// the push now carries every piece further along the flight and the
+// sideways share doubles, so the cloud opens along and across.
+const FLIGHT_PUSH = 0.28;
 const FLIGHT_STRETCH = 1.0;
-const FLIGHT_SPREAD = 0.3;
+const FLIGHT_SPREAD = 0.6;
 
 // Every distinct point on a piece is one Vector3 object, shared by all the
 // polygons that meet there; these ids let maps key on them cheaply.
@@ -2569,11 +2580,11 @@ export function buildSolidThinkerChunks(
       radius,
       releaseAt: releaseAt[index],
       // Each piece shrinks to this over its flight, so daylight opens
-      // between neighbours that left together. Was 0.985. The pieces are
-      // ~15% narrower now, so the same shrink opens ~15% less of a gap at
-      // each seam; 0.975 opens a little more than the old gap, so the
-      // shards separate in the air instead of flying as a cracked skin.
-      scale: 0.975,
+      // between neighbours that left together: a tenth off each piece is
+      // a clear gap at every seam, so the cloud reads as pieces rather
+      // than as a cracked skin. Was 0.985, then 0.975, then 0.9; 0.84 after
+      // a second ask for more space between the pieces.
+      scale: 0.84,
       spin: [
         signedHash(piece.id, options.seed + 71) * spinLimit,
         signedHash(piece.id, options.seed + 73) * spinLimit,
