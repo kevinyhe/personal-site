@@ -503,6 +503,13 @@ export type BuildSolidChunkOptions = {
    */
   sizeVariation: number;
   /**
+   * The same, for the LARGE side only: where the field is positive the
+   * multiplier is e^(field * this) instead. Left out, `sizeVariation`
+   * applies both ways. Lets the biggest pieces grow without the smallest
+   * shrinking with them.
+   */
+  sizeVariationUp?: number;
+  /**
    * Hard ceiling on seeds. The carve is super-quadratic in seed count and
    * the television shot holds until the build finishes, so this is a time
    * budget, not a target.
@@ -1726,7 +1733,9 @@ function sizeFieldAt(point: THREE.Vector3, options: BuildSolidChunkOptions) {
     Math.sin(point.x * 3.7 + hash01(4, seed) * TAU) *
     Math.sin(point.y * 3.1 + hash01(5, seed) * TAU);
 
-  return Math.exp(((coarse + 0.55 * finer) / 1.55) * options.sizeVariation);
+  const field = (coarse + 0.55 * finer) / 1.55;
+  const swing = field > 0 ? (options.sizeVariationUp ?? options.sizeVariation) : options.sizeVariation;
+  return Math.exp(field * swing);
 }
 
 /**
@@ -1827,7 +1836,17 @@ function sampleGradedSeeds(
     chosen.push(candidates[index]);
 
     for (let other = 0; other < candidates.length; other++) {
-      nearest[other] = Math.min(nearest[other], gap(candidates[other], candidates[index]));
+      // The room a candidate has from this seed is measured against the
+      // LARGER of the two spacings, folded in here so the room test below
+      // (nearest / own spacing) comes out as gap / max(own, seed's). A
+      // fine candidate next to a coarse seed must keep the coarse seed's
+      // distance: otherwise the fine seeds crowd the coarse cell's edges
+      // and bound it, and a wide target spacing only ever thinned the
+      // seeds inside the cell without making the cell any bigger —
+      // measured: doubling the large side's swing moved the biggest
+      // pieces by 6%. With this the coarse patches really are one piece.
+      const share = Math.min(spacings[other] / spacings[index], 1);
+      nearest[other] = Math.min(nearest[other], gap(candidates[other], candidates[index]) * share);
     }
   };
 
@@ -1851,8 +1870,18 @@ function sampleGradedSeeds(
 
       if (room < SEED_STOP_RATIO) continue;
 
+      // Coarse candidates first. Room is RELATIVE to spacing, so a fine
+      // candidate always had the more room and went first, and by the
+      // time a coarse one was placed its ground was already taken by fine
+      // seeds around it — a coarse patch never came out as one big piece
+      // however wide its target spacing (measured: 6% on the biggest).
+      // Weighting the score by the spacing lets the coarse seeds claim
+      // their ground while it is empty and the fine ones fill in after;
+      // the room is capped so an untouched candidate's infinite room does
+      // not swamp the weighting.
       const score =
-        room *
+        Math.min(room, 4) *
+        (spacings[index] / options.spacingFar) *
         (1 + options.shellBias * shell[index]) *
         // +-8%: widening this to +-25% was measured to change nothing.
         (0.92 + hash01(index + chosen.length * 7, options.seed + 311) * 0.16);

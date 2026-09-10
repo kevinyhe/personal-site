@@ -180,8 +180,15 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // nearly uniform, but at 0.5 ours read as a lattice ("too uniform"), so
   // this is back up to where slabs sit beside small fragments without the
   // slivers the old 3.0 made — 1.5 first, then 2.2 when 1.5 still read as
-  // even.
+  // even. That is the small side; the large side is wider still.
   sizeVariation: 2.2,
+  // The biggest pieces asked for at 150% bigger with the smallest left
+  // alone. The field is a product of sines and rarely leaves +-0.5, so
+  // the swing has to be steep to move the top end: 3.1 (e^3.1 against
+  // e^2.2, "2.5x" on paper) measured +6% on the ten biggest pieces; this
+  // is what it takes for 2.5x. After lukebaffait.fr, whose cloud is
+  // mostly even pieces with a few whole limbs among them.
+  sizeVariationUp: 4.8,
   // Safety cap; the spacing stops the sampler first. A cut this fine is
   // only affordable because it is baked (bakedPath): live it would be
   // minutes in a worker, longer than the reveal's failure net.
@@ -280,7 +287,7 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  * lives) and a version of the cut itself, bumped by hand when the fracture
  * code changes what it makes from the same options.
  */
-export const FRACTURE_VERSION = 2;
+export const FRACTURE_VERSION = 4;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };

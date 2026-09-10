@@ -505,7 +505,16 @@ function disposeTree(root: THREE.Object3D) {
   });
 }
 
-export function makeSakuraBough(): StageElement {
+export type SakuraBoughOptions = {
+  /**
+   * A multiplier on the blossom budget. The narration's bough carries
+   * twice the flowers of the work sections' (asked for as "more blossoms
+   * on the edges of the twigs"); everything else about the two is the same.
+   */
+  blossoms?: number;
+};
+
+export function makeSakuraBough(options: SakuraBoughOptions = {}): StageElement {
   // Everything below is per-build state. It lives in the closure of the
   // element, not the module, so a context-restore rebuild starts clean.
   const root = new THREE.Group();
@@ -553,7 +562,7 @@ export function makeSakuraBough(): StageElement {
 
   const build = async (ctx: StageBuildContext) => {
     const generator = new WeepingCherryGenerator({
-      blossomCount: BLOSSOM_BUDGET[ctx.quality],
+      blossomCount: Math.round(BLOSSOM_BUDGET[ctx.quality] * (options.blossoms ?? 1)),
       // The 2D field below the fold is the loose-petal system down here, so
       // the generator's own WebGL petals are switched off entirely.
       petalCount: 0,
@@ -813,5 +822,8 @@ export function makeSakuraBough(): StageElement {
 }
 
 const makeSakuraBoughFactory: StageElementFactory = () => makeSakuraBough();
+
+/** The narration's bough: the same limb with twice the blossom. */
+export const makeNarrationBough: StageElementFactory = () => makeSakuraBough({ blossoms: 2 });
 
 export default makeSakuraBoughFactory;
