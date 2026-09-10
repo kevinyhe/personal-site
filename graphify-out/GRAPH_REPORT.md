@@ -1,16 +1,16 @@
-# Graph Report - arbor-web  (2026-09-09)
+# Graph Report - arbor-web  (2026-09-10)
 
 ## Corpus Check
-- 190 files · ~4,161,222 words
+- 199 files · ~4,180,043 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1642 nodes · 2503 edges · 153 communities (113 shown, 40 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 36 edges (avg confidence: 0.78)
+- 1797 nodes · 2741 edges · 162 communities (121 shown, 41 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 41 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `eaa3ba7d`
+- Built from commit: `e7e222e0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -85,7 +85,7 @@
 - tvseq.mjs
 - carveCell
 - buildSolidThinkerChunks
-- fractureIntoPieces
+- scripts
 - fbm2
 - createSakuraBlossomGeometry
 - budgetedMesh
@@ -143,30 +143,39 @@
 - .append
 - HomeSections.tsx
 - siteContent.ts
-- ChunkedThinker
+- bake-chunks.mjs
 - SubpageShell.tsx
 - page.tsx
 - page.tsx
 - Brief: the ball's journey and the scoring animation, as real physics
-- .key
+- layout.tsx
 - thinkerFragments.worker.ts
+- sakuraTree.ts
+- eslint
+- fractureIntoPieces
+- branchRadius
+- check
+- gradientAt
+- .key
+- postcss
+- Narration.tsx
 
 ## God Nodes (most connected - your core abstractions)
-1. `WeepingCherryGenerator` - 41 edges
+1. `WeepingCherryGenerator` - 42 edges
 2. `lerp()` - 19 edges
 3. `WeepingCherryTreeCanvas()` - 19 edges
 4. `clamp01()` - 17 edges
 5. `compilerOptions` - 16 edges
-6. `ballStatesAt()` - 15 edges
-7. `buildSimulation()` - 15 edges
-8. `validate()` - 14 edges
-9. `PetalDrift()` - 14 edges
-10. `buildDriftPath()` - 14 edges
+6. `PetalDrift()` - 15 edges
+7. `ChunkedFigure()` - 15 edges
+8. `ballStatesAt()` - 15 edges
+9. `buildSimulation()` - 15 edges
+10. `validate()` - 14 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `makeSakuraBlossomMarks()` --indirect_call--> `px()`  [INFERRED]
+- `makeBlossomMarks()` --indirect_call--> `px()`  [INFERRED]
   components/sakuraBlossomMarks.ts → .scratch-s54100/idxrender.mjs
-- `makeSakuraBlossomMarks()` --indirect_call--> `py()`  [INFERRED]
+- `makeBlossomMarks()` --indirect_call--> `py()`  [INFERRED]
   components/sakuraBlossomMarks.ts → .scratch-s54100/idxrender.mjs
 - `ballStatesAt()` --indirect_call--> `carried()`  [INFERRED]
   components/ballPhysics.ts → scripts/bake-balls.mjs
@@ -179,15 +188,15 @@
 - 1-file cycle: `components/SakuraStage.tsx -> components/SakuraStage.tsx`
 - 1-file cycle: `components/PetalDrift.tsx -> components/PetalDrift.tsx`
 
-## Communities (153 total, 40 thin omitted)
+## Communities (162 total, 41 thin omitted)
 
 ### Community 0 - "compilerOptions"
-Cohesion: 0.05
-Nodes (39): autoprefixer, eslint, eslint-config-next, @eslint/eslintrc, devDependencies, autoprefixer, eslint, eslint-config-next (+31 more)
+Cohesion: 0.07
+Nodes (27): autoprefixer, eslint, eslint-config-next, @eslint/eslintrc, devDependencies, autoprefixer, eslint, eslint-config-next (+19 more)
 
 ### Community 1 - "package.json"
-Cohesion: 0.06
-Nodes (30): displaySerif, inter, metadata, SiteBackground(), SmoothScroll(), d3-force, d3-selection, d3-zoom (+22 more)
+Cohesion: 0.09
+Nodes (23): d3-force, d3-selection, d3-zoom, @dimforge/rapier3d-compat, gsap, next, dependencies, d3-force (+15 more)
 
 ### Community 2 - "What You Must Do When Invoked"
 Cohesion: 0.07
@@ -196,6 +205,10 @@ Nodes (28): ./*, dom, dom.iterable, esnext, next-env.d.ts, .next/types/**/*.ts, 
 ### Community 3 - "What You Must Do When Invoked"
 Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
+
+### Community 4 - "What You Must Do When Invoked"
+Cohesion: 0.23
+Nodes (4): Branch, getBranchFrame(), lerp(), sampleBlossomTint()
 
 ### Community 5 - "WeepingCherryTreeCanvas"
 Cohesion: 0.05
@@ -214,8 +227,8 @@ Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 9 - "clamp01"
-Cohesion: 0.40
-Nodes (9): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getWindFlutterRamp(), getWindRamp() (+1 more)
+Cohesion: 0.43
+Nodes (6): addViewportChangeListener(), getViewportHeight(), getViewportMetrics(), getViewportWidth(), readDocumentDimension(), ViewportMetrics
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -254,16 +267,16 @@ Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
 ### Community 28 - ".update"
-Cohesion: 0.29
-Nodes (4): arborGustEnvelope(), FallingPetalSystem, randomPointInUnitSphere(), wrapAngle()
+Cohesion: 0.21
+Nodes (7): arborGustEnvelope(), FallingPetalSystem, fbm2(), noiseHash2(), randomPointInUnitSphere(), valueNoise2(), wrapAngle()
 
 ### Community 33 - "CanopyOcclusion"
 Cohesion: 0.35
 Nodes (3): CanopyOcclusion, makeInsideTest(), planReleaseOrder()
 
 ### Community 34 - "createSakuraBlossomGeometry"
-Cohesion: 0.09
-Nodes (23): createRobotCameraState(), CAMERA_AIM_BEHIND_KEYS, CAMERA_AIM_HEIGHT, CAMERA_AZIMUTH, CAMERA_DISTANCE_KEYS, CAMERA_HEIGHT_KEYS, CAMERA_OFFSET_CLOSE, cameraProbe (+15 more)
+Cohesion: 0.05
+Nodes (63): makeInteriorMaterial(), makeSurfaceMaterial(), useMarbleMaterials(), createRobotCameraState(), makeChunkGeometries(), ThinkerChunkData, breakupAt(), CAMERA_AIM_BEHIND_KEYS (+55 more)
 
 ### Community 35 - "compress.py"
 Cohesion: 0.07
@@ -314,8 +327,8 @@ Cohesion: 0.04
 Nodes (38): ab, byColor, chassisInstances, chassisMeshCache, chassisPrims, chassisTris, colorIndex, colorReg (+30 more)
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.05
-Nodes (41): applyPetalTranslucency(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchWindVectors, CanopyLobe (+33 more)
+Cohesion: 0.06
+Nodes (37): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchWindVectors, CanopyLobe, CanopyShadeUniforms (+29 more)
 
 ### Community 51 - "TreeTuner.tsx"
 Cohesion: 0.06
@@ -327,7 +340,7 @@ Nodes (4): Hard Rule, Preserve Typography, Verification, Workflow
 
 ### Community 54 - "thinkerFragments.ts"
 Cohesion: 0.07
-Nodes (35): ACCESSOR_ITEM_SIZE, AccessorValues, BreakPhase, CapBuildStats, CapLoop, CapNode, CellBuild, COMPONENT_BYTE_SIZE (+27 more)
+Nodes (32): buildOnMainThread(), ACCESSOR_ITEM_SIZE, AccessorValues, BreakPhase, CapBuildStats, CapLoop, CapNode, CellBuild (+24 more)
 
 ### Community 55 - "loadThinkerGeometry"
 Cohesion: 0.04
@@ -366,32 +379,32 @@ Cohesion: 0.67
 Nodes (3): budgetedMesh(), compact(), simplify()
 
 ### Community 64 - "ProblemStatementTransition.tsx"
-Cohesion: 0.16
-Nodes (13): HERO_POSE, HeroIntro(), HeroIntroProps, LOADING_POSE, narrationDrift(), Line, Narration(), Run (+5 more)
+Cohesion: 0.18
+Nodes (13): boxPlanOf(), clampStart(), HERO_POSE, HeroIntro(), HeroIntroProps, LOADING_POSE, narrationDrift(), makeNarrationBlossomMarks() (+5 more)
 
 ### Community 65 - "scopeLocalMesh"
 Cohesion: 0.19
 Nodes (21): bakePrimitives(), ball, budgetedMesh(), budgetLoop(), buildBall(), buildGoal(), collectInstances(), compact() (+13 more)
 
 ### Community 72 - "carveCell"
-Cohesion: 0.29
-Nodes (11): boundingPlanes(), carveCell(), cleanLoop(), clipToHalfSpace(), cutPolygons(), getPlaneBasis(), idOf(), sectionOf() (+3 more)
+Cohesion: 0.23
+Nodes (12): cleanLoop(), clipToHalfSpace(), cutPolygons(), getPlaneBasis(), groupCapRegions(), idOf(), makeCapPolygons(), pointInLoop() (+4 more)
 
 ### Community 73 - "buildSolidThinkerChunks"
 Cohesion: 0.33
 Nodes (9): buildSolidThinkerChunks(), hash01(), makeFlatArrays(), planSeeds(), randomUnitVector(), sampleGradedSeeds(), signedHash(), sizeFieldAt() (+1 more)
 
-### Community 74 - "fractureIntoPieces"
-Cohesion: 0.33
-Nodes (7): componentKey(), countOpenGeometryEdges(), fractureIntoPieces(), makePiece(), makeSourcePiece(), polygonArea(), splitConnectedComponents()
+### Community 74 - "scripts"
+Cohesion: 0.15
+Nodes (12): name, private, scripts, bake:balls, bake:cherry, bake:chunks, build, dev (+4 more)
 
 ### Community 75 - "fbm2"
 Cohesion: 0.20
 Nodes (6): box, center, PUB, size, tris3d, v
 
 ### Community 76 - "createSakuraBlossomGeometry"
-Cohesion: 0.17
-Nodes (10): applyBlossomWind(), Branch, createPetalDetailTexture(), createSakuraBlossomGeometry(), createSakuraBudGeometry(), getBranchFrame(), lerp(), makeRng() (+2 more)
+Cohesion: 0.14
+Nodes (6): applyBlossomWind(), applyPetalTranslucency(), createPetalDetailTexture(), makeRng(), OccupiedPoint, WeepingCherryGenerator
 
 ### Community 77 - "budgetedMesh"
 Cohesion: 0.50
@@ -438,8 +451,8 @@ Cohesion: 0.17
 Nodes (9): basePts, centroid, idx, mix, pos, PUBLIC, size, stage (+1 more)
 
 ### Community 100 - "TreeTuner.tsx"
-Cohesion: 0.16
-Nodes (18): BranchWindUniforms, boughSpawn, BoughSpawnField, BLOSSOM_ATTRIBUTES, BLOSSOM_BUDGET, BOUGH_AIM, BRANCH_ATTRIBUTES, BranchRange (+10 more)
+Cohesion: 0.15
+Nodes (19): BranchWindUniforms, boughSpawn, BoughSpawnField, BLOSSOM_ATTRIBUTES, BLOSSOM_BUDGET, BOUGH_AIM, BRANCH_ATTRIBUTES, BranchRange (+11 more)
 
 ### Community 101 - "queue.mjs"
 Cohesion: 0.29
@@ -478,8 +491,8 @@ Cohesion: 0.23
 Nodes (11): AIMY, anchor(), at(), AZ, BEHIND, DIST, f, keyed() (+3 more)
 
 ### Community 125 - "idxrender.mjs"
-Cohesion: 0.20
-Nodes (9): angle, buf, depth, H, img, names, px(), py() (+1 more)
+Cohesion: 0.18
+Nodes (16): Quality, resolveSceneQuality(), anchorProgress(), AnchorRecord, createPlacement(), disposeObject(), KEY_LIGHT_POSITION, LenisLike (+8 more)
 
 ### Community 126 - "keytest.mjs"
 Cohesion: 0.20
@@ -507,79 +520,107 @@ Nodes (9): Field, FIELDS, TreeTuner(), freezeBlock(), isTreeTuningEnabled(), set
 
 ### Community 138 - "Branch"
 Cohesion: 0.14
-Nodes (13): getTwigWindAmplitude(), getTwigWindFlutter(), BLOSSOM_FORWARD, BlossomSlot, buildBlossomMesh(), makeRng(), makeSakuraMargins(), makeTwigFamily() (+5 more)
+Nodes (14): createSakuraBlossomGeometry(), getTwigWindAmplitude(), getTwigWindFlutter(), sakuraPetalOutline(), BLOSSOM_FORWARD, BlossomSlot, buildBlossomMesh(), makeRng() (+6 more)
 
 ### Community 139 - "SakuraStage.tsx"
-Cohesion: 0.18
-Nodes (16): resolveSceneQuality(), anchorProgress(), AnchorRecord, createPlacement(), disposeObject(), KEY_LIGHT_POSITION, LenisLike, RIM_LIGHT_POSITION (+8 more)
+Cohesion: 0.25
+Nodes (3): ScreenToWorld, StageElement, StageViewport
 
 ### Community 140 - "sakuraBlossomMarks.ts"
-Cohesion: 0.21
-Nodes (14): BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, buildBudArrays(), makeRng(), makeSakuraBlossomMarks(), Mark (+6 more)
+Cohesion: 0.18
+Nodes (15): BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, buildBudArrays(), makeBlossomMarks(), makeRng(), Mark (+7 more)
 
 ### Community 141 - "thinkerChunks.ts"
-Cohesion: 0.18
-Nodes (12): buildInWorker(), buildOnMainThread(), CAMERA_OFFSET, FIGURE_MIN, FIGURE_SIZE, FLIGHT_DRIFT_VIEW, flightDirectionInFigureSpace(), inFigureSpace() (+4 more)
+Cohesion: 0.10
+Nodes (25): CHERRY_CHUNK_OPTIONS, loadCherryChunks(), BakedChunkRecord, BakedChunksHeader, buildInWorker(), CAMERA_OFFSET, CAMERA_OFFSET_CLOSE, ChunkBuildError (+17 more)
 
 ### Community 142 - "sakuraStage.ts"
 Cohesion: 0.18
-Nodes (8): Quality, ScreenToWorld, StageElement, StageElementFactory, StageLights, StagePlacement, StageQuality, StageViewport
+Nodes (8): metadata, metadata, elsewhere, workEntries, SubpageShell(), SubpageShellProps, TransitionLink(), TransitionLinkProps
 
 ### Community 143 - ".append"
 Cohesion: 0.33
-Nodes (3): applyBranchWind(), BranchGeometryBuilder, OccupiedPoint
+Nodes (3): applyBranchWind(), BranchGeometryBuilder, createSakuraBudGeometry()
 
 ### Community 144 - "HomeSections.tsx"
-Cohesion: 0.21
-Nodes (7): FractureText(), hashed(), HomeSections(), LenisLike, LocalTime(), nowInToronto(), PlateContent
+Cohesion: 0.18
+Nodes (9): FractureText(), hashed(), HomeSections(), LenisLike, LocalTime(), nowInToronto(), makeSakuraBlossomMarks(), WorkEntry (+1 more)
 
 ### Community 145 - "siteContent.ts"
-Cohesion: 0.20
-Nodes (7): metadata, LenisLike, currently, HERO_NARRATION, sectionLinks, workEntries, WorkEntry
+Cohesion: 0.19
+Nodes (6): metadata, LenisLike, currently, sectionLinks, selected, stack
 
-### Community 146 - "ChunkedThinker"
-Cohesion: 0.35
-Nodes (11): makeChunkGeometries(), breakupAt(), CameraRig(), ChunkedThinker(), keyed(), smoothPhase(), StageFloor(), StageLights() (+3 more)
+### Community 146 - "bake-chunks.mjs"
+Cohesion: 0.17
+Nodes (9): bin, build, header, int16s, int8s, placed, radii, records (+1 more)
 
 ### Community 147 - "SubpageShell.tsx"
-Cohesion: 0.24
-Nodes (6): metadata, elsewhere, SubpageShell(), SubpageShellProps, TransitionLink(), TransitionLinkProps
+Cohesion: 0.20
+Nodes (9): angle, buf, depth, H, img, names, px(), py() (+1 more)
 
 ### Community 148 - "page.tsx"
 Cohesion: 0.29
 Nodes (4): CRT_ASSETS, LenisLike, SectionLink(), socialLinks
 
 ### Community 149 - "page.tsx"
-Cohesion: 0.29
-Nodes (3): metadata, selected, stack
+Cohesion: 0.03
+Nodes (59): args, bbox, bboxMax, bboxMin, bin, binPath, byDepth, CELL (+51 more)
 
 ### Community 150 - "Brief: the ball's journey and the scoring animation, as real physics"
 Cohesion: 0.29
 Nodes (6): Acceptance checks (Node audit, no browser), Brief: the ball's journey and the scoring animation, as real physics, Materials, roughly, The five stages to reproduce, The hard constraint: it must be scrubbable, What the sim has to get right that the current version fakes
 
+### Community 151 - "layout.tsx"
+Cohesion: 0.22
+Nodes (7): displaySerif, inter, metadata, SiteBackground(), SmoothScroll(), lenis, lenis
+
 ### Community 152 - "thinkerFragments.worker.ts"
 Cohesion: 0.40
 Nodes (4): BuildSolidChunkOptions, chunkTransferables(), scope, WorkerScope
 
+### Community 153 - "sakuraTree.ts"
+Cohesion: 0.36
+Nodes (8): StageResizeContext, BLOSSOM_BUDGET, clamp01(), disposeSubtree(), makeNarrationTree(), makeSakuraTree(), makeSakuraTreeFactory(), PETAL_BUDGET
+
+### Community 154 - "eslint"
+Cohesion: 0.38
+Nodes (5): completeFile(), isFile(), OMITTED_EXTENSIONS, resolve(), ROOT
+
+### Community 155 - "fractureIntoPieces"
+Cohesion: 0.26
+Nodes (10): BranchSamples, boundingPlanes(), carveCell(), componentKey(), countOpenGeometryEdges(), fractureIntoPieces(), makePiece(), makeSourcePiece() (+2 more)
+
+### Community 156 - "branchRadius"
+Cohesion: 1.00
+Nodes (3): branchRadius(), clamp01(), smoothstep()
+
+### Community 159 - ".key"
+Cohesion: 0.40
+Nodes (9): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getWindFlutterRamp(), getWindRamp() (+1 more)
+
+### Community 161 - "Narration.tsx"
+Cohesion: 0.33
+Nodes (5): Line, Narration(), Run, Stanza(), Voice
+
 ## Knowledge Gaps
-- **733 isolated node(s):** `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs`, `t0`, `vhs` (+728 more)
+- **829 isolated node(s):** `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs`, `t0`, `vhs` (+824 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **40 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **41 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `SmoothScroll()` connect `package.json` to `.update`?**
-  _High betweenness centrality (0.049) - this node is a cross-community bridge._
-- **Why does `dependencies` connect `package.json` to `compilerOptions`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `SmoothScroll()` connect `layout.tsx` to `.update`?**
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Why does `lenis` connect `layout.tsx` to `package.json`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+- **Why does `dependencies` connect `package.json` to `scripts`, `layout.tsx`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `WeepingCherryTreeCanvas()` (e.g. with `.key()` and `w()`) actually correct?**
   _`WeepingCherryTreeCanvas()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs` to the rest of the system?**
-  _733 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _829 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07407407407407407 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
-  _Cohesion score 0.062388591800356503 - nodes in this community are weakly interconnected._
-- **Should `What You Must Do When Invoked` be split into smaller, more focused modules?**
-  _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08695652173913043 - nodes in this community are weakly interconnected._
