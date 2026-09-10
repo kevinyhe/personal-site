@@ -136,71 +136,37 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // the lens, so the two orders mostly agree; this makes the rule the
   // camera's rather than the blow's.
   releaseFrom: OPENING_EYE,
-  // Cell width at the blow and far from it; it is the RATIO, not the
-  // absolute sizes, that reads as an impact.
+  // The cells, after lukebaffait.fr's own break (frames of its hero
+  // sequence, a Blender cell fracture of The Creation of Adam): blocky,
+  // convex, nearly all the same size — about a tenth of the figure's
+  // height across — with no slivers, no rings and no radial grain, coming
+  // apart in a front that sweeps from the nearest point to the farthest.
+  // Cell width at the blow and far from it, in figure units (height 3.1):
+  // near-uniform, only a little finer at the hand so the first pieces off
+  // are the smaller ones, as the reference's fingertips are.
   //
-  // Were 0.1 / 0.5, which landed ~115 seeds and 123 pieces. The pieces are
-  // now meant to be the shards of a figure that shattered on the floor and
-  // was glued back together, so they are smaller. The build's cost is the
-  // seed count, ~70 ms a seed warm in Node whatever the look, and the
-  // television shot waits for the build (12.5 s in the worker before this),
-  // so this is a trade measured along a curve, old build = 1.0x:
-  //   0.10 / 0.50  100 seeds  112 pieces  median piece 0.232  1.0x
-  //   0.08 / 0.40  132 seeds  144 pieces  median piece 0.230  1.0-1.3x
-  //   0.07 / 0.35  176 seeds  185 pieces  median piece 0.203  1.6x
-  // (median piece = cube root of the median chunk volume, figure units;
-  // the old build's was 0.269.) The shard shaping below already makes the
-  // median piece ~14% narrower at the old spacing, by cutting many small
-  // ones beside a few slabs; this row buys 17% more pieces on top, so the
-  // typical piece is ~15% narrower and there are more of them. The build
-  // cost of that measured 1.30x in one warm run and 1.03x in another (the
-  // machine was busier for the second), so call it up to a third more. The
-  // 0.07 row is the one to take if the wait stops mattering. The old "~110 seeds and the carve loses cells" wall was
-  // measured again: 0.00% of the figure's volume lost at every row up to
-  // 205 seeds, 2 dust slivers dropped here (was 1).
-  spacingNear: 0.055,
-  spacingFar: 0.275,
-  // Cells are most of the way to full size about a third of the figure's
-  // height away from the blow.
+  // This replaces a long run of shard tuning (0.055 / 0.275 with a 3x
+  // radial stretch and size variation 3.0: ~290 slivers and slabs, a
+  // 32-36 s build) with the reference's look, which is also cheaper — the
+  // build's cost is the seed count, ~70 ms a seed in a worker, and uniform
+  // cells this size come to ~170 seeds and 179 pieces (17 s in Node, mean
+  // piece radius 0.34).
+  spacingNear: 0.22,
+  spacingFar: 0.3,
+  // Cells reach full size within about a third of the figure's height of
+  // the blow; with near and far this close it hardly shows.
   spacingFalloff: 0.9,
-  // Enough shell pull to line the cuts up into rings and spokes, not so
-  // much that they stop covering the figure evenly.
-  shellBias: 0.5,
-  // This is what turns even patches into shards. Seeds may sit three times
-  // further apart along the line from the blow than across it, so the
-  // cells between them run long towards the impact: the long axes of the
-  // pieces point at the blow at 0.66 (was 0.53 with no stretch, which is
-  // chance), and their length against their width goes 1.36x -> 1.47x at
-  // the median. 1.6 measured 0.62 and 2.0 measured 0.64; the effect keeps
-  // growing to 3 and the figure still carves clean there (0.00% lost).
-  // It also costs seeds: at a given spacing the stretched room fits about
-  // a quarter fewer of them (186 -> 135 at 0.085 / 0.42 with 1.6), which
-  // is why the spacing above is tighter than the piece count suggests. A
-  // pull onto fixed spokes from the blow was tried on top of this and
-  // dropped: it moved the alignment 0.68 -> 0.71, inside the noise.
-  radialStretch: 3.0,
-  // Cells vary either side of what their distance asks for, so the figure
-  // does not break into evenly sized tiles. Measured as the volume p75/p25
-  // between neighbouring chunks with the distance grading divided out: an
-  // even break is 1.78x. This was 2.1, which measured 6.73x at the old
-  // spacing; at 2.6 it is 12.8x with the shards — slabs beside slivers,
-  // which is what a glued-together statue looks like. 3.0 measured LOWER (9.6x) because it stranded so many seeds
-  // inside the figure (45 all-cut pieces against 30) that the spread went
-  // into the tail instead.
-  //
-  // This used to be capped at 0.45 by the fracture losing whole cells above
-  // it. That turned out to be a piece-size test measuring only a chunk's
-  // SKIN (see `faceArea` in thinkerFragments): a fragment from inside the
-  // figure is nearly all cut face, so it measured as nothing and was binned,
-  // taking up to 2.75% of the figure's volume with it as holes. Judged by
-  // all of its faces, nothing is lost at any setting tried up to 3.0.
-  sizeVariation: 3.0,
-  // Time budget, not a target: the build is ~70 ms a seed and the
-  // television shot holds until it finishes. The sampler runs out of room
-  // at ~132 seeds with the spacing above, so this is headroom rather than
-  // the number it lands on — it is here so a later spacing change cannot
-  // quietly double the wait. Was 110; the 0.07 / 0.35 row above needs 180.
-  maxPieces: 320,
+  // No rings: the reference's cells show no concentric structure.
+  shellBias: 0,
+  // No radial grain: the reference's cells are as wide as they are long
+  // (1 is none; the sampler clamps below it).
+  radialStretch: 1,
+  // A little unevenness so the cells are not a lattice — e^±0.5 on the
+  // target spacing — against the reference's near-uniform pieces with the
+  // odd small fragment.
+  sizeVariation: 0.5,
+  // Safety cap; the spacing stops the sampler first.
+  maxPieces: 200,
   // The hand, placed by hand. The break has to open with the hand itself
   // coming apart into several pieces before anything else moves, and left
   // to the sampler it only ever put two cells there — the third piece to go
