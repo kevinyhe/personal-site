@@ -8,16 +8,28 @@ import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 const NAV_LINKS = sectionLinks;
 const SOCIAL_LINKS = socialLinks;
 
+/** Keyboard focus ring for the external links; TransitionLink carries its own. */
+const FOCUS_RING =
+  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-current";
+
 type SubpageShellProps = {
   children: ReactNode;
-  current: "work" | "info" | "contact";
+  /** Which nav item is this page. Unset on the 404, which is none of them. */
+  current?: "work" | "info" | "contact";
 };
 
 /**
- * Frame shared by /work, /info and /contact: top nav (name -> home, page
- * links with the current one marked), footer with the hairline + (c) year
- * motif from the home hero, and viewport-entry reveals for every
+ * Frame shared by /work, /info, /contact and the 404: top nav (name ->
+ * home, page links with the current one marked), footer with the hairline
+ * + (c) year motif from the home hero, and viewport-entry reveals for every
  * [data-reveal] element inside.
+ *
+ * Every hairline in here is its own [data-reveal][data-rule] element, a
+ * sibling of the text it underlines rather than a child of a fading
+ * wrapper. Nested, the parent's fade-in would hide the start of the draw
+ * (the rule spends its first 0.3 s of power3.inOut barely moving, exactly
+ * while the parent is still near opacity 0) and the line would just fade
+ * in like everything else.
  */
 export default function SubpageShell({ children, current }: SubpageShellProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -31,38 +43,54 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
       className="flex min-h-screen flex-col px-6 pb-6 pt-7 text-[#f0f0f0] sm:px-16 sm:pb-9 sm:pt-12"
       ref={rootRef}
     >
-      <header
-        className="flex items-baseline justify-between gap-6"
-        data-reveal
-      >
-        <TransitionLink
-          className="font-serif-display text-[1.15rem] italic tracking-[-0.02em] transition-opacity duration-200 hover:opacity-60"
-          href="/"
-          veilLabel="Kevin He."
-        >
-          Kevin He.
-        </TransitionLink>
+      {/* The [data-reveal] risers here are plain wrappers, never the links:
+          the reveal ends by writing `opacity: 1` inline, and on a link that
+          would beat its own opacity-50 and hover:opacity-* classes for good. */}
+      <header className="flex items-baseline justify-between gap-6">
+        <span className="inline-block" data-reveal>
+          <TransitionLink
+            className="font-serif-display text-[1.15rem] italic tracking-[-0.02em] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none"
+            href="/"
+            veilLabel="Kevin He."
+          >
+            Kevin He.
+          </TransitionLink>
+        </span>
 
         <nav
           aria-label="Site"
           className="flex items-baseline gap-5 text-[0.75rem] uppercase tracking-[0.04em] sm:gap-8 sm:text-[0.85rem]"
         >
           {NAV_LINKS.map((item) => {
-            const isCurrent = item.href === `/${current}`;
+            const isCurrent = current !== undefined && item.href === `/${current}`;
             return (
-              <TransitionLink
-                aria-current={isCurrent ? "page" : undefined}
-                className={
-                  isCurrent
-                    ? "underline decoration-1 underline-offset-[6px]"
-                    : "opacity-50 transition-opacity duration-200 hover:opacity-100"
-                }
-                href={item.href}
-                key={item.href}
-                veilLabel={item.label}
-              >
-                {item.label}
-              </TransitionLink>
+              <span className="relative" key={item.href}>
+                <span className="inline-block" data-reveal>
+                  <TransitionLink
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={
+                      isCurrent
+                        ? "inline-block"
+                        : "inline-block opacity-50 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
+                    }
+                    href={item.href}
+                    veilLabel={item.label}
+                  >
+                    {item.label}
+                  </TransitionLink>
+                </span>
+                {/* The current-page mark: a hairline that draws itself under
+                    the word, where the old one was a text-underline that
+                    could only appear. Same 6px offset. */}
+                {isCurrent ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-0 -bottom-[6px] h-px bg-current"
+                    data-reveal
+                    data-rule
+                  />
+                ) : null}
+              </span>
             );
           })}
         </nav>
@@ -70,9 +98,17 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
 
       <main className="flex-1">{children}</main>
 
-      <footer className="mt-24 sm:mt-32" data-reveal>
-        <div className="h-px w-full bg-white/25" />
-        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-4 text-[0.75rem] uppercase tracking-[0.04em] sm:text-[0.85rem]">
+      <footer className="mt-24 sm:mt-32">
+        <div
+          aria-hidden="true"
+          className="h-px w-full bg-white/25"
+          data-reveal
+          data-rule
+        />
+        <div
+          className="mt-5 flex flex-wrap items-baseline justify-between gap-4 text-[0.75rem] uppercase tracking-[0.04em] sm:text-[0.85rem]"
+          data-reveal
+        >
           <p aria-label="Copyright">
             {"©"} {year}
           </p>
@@ -85,7 +121,7 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
                   </span>
                 ) : null}
                 <a
-                  className="transition-opacity duration-200 hover:opacity-60"
+                  className={`transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none ${FOCUS_RING}`}
                   href={social.href}
                   rel="noreferrer"
                   target="_blank"
