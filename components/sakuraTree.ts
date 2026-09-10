@@ -19,15 +19,18 @@ import type {
 import { INTRO_TREE_SEED } from "@/components/treeTuning";
 
 /**
- * The intro's tree, standing behind the text sections.
+ * The intro's tree, standing behind a block of scrolling text — the
+ * narration that runs over the black after the statue.
  *
- * Below the hero the page used to hang ONE limb of a cherry over the top of
- * the sections block (sakuraBough) — a real bough, but one bough, and it
- * read as a prop hung on the page rather than as the tree the reader had
- * just been under. This puts the whole tree back: the same generator, the
- * same seed, so it is the intro's tree to the twig — its bark, its
- * blossoms, its wind — standing to the right of the reading column with
- * its canopy spread over the width of the screen.
+ * The page had ONE limb of a cherry hung over the work sections
+ * (sakuraBough), a real bough but one bough, which read as a prop rather
+ * than as the tree the reader had just been under. This is the whole
+ * tree: the same generator, the same seed, so it is the intro's tree to
+ * the twig — its bark, its blossoms, its wind — standing to the right of
+ * the reading column with its canopy spread over the width of the screen.
+ * It was first put behind the work sections and then moved up to the
+ * narration, which is where the reader is still reading rather than
+ * scanning a list; the bough went back under the work.
  *
  * It arrives with the block and drifts up at a fraction of the page's
  * speed, so it stays behind the text for a few screens and then goes,
@@ -103,7 +106,7 @@ function disposeSubtree(root: THREE.Object3D) {
   });
 }
 
-export function makeSakuraTree(): StageElement {
+export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement {
   let group: THREE.Group | null = null;
   let tree: Awaited<ReturnType<WeepingCherryGenerator["generate"]>> | null = null;
   let modelHeight = MODEL_HEIGHT_FALLBACK;
@@ -201,7 +204,7 @@ export function makeSakuraTree(): StageElement {
     boughSpawn.count = 0;
 
     group = wrapper;
-    const block = ctx.anchor("[data-sections]");
+    const block = ctx.anchor(blockSelector);
     place(
       ctx.viewport,
       ctx.quality,
@@ -289,8 +292,11 @@ export function makeSakuraTree(): StageElement {
     bloom = 0;
   };
 
-  return { name: "sakura-tree", build, update, resize, dispose };
+  return { name: "sakura-tree", anchorSelector: blockSelector, build, update, resize, dispose };
 }
+
+/** The factory the narration's stage registers. */
+export const makeNarrationTree: StageElementFactory = () => makeSakuraTree("#info");
 
 const makeSakuraTreeFactory: StageElementFactory = () => makeSakuraTree();
 

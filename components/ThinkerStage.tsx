@@ -136,11 +136,14 @@ const BREAK_END = 0.96;
 // dollying to the left (on the scroll, not the pieces' easing), letting
 // the debris stream past the frame's edge, as on lukebaffait.fr.
 // The pull-out from the opening shot (CAMERA_DISTANCE_CLOSE, 2.2) ends
-// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3); asked
-// to zoom out more, it now opens to 6.2 / 7.4 from a closer start.
+// here. It was 4.6 / 5.68 (four fifths of an earlier 5.1 / 6.3), then
+// 6.2 / 7.4. Asked for 150% of "the zoom currently": the break is paced
+// to be half done when the black shuts, so the pull-out is seen only to
+// about half (open ~0.49), where 6.2 gave a distance of 4.2; 10.6 gives
+// 6.3 there, the 150%.
 const CAMERA_DISTANCE = 5.0;
-const CAMERA_DISTANCE_BROKEN = 6.2;
-const CAMERA_DISTANCE_COMPACT_BROKEN = 7.4;
+const CAMERA_DISTANCE_BROKEN = 10.6;
+const CAMERA_DISTANCE_COMPACT_BROKEN = 12.7;
 // The shot OPENS on the blow — where the figure struck the floor, the point
 // the whole fracture is measured from — and pulls out from there. The
 // position comes from the build itself (`breakOrigin`), turned into world
@@ -1775,7 +1778,13 @@ function ThinkerCanvas({
         timing={timing}
       />
       <color args={[STAGE_BLACK]} attach="background" />
-      <fog args={[STAGE_BLACK, CAMERA_DISTANCE + 0.8, CAMERA_DISTANCE + 5.2]} attach="fog" />
+      {/* The fog sits beyond the pull-out's end, not the rest distance:
+          with the lens opening to 9.3 a fog that began at 5.8 had the
+          whole figure three quarters gone into it. */}
+      <fog
+        args={[STAGE_BLACK, CAMERA_DISTANCE_BROKEN + 0.8, CAMERA_DISTANCE_BROKEN + 5.2]}
+        attach="fog"
+      />
       {/* The robot outro is NOT mounted. It is being saved for a section of
           its own, so nothing here fetches its model or drives its drift;
           `progressRef.robot` is pinned to 0 (see ScrollSync), which leaves
