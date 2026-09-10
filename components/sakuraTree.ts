@@ -68,6 +68,15 @@ const TREE_PARALLAX = 0.2;
 const BASE_BELOW_FOLD = 0.45;
 /** The canopy's heaviest lobe turned toward the reader, as the contact tree had it. */
 const TREE_YAW = -0.34;
+/**
+ * The statue must be gone before any of this shows. The scrim over the
+ * statue is opaque once the narration's top reaches this share of the
+ * viewport's height (HeroIntro's scrim timeline, `end: "top 20%"`); the
+ * tree is hidden until then, and over the next ENTRY_SCREENS of scroll it
+ * rises from below the fold onto its parallax track.
+ */
+const SCRIM_SHUT_AT = 0.2;
+const ENTRY_SCREENS = 1.1;
 const MODEL_HEIGHT_FALLBACK = 8.6;
 
 /**
@@ -139,11 +148,17 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
     const heightPx = viewport.height * TREE_HEIGHT;
     group.scale.setScalar((heightPx * worldUnitsPerPixel(depth)) / modelHeight);
     const risen = Math.max(0, viewport.height - blockTop);
-    const baseY = viewport.height * (1 + BASE_BELOW_FOLD) - risen * TREE_PARALLAX;
-    // The whole tree stays under the block's top: its canopy top is
-    // baseY - heightPx, which must not pass above blockTop.
-    const floorY = blockTop + heightPx;
-    screenToWorld(viewport.width * TRUNK_X, Math.max(baseY, floorY), depth, scratch);
+    const trackY = viewport.height * (1 + BASE_BELOW_FOLD) - risen * TREE_PARALLAX;
+    // Nothing until the black is complete over the statue; then the tree
+    // comes up from entirely below the fold onto its track.
+    const shutY = viewport.height * SCRIM_SHUT_AT;
+    const entryRaw = (shutY - blockTop) / (viewport.height * ENTRY_SCREENS);
+    const entry = clamp01(entryRaw);
+    const eased = entry * entry * (3 - 2 * entry);
+    group.visible = entry > 0;
+    const hiddenY = viewport.height + heightPx + 8;
+    const baseY = hiddenY + (Math.min(trackY, hiddenY) - hiddenY) * eased;
+    screenToWorld(viewport.width * TRUNK_X, baseY, depth, scratch);
     group.position.copy(scratch);
   };
 

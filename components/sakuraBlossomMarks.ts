@@ -212,8 +212,11 @@ function buildBudArrays(
  * the centred type rather than on it. Fractions of that block's box.
  */
 const NARRATION_MARK_GROUPS: MarkGroup[] = [
-  { selector: "#info", x: 0.06, y: 0.08, depth: -2.6, sizePx: 60 },
-  { selector: "#info", x: 0.93, y: 0.2, depth: -4.0, sizePx: 44 },
+  // None in the block's first fifth: that stretch scrolls over the statue
+  // while the black closes on it, and nothing of the blossom scene may
+  // show before the statue is gone.
+  { selector: "#info", x: 0.06, y: 0.24, depth: -2.6, sizePx: 60 },
+  { selector: "#info", x: 0.93, y: 0.3, depth: -4.0, sizePx: 44 },
   { selector: "#info", x: 0.1, y: 0.37, depth: -3.2, sizePx: 52 },
   { selector: "#info", x: 0.95, y: 0.5, depth: -5.4, sizePx: 34 },
   { selector: "#info", x: 0.05, y: 0.66, depth: -4.6, sizePx: 40 },

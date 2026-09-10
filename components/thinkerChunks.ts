@@ -82,15 +82,14 @@ const OPENING_EYE = (() => {
 // lift in it; the drift takes that out, so that the chest is not in the
 // hand's path nor the knees in the chest's. Turned back through the
 // stage's yaw so the builder can plan it in the figure's own space.
-// The y was -0.216, which took the camera's lift out and sent the pieces
-// level; now +0.3, so the sum lifts at about 30 degrees and the pieces
-// climb as they come, as asked.
+// (A version that sent the pieces climbing at ~30 degrees, y +0.3, was
+// tried and put back to level.)
 // Compensated when the camera moved right (0.42 -> 0.85): the flight is
 // defined as CAMERA_OFFSET + this, so moving the camera would otherwise have
 // swung the pieces' path with it — and the pieces' motion was to stay exactly
 // as it was. Solved so the sum, and therefore the flight direction in figure
 // space, is unchanged to 0.0000 degrees.
-const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, 0.3, 0.146);
+const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, -0.216, 0.146);
 
 function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
