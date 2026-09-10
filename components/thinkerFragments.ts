@@ -455,6 +455,15 @@ export type BuildSolidChunkOptions = {
    * Left out, the impact itself is the origin.
    */
   releaseFrom?: [number, number, number];
+  /**
+   * A direction in figure units: when set, the break is a plane sweeping
+   * along it — pieces come loose in order of how far along this axis they
+   * sit, from the far end back. Given the flight's own direction reversed,
+   * the front starts at the head (the part furthest along the flight) and
+   * slices down the figure at the angle the pieces leave at. Overrides
+   * `releaseFrom`.
+   */
+  releaseSweep?: [number, number, number];
   /** Target cell width at the impact, in figure units. */
   spacingNear: number;
   /** Target cell width far from the impact. */
@@ -1952,10 +1961,26 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // (the camera's opening eye; the blow itself when none is given).
   const releaseFrom = options.releaseFrom ? new THREE.Vector3(...options.releaseFrom) : impact;
   const farthest = Math.max(...kept.map((point) => point.distanceTo(releaseFrom)), 1e-6);
+  const sweep = options.releaseSweep
+    ? new THREE.Vector3(...options.releaseSweep).normalize()
+    : null;
+  let sweepMin = Infinity;
+  let sweepMax = -Infinity;
+  if (sweep) {
+    for (const point of kept) {
+      const along = point.dot(sweep);
+      sweepMin = Math.min(sweepMin, along);
+      sweepMax = Math.max(sweepMax, along);
+    }
+  }
+  const rankOf = (point: THREE.Vector3) =>
+    sweep
+      ? (point.dot(sweep) - sweepMin) / Math.max(sweepMax - sweepMin, 1e-6)
+      : point.distanceTo(releaseFrom) / farthest;
   const seeds: Seed[] = kept.map((point) => ({
     phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
     point,
-    position: point.distanceTo(releaseFrom) / farthest,
+    position: rankOf(point),
   }));
 
   return { impact, seeds };
