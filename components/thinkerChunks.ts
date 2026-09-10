@@ -83,13 +83,15 @@ const OPENING_EYE = (() => {
 // hand's path nor the knees in the chest's. Turned back through the
 // stage's yaw so the builder can plan it in the figure's own space.
 // (A version that sent the pieces climbing at ~30 degrees, y +0.3, was
-// tried and put back to level.)
+// tried and put back to level.) Then asked for 30% less lift and more
+// sideways: the small climb left in the sum (0.3 - 0.216) is cut by 30%
+// (y -0.241) and the leftward drift goes -0.758 -> -0.95.
 // Compensated when the camera moved right (0.42 -> 0.85): the flight is
 // defined as CAMERA_OFFSET + this, so moving the camera would otherwise have
 // swung the pieces' path with it — and the pieces' motion was to stay exactly
 // as it was. Solved so the sum, and therefore the flight direction in figure
 // space, is unchanged to 0.0000 degrees.
-const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.758, -0.216, 0.146);
+const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.95, -0.241, 0.146);
 
 function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
@@ -136,15 +138,18 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // this is also what comes apart first — put it up the forearm instead and
   // the whole arm goes at once rather than the hand alone.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
-  // The order of the break: a plane sweeping down the figure along the
-  // pieces' own flight, reversed — so it starts at the head, the part
-  // furthest along the flight, and slices downward at the angle the
-  // pieces leave at. (Before this it ran outward from the camera's
-  // opening eye, OPENING_EYE, which is kept as the fallback rule.)
+  // The order of the break: a plane sweeping ACROSS the figure, from its
+  // right shoulder to the left side of its body and a little downward.
+  // In the figure's own space its front is +z and its right is -x, so the
+  // sweep runs +x with a small -y: the first pieces are the highest, most
+  // -x ones — the right shoulder and the raised right arm under the chin
+  // — and the last the low left side. (It swept along the flight from the
+  // head before; before that it ran outward from the camera's opening
+  // eye, OPENING_EYE, kept as the fallback rule.)
   releaseFrom: OPENING_EYE,
   releaseSweep: (() => {
-    const [x, y, z] = flightDirectionInFigureSpace();
-    return [-x, -y, -z] as [number, number, number];
+    const axis = new THREE.Vector3(0.94, -0.34, 0).normalize();
+    return [axis.x, axis.y, axis.z] as [number, number, number];
   })(),
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
