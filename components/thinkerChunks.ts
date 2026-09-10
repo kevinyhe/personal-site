@@ -137,12 +137,16 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // this is also what comes apart first — put it up the forearm instead and
   // the whole arm goes at once rather than the hand alone.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
-  // The order of the break runs from the lens outward: the pieces nearest
-  // the camera's opening eye go first, the far side of the figure last.
-  // The blow was the origin before, and it was placed as the point nearest
-  // the lens, so the two orders mostly agree; this makes the rule the
-  // camera's rather than the blow's.
+  // The order of the break: a plane sweeping down the figure along the
+  // pieces' own flight, reversed — so it starts at the head, the part
+  // furthest along the flight, and slices downward at the angle the
+  // pieces leave at. (Before this it ran outward from the camera's
+  // opening eye, OPENING_EYE, which is kept as the fallback rule.)
   releaseFrom: OPENING_EYE,
+  releaseSweep: (() => {
+    const [x, y, z] = flightDirectionInFigureSpace();
+    return [-x, -y, -z] as [number, number, number];
+  })(),
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
   // convex, nearly all the same size — about a tenth of the figure's
