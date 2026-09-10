@@ -45,10 +45,12 @@ const CRT_ASSETS: { href: string; as: "fetch" | "image" }[] = [
   { href: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp", as: "image" },
-  // The Thinker's geometry (2 MB), for the panel after the hero: fetched
-  // early so the stage is ready by the time the scroll reaches it.
-  { href: "/model/thinker/scene.gltf", as: "fetch" },
-  { href: "/model/thinker/scene.bin", as: "fetch" },
+  // Not the Thinker. Its glTF used to be preloaded here too, but the stage
+  // loads the baked cut (/model/thinker/chunks.json + .bin, 4 MB; see
+  // thinkerChunks), not scene.gltf, so those 1.9 MB came down at the
+  // textures' priority and were never read. The chunks are fetched by
+  // the loader at low priority as the page mounts, long before the panel
+  // opens.
 ];
 
 export default function Home() {

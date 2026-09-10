@@ -35,17 +35,20 @@ import {
   updatePetals,
 } from "@/components/treePetals";
 import { sceneFx } from "@/components/sceneFx";
-import { DRIFT_FINISH } from "@/components/robotDrift";
-// RobotOutro itself is deliberately not imported: it is no longer mounted
-// here (see ThinkerCanvas). Its constants and its camera-state type still
-// are, because the dormant chase branch in CameraRig is written against
-// them and comes back with one line when the robot gets its own section.
+// Nothing of the robot's is imported but these: RobotOutro is no longer
+// mounted here (see ThinkerCanvas), and the dormant chase branch in
+// CameraRig, written against its camera state and its parked finish, reads
+// them from robotConstants so that neither the outro (RoomEnvironment, a
+// lazy chunk per module under components/) nor the drift simulation rides
+// into the home page's bundle. The branch comes back with one line when
+// the robot gets its own section.
 import {
   createRobotCameraState,
+  DRIFT_FINISH,
   ROBOT_GROUND_Y,
   ROBOT_LENGTH,
   type RobotCameraState,
-} from "@/components/RobotOutro";
+} from "@/components/robotConstants";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -398,6 +401,8 @@ const STATUE_FOV = 34;
 
 /** Last frame's camera framing, read by headless captures. */
 const cameraProbe: Record<string, unknown> = {};
+// The stage's renderer, for the frame count `window.__thinkerStage` reports.
+const stageProbe: { renderer: THREE.WebGLRenderer | null } = { renderer: null };
 
 /**
  * Outro camera keyframes, against seconds along the drift. Each is a list
@@ -1307,8 +1312,13 @@ function StageLights({
         penumbra={0.06}
         position={[-3.4, 3.2, 2.8]}
         shadow-bias={-0.0005}
-        shadow-mapSize-height={2048}
-        shadow-mapSize-width={2048}
+        // 1024, from 2048: the only thing that receives the shadow is the
+        // floor (the chunks cast and do not receive), a soft blob under
+        // the figure that fades as the pieces spread. A quarter of the
+        // texels per shadow pass, every frame the stage is live; no
+        // visible change on the 1280x800 capture.
+        shadow-mapSize-height={1024}
+        shadow-mapSize-width={1024}
       />
       <spotLight
         ref={fillLightRef}
@@ -1747,7 +1757,12 @@ function ThinkerCanvas({
           CAMERA_OFFSET.z * CAMERA_DISTANCE,
         ],
       }}
-      dpr={[1, 1.75]}
+      // Capped at 1.5x: the stage is a viewport-sized box of ~800 draw
+      // calls plus a shadow pass, and 1.75 on a 2x screen was 3.1x the
+      // pixels of dpr 1 for marble that is fog-softened and mostly in
+      // motion. 1.5 is 2.25x — 27% fewer pixels to shade every frame —
+      // with antialias on to keep the chunk edges clean.
+      dpr={[1, 1.5]}
       // Live while the panel is open. While it is closed this is "demand",
       // NOT "never": "never" draws literally nothing, so every shader
       // compile, geometry upload and shadow-map pass landed on the first
@@ -1756,12 +1771,18 @@ function ThinkerCanvas({
       // draws once when it mounts and again whenever the scene graph
       // changes (the chunks arriving), which is the warm-up.
       frameloop={active ? "always" : "demand"}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      // "low-power", the same as the hero's canvas behind this one
+      // (BareThreeCanvas). The two contexts share the page, and on a
+      // dual-GPU laptop a "high-performance" hint here would wake the
+      // discrete GPU for the whole tab while the hero had asked for the
+      // opposite; the hint only decides which GPU, not how fast it runs.
+      gl={{ antialias: true, powerPreference: "low-power" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.18;
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
+        stageProbe.renderer = gl;
       }}
       // Size from the layout box, not the transformed one: the panel grows
       // from scale(0), and following that would rebuild the drawing buffer
@@ -1841,7 +1862,15 @@ export default function ThinkerStage({
 
   // Exposed so headless captures can read the scrubbed state.
   useEffect(() => {
-    const debug = { camera: cameraProbe, progress: progressRef.current };
+    const debug = {
+      camera: cameraProbe,
+      // How many frames the stage has drawn so far: for checking that
+      // "demand" really draws nothing while the panel is shut.
+      get frames() {
+        return stageProbe.renderer?.info.render.frame ?? 0;
+      },
+      progress: progressRef.current,
+    };
     (window as unknown as Record<string, unknown>).__thinkerStage = debug;
     return () => {
       delete (window as unknown as Record<string, unknown>).__thinkerStage;

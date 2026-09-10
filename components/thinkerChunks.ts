@@ -354,9 +354,16 @@ export type BakedChunksHeader = {
 async function loadBakedChunks(options: BuildSolidChunkOptions): Promise<ThinkerChunkBuild> {
   const path = options.bakedPath;
   if (!path) throw new Error("no baked path");
+  // Low priority: this is asked for as the page mounts, while the
+  // television's model and textures — what the first frame is waiting
+  // on — are still coming down, and the statue is not seen until the
+  // panel opens after the intro. (The page used to <link rel=preload> the
+  // statue's glTF at the textures' priority: 1.9 MB this path never
+  // reads.) `priority` is a hint Chromium honours and others ignore.
+  const low: RequestInit = { priority: "low" };
   const [headerResponse, binResponse] = await Promise.all([
-    fetch(`${path}.json`),
-    fetch(`${path}.bin`),
+    fetch(`${path}.json`, low),
+    fetch(`${path}.bin`, low),
   ]);
   if (!headerResponse.ok || !binResponse.ok) {
     throw new Error(`baked chunks missing at ${path}`);
