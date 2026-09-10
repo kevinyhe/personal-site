@@ -19,6 +19,7 @@ import ThinkerStage, {
 } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
+import HalftoneField from "@/components/HalftoneField";
 import PetalDrift from "@/components/PetalDrift";
 import SakuraStage from "@/components/SakuraStage";
 import { makeNarrationBlossomMarks } from "@/components/sakuraBlossomMarks";
@@ -792,6 +793,35 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // pan is gone.
       const narrationSpace = narrationSpaceRef.current;
       const scrim = narrationScrimRef.current;
+      // The blossom scene's fades, in and out, from the block's own
+      // position each update rather than from a tween: in over the half
+      // screen after the scrim shuts (the block's top at a fifth of the
+      // viewport, see the scrim below), out over the last screen before
+      // the block's bottom reaches that same fifth — by which point the
+      // work sections' backdrop, which boots a screen ahead, is up.
+      const narrationFx = root.querySelectorAll<HTMLElement>("[data-narration-fx]");
+      if (narrationSpace && narrationFx.length) {
+        const applyFade = () => {
+          const rect = narrationSpace.getBoundingClientRect();
+          const vh = window.innerHeight;
+          const shut = vh * 0.2;
+          const fadeIn = Math.min(Math.max((shut - rect.top) / (vh * 0.5), 0), 1);
+          const fadeOut = Math.min(Math.max((rect.bottom - shut) / (vh * 1.0), 0), 1);
+          const alpha = Math.min(fadeIn, fadeOut);
+          narrationFx.forEach((holder) => {
+            holder.style.opacity = alpha.toFixed(3);
+            holder.style.visibility = alpha > 0.001 ? "visible" : "hidden";
+          });
+        };
+        ScrollTrigger.create({
+          end: "bottom top",
+          onRefresh: applyFade,
+          onUpdate: applyFade,
+          start: "top bottom",
+          trigger: narrationSpace,
+        });
+        applyFade();
+      }
       if (narrationSpace && scrim) {
         const scrimTrigger = {
           end: "top 20%",
@@ -1163,17 +1193,25 @@ export default function HeroIntro({ children }: HeroIntroProps) {
                 rather than an empty context (see the note on the block).
                 (The work sections' bough-and-dot-field backdrop stood here
                 briefly and was the wrong tree for this part.) */}
-            <SakuraStage
-              elements={[makeNarrationTree, makeNarrationBlossomMarks]}
-              gateSelector="#info"
-            />
-            {/* The loose petals the work sections have, falling out of the
-                tree's lowest twigs (it publishes them the way the bough
-                does) and off the top edge otherwise. Mounted only once the
-                scrim has shut over the statue: the field is fixed and
-                full-viewport, and would otherwise rain over the statue's
-                last frames. */}
-            {scrimCovered ? <PetalDrift gateSelector="#info" /> : null}
+            {/* Every layer of the blossom scene sits in a holder the scroll
+                fades: in over the half screen after the scrim has shut
+                over the statue, out over the last screen before the work
+                sections' own backdrop takes over (see the narration fades
+                in the scroll effect). The dot field is the work sections'
+                (HalftoneField); the petals fall out of the tree's lowest
+                twigs (it publishes them the way the bough does). */}
+            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
+              <HalftoneField />
+            </div>
+            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
+              <SakuraStage
+                elements={[makeNarrationTree, makeNarrationBlossomMarks]}
+                gateSelector="#info"
+              />
+            </div>
+            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
+              <PetalDrift gateSelector="#info" />
+            </div>
             <div className="relative z-[1]">
               <Narration stage>
                 {HERO_NARRATION.map((lines, index) => (
