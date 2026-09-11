@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Component,
+  type ErrorInfo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -8,27 +10,106 @@ import {
   useRef,
   useState,
 } from "react";
+import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
-import ThinkerStage, {
-  STAGE_CUT_AT,
-  TREE_BREAK,
-  type ThinkerTiming,
-} from "@/components/ThinkerStage";
+import type { ThinkerTiming } from "@/components/ThinkerStage";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
-import HalftoneField from "@/components/HalftoneField";
-import PetalDrift from "@/components/PetalDrift";
-import SakuraStage from "@/components/SakuraStage";
-import { makeNarrationBlossomMarks } from "@/components/sakuraBlossomMarks";
-import { makeNarrationTree } from "@/components/sakuraTree";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
+
+/**
+ * What is split out of the page's first load, and what is not.
+ *
+ * OUT: ThinkerStage (1900 lines, react-three-fiber, the statue's
+ * fragments, the robot and its outro) and NarrationScene (the blossom
+ * scene's sakura stack). Neither is rendered until the reveal is done,
+ * which is a good ten seconds after mount on any machine (the television
+ * has to load, the statue's chunks have to be cut in the worker, the name
+ * has to hold its minimum), so their chunks are fetched under the intro
+ * and are long in by then. Measured with `next build`: the home route's
+ * First Load JS went from 496 kB to 429 kB, its own chunk from 348 kB to
+ * 281 kB.
+ *
+ * NOT out: BareThreeCanvas, and with it three itself. Two reasons. The
+ * page LOADS as the television shot, so the canvas' code is needed on the
+ * first client render — a dynamic() there is a round trip added before
+ * the veil's bar can start, not a saving. And SakuraStage, sakuraTree and
+ * sakuraBlossomMarks import the halftone shaders and resolveSceneQuality
+ * from it, so it is in the narration's chunk anyway; splitting it here
+ * would only have moved it, not shed it. A dynamic() on it was tried and
+ * measured: 430 kB, with three's core still in the route's initial chunk
+ * list.
+ *
+ * `ssr: false` because neither lazy piece renders anything the server
+ * could usefully emit (a canvas). The stage's loader is named so the same
+ * import() can be called directly (the cues effect below): webpack hands
+ * back the one module promise, so calling it beside `dynamic()` costs no
+ * second fetch.
+ */
+const loadThinkerStage = () => import("@/components/ThinkerStage");
+const ThinkerStage = dynamic(loadThinkerStage, { ssr: false });
+const NarrationScene = dynamic(() => import("@/components/NarrationScene"), {
+  ssr: false,
+});
+
+/**
+ * A lazy chunk that fails to load (offline, a deploy swapped the hashes
+ * under a stale tab) throws from render. There is no app/error.tsx, so
+ * without this the whole page would unmount to Next's default error
+ * screen — for a decoration. Each lazy piece renders nothing instead; the
+ * stage's absence is covered by the cue fallback below, the narration's
+ * by the black it would have drawn over.
+ */
+class StageErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[HeroIntro] a stage failed to load", error, info.componentStack);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/**
+ * The stage's two cues the scroll timeline tweens toward — where the cut
+ * lands in the panel's growth and the stretch of it the tree breaks over.
+ * They are constants of ThinkerStage, read off its module once it has
+ * loaded rather than imported statically: a static import of anything from
+ * that file would pull the whole of it back into the first-load chunk and
+ * undo the split above. The reveal waits for them (nothing scrolls before
+ * the reveal is done, and the timeline is built on that same flag).
+ */
+type StageCues = {
+  cutAt: number;
+  treeBreak: { end: number; start: number };
+};
+// Tracks ThinkerStage: cutAt is STAGE_CUT_AT, treeBreak.start is
+// STAGE_CUT_AT + 0.03 and treeBreak.end is BREAK_END. Only reached if the
+// stage's chunk failed or hung (STAGE_CUES_TIMEOUT_MS); then there is no
+// stage to read sceneFx.stageCut or sceneFx.treeBreak either, so these
+// only keep the timeline the one that was designed.
+const FALLBACK_STAGE_CUES: StageCues = {
+  cutAt: 0.6,
+  treeBreak: { end: 0.96, start: 0.63 },
+};
+// How long the reveal waits for the stage's chunk before going ahead with
+// the fallback. The chunk is ~150 kB gzipped and requested once the
+// television is up, so on anything short of a stalled link it is in
+// within a second or two; this is for the stalled link.
+const STAGE_CUES_TIMEOUT_MS = 10000;
 
 type HeroIntroProps = {
   children: ReactNode;
@@ -214,6 +295,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const [revealComplete, setRevealComplete] = useState(false);
   // The statue's chunks are cut and ready (or gave up trying).
   const [thinkerReady, setThinkerReady] = useState(false);
+  // The stage's code has arrived (see StageCues above), or been given up on.
+  const [stageCues, setStageCues] = useState<StageCues | null>(null);
 
   const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
   const crtProgressRef = useRef(0);
@@ -354,20 +437,52 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [tvShown]);
 
+  // Fetch the stage's code once the television is up (its scene built, or
+  // its assets reported in). Not at mount: at mount the link is carrying
+  // the GLB and four textures the head preloads, and the ~150 kB chunk
+  // would share the bandwidth with the one thing the veil is waiting on.
+  // The cues are needed before the reveal may START (the gate below), so
+  // the wait has a ceiling of its own: if the chunk is still not in after
+  // STAGE_CUES_TIMEOUT_MS the reveal goes ahead on the fallback rather
+  // than holding the name forever.
+  useEffect(() => {
+    if (!(sceneReady || crtReady) || stageCues) return undefined;
+    let live = true;
+    const settle = (cues: StageCues) => {
+      if (!live) return;
+      live = false;
+      setStageCues(cues);
+    };
+    void loadThinkerStage()
+      .then((stage) => ({ cutAt: stage.STAGE_CUT_AT, treeBreak: stage.TREE_BREAK }))
+      .catch(() => FALLBACK_STAGE_CUES)
+      .then(settle);
+    const timeout = window.setTimeout(() => settle(FALLBACK_STAGE_CUES), STAGE_CUES_TIMEOUT_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(timeout);
+    };
+  }, [crtReady, sceneReady, stageCues]);
+
   // Never strand the page: if the model fails to report (network, a stuck
   // decode), carry on with whatever the rig has after a grace period. The
   // canvas also reports "ready" on load failure, so this is belt and braces.
+  // Counted from mount, unconditionally: it must not wait on anything that
+  // could itself hang, or it is no failsafe.
   useEffect(() => {
     if (crtReady) return undefined;
     const timeout = window.setTimeout(() => setCrtReady(true), 10000);
     return () => window.clearTimeout(timeout);
   }, [crtReady]);
 
-  // The reveal starts once the tree scene is built AND the television has
-  // had its minimum time on screen. Nothing about the tree's loading is
-  // shown; the name simply holds until it is ready.
+  // The reveal starts once the tree scene is built, the stage's code and
+  // its cues are in (StageCues), AND the television has had its minimum
+  // time on screen. Nothing about any of that loading is shown; the name
+  // simply holds until it is ready.
   useEffect(() => {
-    if (!tvShown || !sceneReady || !thinkerReady || revealStarted) return undefined;
+    if (!tvShown || !sceneReady || !thinkerReady || !stageCues || revealStarted) {
+      return undefined;
+    }
     let timeout = 0;
     const tryStart = () => {
       const remaining =
@@ -382,7 +497,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
     tryStart();
     return () => window.clearTimeout(timeout);
-  }, [revealStarted, sceneReady, thinkerReady, tvShown]);
+  }, [revealStarted, sceneReady, stageCues, thinkerReady, tvShown]);
 
   useEffect(() => {
     if (!revealStarted || revealComplete) return undefined;
@@ -568,7 +683,10 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
-    if (!revealComplete || !root || !scrollSpace) return undefined;
+    // stageCues is always set by the time revealComplete is (the reveal
+    // gate waits for it); the check is for the types.
+    if (!revealComplete || !stageCues || !root || !scrollSpace) return undefined;
+    const { cutAt, treeBreak } = stageCues;
     const strip = root.querySelector<HTMLElement>("[data-hero-strip]");
     const lockup = root.querySelector<HTMLElement>("[data-hero-lockup]");
     const panel = root.querySelector<HTMLElement>("[data-hero-panel]");
@@ -698,7 +816,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         )
         // The box's growth as a number the stage can cut on: the same
         // start and the same linear ease as the box's own tween, over the
-        // first 60% of its length (STAGE_CUT_AT), so this reaches exactly
+        // first 60% of its length (cutAt, the stage's STAGE_CUT_AT), so this reaches exactly
         // 1 on the frame the box is 60% grown — whatever the scrub is
         // doing. (It used to cut on the name clearing the sides, about 90%
         // of the way; the words still ride the box out, the cut no longer
@@ -707,23 +825,23 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           sceneFx,
           {
             stageCut: 1,
-            duration: PANEL_GROW_DURATION * STAGE_CUT_AT,
+            duration: PANEL_GROW_DURATION * cutAt,
             ease: "none",
           },
           PANEL_GROW_AT,
         )
         // And the tree's break, on the same clock: from a beat after the
         // cut to where the statue's break ends, both as fractions of the
-        // growth (TREE_BREAK). Tweened here rather than read off the scroll
+        // growth (treeBreak, the stage's TREE_BREAK). Tweened here rather than read off the scroll
         // in the stage so that it cannot run ahead of the cut it follows.
         .to(
           sceneFx,
           {
             treeBreak: 1,
-            duration: PANEL_GROW_DURATION * (TREE_BREAK.end - TREE_BREAK.start),
+            duration: PANEL_GROW_DURATION * (treeBreak.end - treeBreak.start),
             ease: "none",
           },
-          PANEL_GROW_AT + PANEL_GROW_DURATION * TREE_BREAK.start,
+          PANEL_GROW_AT + PANEL_GROW_DURATION * treeBreak.start,
         );
 
       // ------------------------------------------------------------------
@@ -799,28 +917,57 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       // viewport, see the scrim below), out over the last screen before
       // the block's bottom reaches that same fifth — by which point the
       // work sections' backdrop, which boots a screen ahead, is up.
-      const narrationFx = root.querySelectorAll<HTMLElement>("[data-narration-fx]");
-      if (narrationSpace && narrationFx.length) {
-        const applyFade = () => {
-          const rect = narrationSpace.getBoundingClientRect();
+      //
+      // Written as two custom properties on the block — `--narration-fx`
+      // (opacity) and `--narration-fx-vis` — which the scene's holders
+      // read through var() (see NarrationScene). The scene is a lazy
+      // chunk that mounts after this effect has run, so there is nothing
+      // to query for here; the block is always there.
+      if (narrationSpace) {
+        // The block's edges come from the trigger's own numbers, not from
+        // getBoundingClientRect. `start` is the scroll at which the top
+        // meets the bottom of the viewport and `end` the scroll at which
+        // the bottom meets the top, so at any scroll s the top sits at
+        // start + vh - s and the bottom at end - s; both are re-measured
+        // on every ScrollTrigger refresh like everything else. The rect
+        // read ran on every scroll update for most of the page (this
+        // trigger is live from a screen above the narration to its end),
+        // in the middle of the other triggers' style writes, where each
+        // one forces a style recalculation. Counted under the headless
+        // harness over an 80-step scroll from the top of the page to the
+        // bottom: 60 getBoundingClientRect calls on the block before, 16
+        // after — and those 16 are the blossom scene's own gate checks and
+        // thinkerTiming's refresh reads, not this.
+        //
+        // Writes only when the value moved. At rest, and for the whole of
+        // the hero's scroll before the block is near, alpha is a constant
+        // 0 and the block's style is left alone.
+        let lastAlpha = -1;
+        const applyFade = (self: ScrollTrigger) => {
           const vh = window.innerHeight;
+          const scroll = self.scroll();
+          const top = self.start + vh - scroll;
+          const bottom = self.end - scroll;
           const shut = vh * 0.2;
-          const fadeIn = Math.min(Math.max((shut - rect.top) / (vh * 0.5), 0), 1);
-          const fadeOut = Math.min(Math.max((rect.bottom - shut) / (vh * 1.0), 0), 1);
+          const fadeIn = Math.min(Math.max((shut - top) / (vh * 0.5), 0), 1);
+          const fadeOut = Math.min(Math.max((bottom - shut) / (vh * 1.0), 0), 1);
           const alpha = Math.min(fadeIn, fadeOut);
-          narrationFx.forEach((holder) => {
-            holder.style.opacity = alpha.toFixed(3);
-            holder.style.visibility = alpha > 0.001 ? "visible" : "hidden";
-          });
+          if (alpha === lastAlpha) return;
+          lastAlpha = alpha;
+          narrationSpace.style.setProperty("--narration-fx", alpha.toFixed(3));
+          narrationSpace.style.setProperty(
+            "--narration-fx-vis",
+            alpha > 0.001 ? "visible" : "hidden",
+          );
         };
-        ScrollTrigger.create({
+        const fadeTrigger = ScrollTrigger.create({
           end: "bottom top",
           onRefresh: applyFade,
           onUpdate: applyFade,
           start: "top bottom",
           trigger: narrationSpace,
         });
-        applyFade();
+        applyFade(fadeTrigger);
       }
       if (narrationSpace && scrim) {
         const scrimTrigger = {
@@ -875,7 +1022,19 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         }
       }
     }, root);
+    // The display serif is loaded with font-display: swap, and when it
+    // lands the narration's stanzas change height, which moves every
+    // trigger start below them. ScrollTrigger measures on its own
+    // schedule (load, resize); a font swap is neither. One refresh once
+    // the fonts have settled — a no-op if they were in before this ran.
+    let fontsLive = true;
+    if (typeof document.fonts?.ready?.then === "function") {
+      void document.fonts.ready.then(() => {
+        if (fontsLive) ScrollTrigger.refresh();
+      });
+    }
     return () => {
+      fontsLive = false;
       ctx.revert();
       // The next run's timeline starts at 0 and only reports changes, so
       // a flag left shut here would keep the statue's loop off for good.
@@ -888,7 +1047,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       sceneFx.treeBreak = 0;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
-  }, [revealComplete]);
+  }, [revealComplete, stageCues]);
 
   // The Thinker's chunks are cut in a worker from the moment the page
   // mounts, and the tree's straight after them in the same worker. The
@@ -900,6 +1059,11 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // build (the model missing, a parse error) is logged once, by the
   // loader, and not waited for: without the tree the stage keeps the
   // statue past the cut (see ThinkerStage).
+  //
+  // The cutters stay statically imported: they are needed the moment this
+  // mounts, and three (their only heavy import) is in the first load
+  // anyway for the television's canvas, so a dynamic import here would
+  // add a round trip before the worker could start and save nothing.
   useEffect(() => {
     let live = true;
     const ready = () => {
@@ -1098,7 +1262,9 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
       >
         {revealComplete ? (
-          <ThinkerStage active={stageActive} timing={thinkerTiming} />
+          <StageErrorBoundary>
+            <ThinkerStage active={stageActive} timing={thinkerTiming} />
+          </StageErrorBoundary>
         ) : null}
       </div>
 
@@ -1199,19 +1365,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
                 sections' own backdrop takes over (see the narration fades
                 in the scroll effect). The dot field is the work sections'
                 (HalftoneField); the petals fall out of the tree's lowest
-                twigs (it publishes them the way the bough does). */}
-            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
-              <HalftoneField />
-            </div>
-            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
-              <SakuraStage
-                elements={[makeNarrationTree, makeNarrationBlossomMarks]}
-                gateSelector="#info"
-              />
-            </div>
-            <div data-narration-fx style={{ opacity: 0, visibility: "hidden" }}>
-              <PetalDrift gateSelector="#info" />
-            </div>
+                twigs (it publishes them the way the bough does). All three
+                live in NarrationScene, a lazy chunk, and are not mounted
+                until the reveal is done. */}
+            {revealComplete ? (
+              <StageErrorBoundary>
+                <NarrationScene />
+              </StageErrorBoundary>
+            ) : null}
             <div className="relative z-[1]">
               <Narration stage>
                 {HERO_NARRATION.map((lines, index) => (
@@ -1219,6 +1380,26 @@ export default function HeroIntro({ children }: HeroIntroProps) {
                 ))}
               </Narration>
             </div>
+            {/* The seam. This block's bottom edge is where the pinned stage
+                lets go and the work sections' plate (HomeSections, opaque)
+                takes the page; until now nothing marked it — the black
+                under the narration simply became the black of the plate.
+                A hairline the width of the screen, sitting ON the edge,
+                draws itself across as it comes 8% up from the bottom
+                (the [data-rule] motion in useRevealOnScroll: scaleX from
+                the left, power3.inOut, 0.9 s), the one motion the page's
+                own rules had been promised and this is the first to use.
+                It is the last thing inside the narration, so the blossom
+                scene is fading out under it (the fade above) as it draws,
+                and reduced motion shows it whole like every other rule.
+                Inside the block, not below it: HomeSections is z-10 and
+                would paint over anything that overlapped its top. */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-x-0 bottom-0 z-[1] h-px bg-white/20"
+              data-reveal
+              data-rule
+            />
           </div>
         </div>
       </div>
