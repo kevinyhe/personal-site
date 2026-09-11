@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import localFont from "next/font/local";
 import SiteBackground from "@/components/SiteBackground";
@@ -15,32 +15,61 @@ const inter = Inter({
 // Apparel (Latinotype) — the exact serif from the reference site, loaded
 // from user-provided files. NOTE: these are Fontspring DEMO cuts, licensed
 // for testing/mockups only; license the webfonts before public deploy.
+//
+// WOFF2, converted from the .otf the demo ships with (pyftsubset, every
+// glyph and layout feature kept, only the FontForge timestamp table dropped).
+// next/font passes local files through as-is and preloads all three, so the
+// format is the whole cost: 93.5 kB of OTF became 30.9 kB of WOFF2 on the
+// critical path. All three cuts stay: the narration and /info set `font-bold
+// italic`, and there is no bold roman to fall back to.
 const displaySerif = localFont({
   display: "swap",
   variable: "--font-instrument-serif",
   src: [
     {
-      path: "./fonts/Fontspring-DEMO-apparel-regular.otf",
+      path: "./fonts/Fontspring-DEMO-apparel-regular.woff2",
       weight: "400",
       style: "normal",
     },
     {
-      path: "./fonts/Fontspring-DEMO-apparel-regularit.otf",
+      path: "./fonts/Fontspring-DEMO-apparel-regularit.woff2",
       weight: "400",
       style: "italic",
     },
     {
-      path: "./fonts/Fontspring-DEMO-apparel-boldit.otf",
+      path: "./fonts/Fontspring-DEMO-apparel-boldit.woff2",
       weight: "700",
       style: "italic",
     },
   ],
 });
 
+const TITLE = "Kevin He";
+const DESCRIPTION =
+  "Kevin He writes software for things that move: robot autonomy, embedded firmware, and the tooling around both.";
+
 export const metadata: Metadata = {
-  title: "Kevin He",
-  description:
-    "Kevin He writes software for things that move: robot autonomy, embedded firmware, and the tooling around both.",
+  title: TITLE,
+  description: DESCRIPTION,
+  icons: { icon: "/icon.svg" },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    siteName: TITLE,
+    type: "website",
+    locale: "en_CA",
+  },
+  twitter: {
+    card: "summary",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+};
+
+// The ink behind everything, so the browser chrome around the page matches
+// it on phones instead of flashing white over the dark ground.
+export const viewport: Viewport = {
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({

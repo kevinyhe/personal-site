@@ -74,15 +74,26 @@ body {
   background: #0a0a0a;
 }
 
+/* The two blob layers are pre-blurred images, not live `filter: blur(90px)`
+   over radial-gradients. They used to be the gradients: scripts/bake-site-bg.mjs
+   holds that CSS verbatim and renders it once (`npm run bake:bg`). The blur
+   was the cost. A filter on an animated, promoted layer is re-applied by the
+   compositor every frame, over a layer 1.6x the viewport, on every route —
+   including the hero, where the GPU is already spent on the tree — and the
+   keyframes also changed `scale`, which asks the compositor to re-rasterise
+   the layer as well. A texture is one quad per layer per frame, and the
+   drift is the same translate it always was.
+   inset: -10%, down from -30%. The old margin hid the blur's washed-out rim;
+   now it only has to cover the drift, whose largest excursion is 6.7% of this
+   box (8% of the viewport). That alone cuts each layer's raster area from
+   2.56x to 1.44x the viewport. */
 .site-bg::before,
 .site-bg::after {
   content: "";
   position: absolute;
-  /* Oversized well past the viewport. A 90px blur samples from outside the
-     element, so an inset-0 layer would show a washed-out rim all the way
-     round where the filter runs out of pixels to average. */
-  inset: -30%;
-  filter: blur(90px);
+  inset: -10%;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
   will-change: transform;
 }
 
@@ -93,10 +104,7 @@ body {
    stops darker. The old field opened on #ff5f9a, which is a neon, not a
    flower. */
 .site-bg::before {
-  background:
-    radial-gradient(40% 48% at 66% 15%, #c9648e 0%, rgba(201, 100, 142, 0) 66%),
-    radial-gradient(46% 38% at 82% 46%, #a62c5c 0%, rgba(166, 44, 92, 0) 70%),
-    radial-gradient(34% 42% at 44% 66%, #64143a 0%, rgba(100, 20, 58, 0) 72%);
+  background-image: url("/bg/field-warm.webp");
   animation: site-bg-drift-a 64s ease-in-out infinite alternate;
 }
 
@@ -107,12 +115,16 @@ body {
    of the page is the same temperature and the drift stops reading as light
    moving. */
 .site-bg::after {
-  background:
-    radial-gradient(44% 38% at 88% 66%, #33285c 0%, rgba(51, 40, 92, 0) 74%),
-    radial-gradient(28% 34% at 26% 24%, #9a4352 0%, rgba(154, 67, 82, 0) 70%),
-    radial-gradient(54% 44% at 68% 92%, #240b1a 0%, rgba(36, 11, 26, 0) 76%);
+  background-image: url("/bg/field-cool.webp");
   opacity: 0.92;
   animation: site-bg-drift-b 87s ease-in-out infinite alternate;
+}
+
+/* A hidden tab still ticks its CSS animations in some browsers. The class
+   comes from components/SiteBackground.tsx on visibilitychange. */
+.site-bg[data-paused]::before,
+.site-bg[data-paused]::after {
+  animation-play-state: paused;
 }
 
 /* Corners down to a plum near-black, so the field reads as light in a dark
@@ -174,27 +186,32 @@ body {
   background-size: 200px 200px;
 }
 
+/* Translate only. The old frames also breathed `scale` between 1 and 1.1,
+   which for a promoted layer means the compositor has to pick a new raster
+   scale and repaint the tiles, not just move them. The percentages are the
+   old ones times 160/120, so the drift covers the same distance across the
+   viewport now that the layer box is 120% of it rather than 160%. */
 @keyframes site-bg-drift-a {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translate3d(-4%, 3%, 0) scale(1.09);
+    transform: translate3d(-5.3%, 4%, 0);
   }
   100% {
-    transform: translate3d(3%, -2%, 0) scale(1.03);
+    transform: translate3d(4%, -2.7%, 0);
   }
 }
 
 @keyframes site-bg-drift-b {
   0% {
-    transform: translate3d(0, 0, 0) scale(1.04);
+    transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translate3d(5%, -3%, 0) scale(1);
+    transform: translate3d(6.7%, -4%, 0);
   }
   100% {
-    transform: translate3d(-3%, 4%, 0) scale(1.1);
+    transform: translate3d(-4%, 5.3%, 0);
   }
 }
 
@@ -444,11 +461,56 @@ canvas {
   background: rgba(240, 240, 240, 0.24);
 }
 
+/* Keyboard focus ring. Nothing mounted had one: every link and button fell
+   through to the browser's default, a blue or black `outline: auto` that
+   reads as foreign against this palette and vanishes over the cream panel.
+   The ring is always there at 2px, transparent and flush, so focusing can
+   animate it — colour in and offset out on the site's curve — instead of it
+   popping. Only :focus-visible colours it: a mouse click still shows
+   nothing, which is what the UA default did too. */
+a,
+button,
+input,
+select,
+summary,
+textarea,
+[tabindex] {
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  transition:
+    outline-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    outline-offset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:focus-visible {
+  outline-color: var(--sakura-mid);
+  outline-offset: 2px;
+}
+
+/* The Contact panel (components/HomeSections.tsx) is #f4ece1, and #f7cfe6 on
+   it measures 1.2:1 — invisible. The blossom centre is 4.6:1 there. Keyed
+   on the panel's Tailwind class because that component is the one place the
+   cream is painted and it carries no other hook. */
+.bg-\[\#f4ece1\] :focus-visible {
+  outline-color: var(--sakura-center);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a,
+  button,
+  input,
+  select,
+  summary,
+  textarea,
+  [tabindex] {
+    transition: none;
+  }
+}
+
 /* No visible scrollbar: the page still scrolls (the scroll scene), but a
    bar against the fixed layers read as a stray UI element. */
 html {
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 html::-webkit-scrollbar {
   display: none;
