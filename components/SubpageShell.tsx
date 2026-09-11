@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useRef } from "react";
+import Rule from "@/components/Rule";
 import TransitionLink from "@/components/TransitionLink";
 import { sectionLinks, socialLinks } from "@/components/siteContent";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
@@ -99,12 +100,7 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
       <main className="flex-1">{children}</main>
 
       <footer className="mt-24 sm:mt-32">
-        <div
-          aria-hidden="true"
-          className="h-px w-full bg-white/25"
-          data-reveal
-          data-rule
-        />
+        <Rule />
         <div
           className="mt-5 flex flex-wrap items-baseline justify-between gap-4 text-[0.75rem] uppercase tracking-[0.04em] sm:text-[0.85rem]"
           data-reveal

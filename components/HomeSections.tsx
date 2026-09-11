@@ -12,6 +12,7 @@ import Rule from "@/components/Rule";
 import SakuraStage from "@/components/SakuraStage";
 import makeSakuraBlossomMarks from "@/components/sakuraBlossomMarks";
 import SectionHeader from "@/components/SectionHeader";
+import { scrollToSection } from "@/components/SectionLink";
 import type { PlateContent } from "@/components/WorkPlate";
 import {
   EMAIL,
@@ -290,21 +291,16 @@ function CopyEmail() {
   );
 }
 
-type LenisLike = {
-  scrollTo: (target: HTMLElement | string | number, options?: object) => void;
-};
-
 export default function HomeSections() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [plate, setPlate] = useState<PlateContent | null>(null);
 
   useRevealOnScroll(rootRef);
 
-  const toTop = useCallback(() => {
-    const lenis = (window as unknown as { __lenis?: LenisLike }).__lenis;
-    if (lenis) lenis.scrollTo(0, { duration: 2 });
-    else window.scrollTo({ behavior: "smooth", top: 0 });
-  }, []);
+  // One copy of the Lenis reach and its no-Lenis fallback lives in
+  // scrollToSection (the fallback is instant on purpose: no Lenis means
+  // reduced motion). 2 s is the whole-page duration SectionHeader uses too.
+  const toTop = useCallback(() => scrollToSection(0, 2), []);
 
   return (
     // relative + an opaque ground, both load-bearing: the hero's stage is a
