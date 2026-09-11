@@ -5,8 +5,11 @@ import {
   createDotPainter,
   dotRamp,
   fitCanvas,
+  FRAME_MS,
   type DotGrid,
 } from "@/components/halftone";
+import { SITE_EASE_CSS } from "@/components/petalGlyphs";
+import { trackClientRect } from "@/components/trackRect";
 
 /**
  * The dot matrix, running behind the page's sections.
@@ -38,6 +41,42 @@ const CHASE = 0.12;
 /** Seconds for the scan bar to cross the screen, and the gap between passes. */
 const SCAN_PERIOD = 11;
 const SCAN_WIDTH = 0.16;
+
+/**
+ * How the field spends FRAME_MS (halftone.ts) while nothing is chasing the
+ * pointer.
+ *
+ * A 1920x1080 viewport is ~9,300 cells, each a sine, a cosine and a fill,
+ * every frame. The things that move at rest are slow: the grain drifts
+ * ~12px/s (under a cell a second), the gust breathes over seconds, and the
+ * scan bar crosses the screen in 11 s, which at 1080px is ~3px a frame at
+ * 30fps — a fifth of a cell. None of it can be told apart at 60 and 30, so
+ * the loop sleeps to 30 and halves what the field costs. BranchProgress made
+ * the same call for its sway and did it by skipping the paint inside a 60Hz
+ * callback; here the NEXT callback is deferred with a timer instead, so the
+ * callback itself stops firing — a skipped callback still wakes the main
+ * thread sixty times a second for nothing.
+ *
+ * The timer is aimed TIMER_LEAD_MS early. requestAnimationFrame fires at
+ * the next vsync after the timer, and a timer set for 33 ms lands 1-4 ms
+ * late, past the vsync at 33.3 — so the frame came at 50 ms and the
+ * intervals alternated 33/50. Fired at 25 ms it is in time for the 33.3.
+ *
+ * The cursor's bloom is the one thing that has to run at the full rate: a
+ * light trailing the pointer at 30fps stutters. So a pointer move cancels
+ * the wait, and the loop keeps the full rate for as long as the light is
+ * on and still travelling toward the pointer (SETTLED_PX).
+ */
+const TIMER_LEAD_MS = 8;
+/** The light is "still moving" while it is further than this from its
+ * target. At CHASE 0.12 the last 2px of a chase are ~5 more frames nobody
+ * can see; at 0.5 they were ~17. */
+const SETTLED_PX = 2;
+/** How long the field takes to come up on first paint, ms. It used to
+ * appear at full strength on the first frame, which on a slow load put a
+ * whole screen of grain under the type in one step. Same curve as the
+ * rest of the page's motion (globals.css). */
+const RAMP_MS = 400;
 
 /**
  * The cursor's pool is a flower, not a circle.
@@ -158,8 +197,15 @@ export default function HalftoneField() {
     let height = 0;
     // Where the light is, and where it is heading.
     const light = { x: -9999, y: -9999, tx: -9999, ty: -9999, level: 0 };
+    // The light level the last painted frame used: a change (pointer in,
+    // pointer out) is a reason to paint now rather than at the next budget.
+    let paintedLevel = 0;
     let visible = false;
+    // The pending callback and the pending budget wait. At most one of the
+    // two is set at a time; both zero means the loop is parked.
     let frame = 0;
+    let timer = 0;
+    let rampFrame = 0;
     let start = 0;
     let last = 0;
     // How far the grain has travelled, in cells, and where the bloom has
@@ -171,6 +217,33 @@ export default function HalftoneField() {
     let grainY = 0;
     let bloomAngle = 0;
 
+    // Where the sections block is, for the tone, and where the canvas is,
+    // for the pointer.
+    //
+    // Both used to be a getBoundingClientRect per call — one a frame on the
+    // block, one a pointer event on the canvas, ~60/s each — which is cheap
+    // to say and not cheap to do: each forces layout, and WorkPlate is
+    // dirtying styles every frame the pointer is over the list. Only a
+    // scroll or a reflow can move either rectangle, so trackClientRect
+    // marks them stale from those (PetalDrift's arrangement for its gate),
+    // and they are read at most once a frame, together: the second read
+    // costs nothing once the first has forced the layout.
+    const block = holder.parentElement ?? holder;
+    let blockTop = 0;
+    let blockTravel = 1;
+    let canvasLeft = 0;
+    let canvasTop = 0;
+    let boxStale = true;
+    const readBox = () => {
+      boxStale = false;
+      const box = block.getBoundingClientRect();
+      blockTop = box.top;
+      blockTravel = Math.max(1, box.height - window.innerHeight);
+      const own = canvas.getBoundingClientRect();
+      canvasLeft = own.left;
+      canvasTop = own.top;
+    };
+
     const measure = () => {
       width = holder.clientWidth || window.innerWidth;
       height = window.innerHeight;
@@ -179,7 +252,24 @@ export default function HalftoneField() {
       grid = fitCanvas(canvas, width, height, CELL);
     };
 
+    /** Queues the next frame: now, or after the rest of the budget. */
+    const schedule = (delayMs: number) => {
+      if (frame || timer || !visible || reducedMotion || document.hidden) {
+        return;
+      }
+      if (delayMs <= 0) {
+        frame = requestAnimationFrame(draw);
+        return;
+      }
+      timer = window.setTimeout(() => {
+        timer = 0;
+        frame = requestAnimationFrame(draw);
+      }, delayMs);
+    };
+
     const draw = (time: number) => {
+      // This callback has fired; the id is spent.
+      frame = 0;
       if (!start) start = time;
       const t = (time - start) / 1000;
       // Clamped: after a pause (tab hidden, field scrolled past) the first
@@ -196,15 +286,8 @@ export default function HalftoneField() {
 
       ctx.clearRect(0, 0, width, height);
 
-      // How far the reader is through the sections block, 0..1. One box
-      // measurement a frame, on the element this canvas is already pinned
-      // inside, which is cheaper than asking each section where it is.
-      const block = holder.parentElement;
-      if (block) {
-        const box = block.getBoundingClientRect();
-        const travel = Math.max(1, box.height - window.innerHeight);
-        retone(toneAt(-box.top / travel));
-      }
+      if (boxStale) readBox();
+      retone(toneAt(-blockTop / blockTravel));
 
       const reach2 = REACH * REACH;
       // At rest the field is a still, correct frame: no drift, no spin, and
@@ -299,27 +382,44 @@ export default function HalftoneField() {
       // Under reduced motion every time-varying term above is pinned, so a
       // second frame would repaint the same picture. One frame is the whole
       // animation; measured, the loop was still burning 240 callbacks per
-      // two seconds redrawing an identical canvas.
-      frame = visible && !reducedMotion ? requestAnimationFrame(draw) : 0;
+      // two seconds redrawing an identical canvas. (schedule() no-ops there.)
+      //
+      // Otherwise: full rate while the light is on and still travelling, or
+      // has just switched on or off; the budget rate when the field is only
+      // breathing. Level 0 is not drawn, so a light that is off has nothing
+      // to chase — without that check ~43 full-rate frames followed a
+      // pointer that had already left the window.
+      const chasing =
+        light.level !== paintedLevel ||
+        (light.level > 0 &&
+          Math.abs(light.tx - light.x) + Math.abs(light.ty - light.y) >
+            SETTLED_PX);
+      paintedLevel = light.level;
+      // `time` is when this frame started; the paint above is what has
+      // been spent of the budget since.
+      schedule(
+        chasing ? 0 : time + FRAME_MS - TIMER_LEAD_MS - performance.now(),
+      );
     };
 
     const run = () => {
-      if (frame || !visible || reducedMotion) return;
+      if (frame || timer || !visible || reducedMotion) return;
       start = 0;
       last = 0;
       frame = requestAnimationFrame(draw);
     };
     const stop = () => {
-      if (!frame) return;
-      cancelAnimationFrame(frame);
+      if (frame) cancelAnimationFrame(frame);
+      if (timer) window.clearTimeout(timer);
       frame = 0;
+      timer = 0;
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType === "touch") return;
-      const box = canvas.getBoundingClientRect();
-      light.tx = event.clientX - box.left;
-      light.ty = event.clientY - box.top;
+      if (boxStale) readBox();
+      light.tx = event.clientX - canvasLeft;
+      light.ty = event.clientY - canvasTop;
       // First sighting: put the light where it is rather than flying it in
       // from the corner the page loaded with.
       if (light.level === 0) {
@@ -327,19 +427,38 @@ export default function HalftoneField() {
         light.y = light.ty;
       }
       light.level = 1;
+      // The loop is sleeping out its budget; the bloom has to move now, not
+      // at the end of it. draw() then keeps the full rate while it chases.
+      if (timer) {
+        stop();
+        schedule(0);
+      }
     };
     const onPointerLeave = () => {
       light.level = 0;
     };
 
     measure();
+    // Registered before onResize, so a resize has marked the box stale by
+    // the time the frame below reads it.
+    const untrack = trackClientRect(block, () => {
+      boxStale = true;
+    });
     const onResize = () => {
       measure();
-      // fitCanvas resized the backing store, which cleared it. The running
-      // loop repaints on its own; a stopped one (scrolled past, or reduced
-      // motion, where the single frame IS the animation) would otherwise be
-      // left blank at the new size.
-      if (!visible || reducedMotion) draw(performance.now());
+      // fitCanvas resized the backing store, which cleared it. A stopped
+      // loop (scrolled past, or reduced motion, where the single frame IS
+      // the animation) would otherwise be left blank at the new size. A
+      // running one repaints on its own, but it may be sleeping out its
+      // budget, and a window drag fires resize faster than FRAME_MS — the
+      // field strobed blank between paints. So the wait is cut short and
+      // the next frame paints now, as a pointer move does.
+      if (!visible || reducedMotion) {
+        draw(performance.now());
+      } else if (timer) {
+        stop();
+        schedule(0);
+      }
     };
     // The cursor's bloom is motion that follows the pointer, and there is no
     // loop left to draw it with. Both listeners stay off entirely rather
@@ -356,12 +475,13 @@ export default function HalftoneField() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         visible = entry.isIntersecting && !document.hidden;
+        boxStale = true;
         if (visible) run();
         else stop();
       },
       { threshold: 0 },
     );
-    observer.observe(holder.parentElement ?? holder);
+    observer.observe(block);
 
     const onVisibility = () => {
       if (document.hidden) stop();
@@ -370,12 +490,26 @@ export default function HalftoneField() {
     document.addEventListener("visibilitychange", onVisibility);
 
     // One frame straight away, so the field is there before the first
-    // scroll rather than appearing when the loop starts.
+    // scroll rather than appearing when the loop starts. The holder mounts
+    // at opacity 0 and comes up over RAMP_MS from the frame after this one:
+    // the 0 has to be committed before a transition can start from it.
+    // Reduced motion snaps to 1 — its one frame is the whole animation.
     draw(performance.now());
+    if (reducedMotion) {
+      holder.style.opacity = "1";
+    } else {
+      rampFrame = requestAnimationFrame(() => {
+        rampFrame = 0;
+        holder.style.transition = `opacity ${RAMP_MS}ms ${SITE_EASE_CSS}`;
+        holder.style.opacity = "1";
+      });
+    }
 
     return () => {
       stop();
+      if (rampFrame) cancelAnimationFrame(rampFrame);
       observer.disconnect();
+      untrack();
       window.removeEventListener("resize", onResize);
       if (trackPointer) {
         window.removeEventListener("pointermove", onPointerMove);
@@ -389,10 +523,12 @@ export default function HalftoneField() {
     // Height 0 so it takes no room in the flow: the canvas inside overflows
     // it. Sticky rather than fixed because a fixed layer inside the sections
     // would cover the hero as well, and the sections start half a page down.
+    // Opacity 0 until the effect has painted its first frame (see RAMP_MS).
     <div
       aria-hidden="true"
       className="pointer-events-none sticky top-0 z-0 h-0"
       ref={holderRef}
+      style={{ opacity: 0 }}
     >
       <canvas className="absolute left-0 top-0" ref={canvasRef} />
     </div>

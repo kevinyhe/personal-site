@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { sampleBoughSpawn } from "@/components/boughSpawn";
+import { fitBackingStore } from "@/components/halftone";
 import {
   buildPetalColours,
   clamp01,
@@ -22,6 +23,7 @@ import {
   PETAL_COLOUR_COUNT,
   type Petal,
 } from "@/components/petalDrift";
+import { trackClientRect } from "@/components/trackRect";
 
 /**
  * Loose sakura petals falling down the whole page below the hero.
@@ -136,9 +138,7 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
     const measure = () => {
       width = window.innerWidth;
       height = window.innerHeight;
-      dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+      dpr = fitBackingStore(canvas, width, height, MAX_DPR);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
 
@@ -160,10 +160,9 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
     // Both are cached. getBoundingClientRect forces layout, and reading it
     // inside the frame loop made the browser lay the page out 60 times a
     // second for a rectangle that only two things can move: a scroll and a
-    // reflow. So: query the element once, and mark the rectangle stale from
-    // scroll, resize and a ResizeObserver on the block itself, which is
-    // what catches a font swap or a section revealing. Recomputed at most
-    // once per frame, and not at all while the page sits still.
+    // reflow. So: query the element once, and let trackClientRect mark the
+    // rectangle stale when either happens. Recomputed at most once per
+    // frame, and not at all while the page sits still.
     const gate = gateSelector
       ? document.querySelector<HTMLElement>(gateSelector)
       : null;
@@ -207,10 +206,12 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
     // would record "not visible" for a block that is in fact on screen —
     // after which returning to the tab has nothing to restore.
     let onScreen = false;
-    // Last opacity written to the canvas, as its string. The style write is
+    // Last opacity written to the canvas, in thousandths. The style write is
     // a string allocation plus a style invalidation, and the value is the
-    // same on almost every frame, so it is only written when it moves.
-    let opacityText = "";
+    // same on almost every frame, so it is only written when it moves — and
+    // the comparison is on the integer, so a steady frame does not mint the
+    // string just to find out it matches.
+    let opacityMils = -1;
 
     const draw = (dt: number) => {
       // Reduced motion paints nothing, ever — not a still frame either.
@@ -222,10 +223,10 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
 
       if (boxStale) readBox();
       const fade = fadeNow();
-      const next = `${(fade * FIELD_OPACITY).toFixed(3)}`;
-      if (next !== opacityText) {
-        opacityText = next;
-        canvas.style.opacity = next;
+      const mils = Math.round(fade * FIELD_OPACITY * 1000);
+      if (mils !== opacityMils) {
+        opacityMils = mils;
+        canvas.style.opacity = (mils / 1000).toFixed(3);
       }
       if (fade <= 0.001) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -318,26 +319,18 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
     };
 
     measure();
+    // Registered before onResize, so a resize has marked the box stale by
+    // the time the still frame below reads it.
+    const untrack = trackClientRect(gate, () => {
+      boxStale = true;
+    });
     const onResize = () => {
       measure();
-      boxStale = true;
       // Redraw the one still frame the loop is not running. draw() is inert
       // under reduced motion, so this cannot paint the field back in.
       if (!frame) draw(0);
     };
     window.addEventListener("resize", onResize);
-
-    // Passive: this must never be able to hold up a scroll. It does no work
-    // beyond setting a flag the next frame reads.
-    const onScroll = () => {
-      boxStale = true;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-
-    const resizeObserver = new ResizeObserver(() => {
-      boxStale = true;
-    });
-    if (gate) resizeObserver.observe(gate);
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -372,9 +365,8 @@ export default function PetalDrift({ gateSelector }: PetalDriftProps) {
     return () => {
       stop();
       observer.disconnect();
-      resizeObserver.disconnect();
+      untrack();
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [gateSelector]);

@@ -408,3 +408,5 @@ export function cubicBezierEase(
 
 /** The site's easing, ready to hand to GSAP as `ease`. */
 export const SITE_EASE = cubicBezierEase(0.22, 1, 0.36, 1);
+/** The same curve for a CSS transition written from script. */
+export const SITE_EASE_CSS = "cubic-bezier(0.22,1,0.36,1)";
