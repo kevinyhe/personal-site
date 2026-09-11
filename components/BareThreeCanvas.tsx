@@ -5530,9 +5530,42 @@ export default function WeepingCherryTreeCanvas({
         prefersReducedMotion ? FINAL_CAMERA_POSITION : INTRO_CAMERA_POSITION,
       );
 
-      const renderer = new THREE.WebGLRenderer({
+      // Opaque canvas. Every path that reaches it clears to voidColor at
+      // alpha 1 and writes alpha 1 (the halftone and backdrop shaders, the
+      // composer's final quad), so alpha: true only had the compositor
+      // blend an opaque layer over the page each frame.
+      //
+      // antialias stays on. The canvas mostly receives fullscreen quads
+      // (the halftone pass, the composer's final pass), but renderCrtPost
+      // draws the CRT scene straight to it while the post ramp is still at
+      // zero, and that is the TV's bezel with real edges. Turning MSAA off
+      // there was not checked on a real GPU (the headless runs use
+      // SwiftShader), so it is left as it was; the composer's own
+      // 4-sample target (crtPostTarget) covers the rest of the chain.
+      //
+      // The context is created here rather than by three: WebGLRenderer
+      // (0.178) always asks the browser for alpha: true and uses its own
+      // `alpha` option only to pick the default clear alpha, so an opaque
+      // drawing buffer has to be requested directly and handed over. The
+      // other attributes are three's own defaults (stencil off since r163).
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("webgl2", {
+        alpha: false,
         antialias: true,
-        alpha: true,
+        depth: true,
+        stencil: false,
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+        powerPreference: "low-power",
+        failIfMajorPerformanceCaveat: false,
+      });
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        // null only where WebGL2 is missing; three then tries itself and
+        // fails with its own message, as it did before.
+        ...(context ? { context } : {}),
+        antialias: true,
+        alpha: false,
         powerPreference: "low-power",
       });
       renderer.setClearColor(voidColor, 1);
@@ -6177,9 +6210,12 @@ void main() {
         // read as a sticker.
         screen: { cx: 0, cy: 2.4829, cz: 0.375, w: 1.62, h: 1.35, pitch: 0 },
         yaw: -Math.PI / 2,
-        // WebP re-encodes of the download's 2K PNG set (296 KB for all
-        // four, down from 7.3 MB): colour at 2K, the rest at 1K — the set
-        // is seen ~450 px wide at the end pose.
+        // WebP re-encodes of the download's 2K PNG set, all four at 1K
+        // (the set is seen ~450 px wide at the end pose, so the 2K colour
+        // map was 16 MB of GPU texture before mips, sampling nothing above
+        // its own mip 2; 1K is 4 MB and matches the normal and roughness
+        // maps. Headless captures at the end pose are unchanged; not
+        // re-checked on a real GPU).
         textures: {
           map: "/models/tv-old-tv-retro-tv/textures/crt-basecolor.webp",
           normalMap: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp",
@@ -7726,9 +7762,53 @@ void main() {
       };
       const removeViewportResize = addViewportChangeListener(onResize);
 
+      // Park the loop when nothing it draws can be seen. Two gates, read
+      // before each re-schedule: the mount on screen (an IntersectionObserver
+      // on it — the stage is sticky through the hero and the narration, then
+      // scrolls off at the work sections, where SakuraStage, HalftoneField
+      // and PetalDrift run their own loops) and the tab visible
+      // (document.hidden, read live so a tab hidden from the first paint is
+      // caught too). Until this the loop only dropped to the 30fps idle rate
+      // and kept rendering the tree scene and the halftone pass four screens
+      // down and in hidden tabs. A frame that finds a gate shut does not
+      // re-schedule; the gate's rising edge schedules one again. Nothing
+      // else changes, so the idle throttle, the intro clock and reduced
+      // motion behave as before. The very first frame always draws (the
+      // gates are checked after reportedReady), so onReady fires as it did.
+      let mountOnScreen = true;
+      let parked = false;
+      const wakeLoop = () => {
+        if (!parked || disposed || !mountOnScreen || document.hidden) return;
+        parked = false;
+        // The first frame back runs at full rate (see recentlyActive): the
+        // scroll position reached while parked is on screen at once.
+        markInteraction();
+        frame = requestAnimationFrame(animate);
+      };
+      document.addEventListener("visibilitychange", wakeLoop);
+      // intersectionRatio > 0 as well as isIntersecting: a stage whose
+      // bottom edge sits exactly on the viewport's top (the work sections'
+      // first pixel) is edge-adjacent, which isIntersecting alone counts as
+      // visible. A zero-size mount inside the viewport reports ratio 1, so
+      // this cannot park a canvas that has not been laid out yet.
+      const mountObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+          mountOnScreen = entry.isIntersecting && entry.intersectionRatio > 0;
+          wakeLoop();
+        },
+        { threshold: 0 },
+      );
+      mountObserver.observe(mount);
+
       const animate = () => {
         if (disposed) return;
         const now = performance.now();
+        if (reportedReady && (!mountOnScreen || document.hidden)) {
+          parked = true;
+          frame = 0;
+          return;
+        }
         frame = requestAnimationFrame(animate);
         const parallaxMoving =
           !prefersReducedMotion &&
@@ -8002,6 +8082,8 @@ void main() {
       cleanup = () => {
         stopLoadingLoop();
         cancelAnimationFrame(frame);
+        mountObserver.disconnect();
+        document.removeEventListener("visibilitychange", wakeLoop);
         removeViewportResize();
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("scroll", markInteraction);
