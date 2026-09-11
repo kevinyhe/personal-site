@@ -7,29 +7,34 @@ type LenisLike = {
 };
 
 /**
- * Hands a scroll target to Lenis (components/SmoothScroll), which eases the
- * page there the same way a wheel does. Returns false when Lenis is not on
- * the page — before it mounts, or with JavaScript that failed — and leaves
- * the fallback to the caller, because the right one differs: an anchor can
- * just be an anchor, a button has to scroll something itself.
+ * Scrolls the page to a section, or to a document offset in px.
  *
- * Every section link on the page goes through here (the hero strip, the
- * fixed header) so there is one copy of the window.__lenis reach.
+ * With Lenis (components/SmoothScroll) on the page the ride is eased, the
+ * same way a wheel scroll is, so the scrubbed scenes between here and there
+ * play out. Without it the page moves in one step. Not `behavior: "smooth"`:
+ * Lenis is absent because SmoothScroll stood down for prefers-reduced-motion
+ * (or because it failed, or has not mounted yet), and in each case an eased
+ * scroll is the wrong answer. Every section control on the page — the hero
+ * strip's anchors, the fixed header's buttons — comes through here, so there
+ * is one copy of the window.__lenis reach and one of the fallback.
  *
- * `duration` is seconds. The page's scrubbed scenes play out under an eased
- * scroll, so a longer distance gets a longer ride rather than a faster one:
- * 1.4 between neighbouring sections, 1.6 from the hero strip (which is at
- * least the hero's four screens from anything), 2 for the whole page back
- * to the top.
+ * `duration` is seconds. The scenes are scrubbed by scroll position, so a
+ * longer distance gets a longer ride rather than a faster one: 1.4 between
+ * neighbouring sections (the header), 1.6 from the hero strip (which is at
+ * least the hero's four screens from anything), 2 for the whole page back to
+ * the top.
  */
-export function scrollWithLenis(
+export function scrollToSection(
   target: HTMLElement | number,
   duration: number,
-): boolean {
+): void {
   const lenis = (window as unknown as { __lenis?: LenisLike }).__lenis;
-  if (!lenis) return false;
-  lenis.scrollTo(target, { duration });
-  return true;
+  if (lenis) {
+    lenis.scrollTo(target, { duration });
+    return;
+  }
+  if (typeof target === "number") window.scrollTo(0, target);
+  else target.scrollIntoView();
 }
 
 /**
@@ -51,6 +56,11 @@ export function scrollWithLenis(
  * a screen instead — so it is caught here: the strip reads as three
  * buttons, and someone who has tabbed onto one and pressed Space meant the
  * link, not a page-down through the pinned hero.
+ *
+ * Both handlers take the event over whenever the target is in the
+ * document. The anchor's own jump would land in the same place, but it
+ * also rewrites the URL hash, and the Lenis path never does; one behaviour
+ * for the two is simpler than a hash that depends on which scroll ran.
  */
 
 /** The focus mark, in the strip's own colour. The strip is painted on the
@@ -69,11 +79,13 @@ export default function SectionLink({
   className?: string;
   id: string;
 }) {
-  /** True when Lenis took the scroll; false leaves it to the browser. */
+  /** False only when the section is not in the document, which leaves the
+   *  anchor to the browser. */
   const scrollTo = () => {
     const target = document.getElementById(id);
     if (!target) return false;
-    return scrollWithLenis(target, 1.6);
+    scrollToSection(target, 1.6);
+    return true;
   };
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -92,8 +104,6 @@ export default function SectionLink({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>) => {
     if (event.key !== " ") return;
-    // Without Lenis there is nothing better than the native jump, which
-    // Space would not do on a link anyway; Enter still does.
     if (scrollTo()) event.preventDefault();
   };
 
