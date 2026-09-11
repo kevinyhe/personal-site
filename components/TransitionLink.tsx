@@ -29,6 +29,15 @@ const FOCUS_RING =
 const COVER_TIMEOUT_MS = 2000;
 
 /**
+ * The one armed failsafe, module-wide: there is one panel, so there is at
+ * most one cover to watch. Kept here rather than on the panel so a new
+ * wipe can cancel the previous wipe's timer — without that, click A's
+ * timer (armed for t=2.38 s) would fire during click B's cover and slide
+ * the panel off the OLD page while route B was still loading.
+ */
+let coverTimer = 0;
+
+/**
  * Internal link that plays a full-viewport dark wipe before navigating.
  * The panel (#page-veil, rendered once in the root layout) slides up to
  * cover the screen, the route changes underneath it, and app/template.tsx
@@ -93,6 +102,7 @@ export default function TransitionLink({
     if (labelEl) labelEl.textContent = veilLabel ?? "";
 
     gsap.killTweensOf(veil);
+    window.clearTimeout(coverTimer);
     if (fromParked) parkVeil(veil, true);
     gsap.to(veil, {
       duration: 0.38,
@@ -100,7 +110,7 @@ export default function TransitionLink({
       onComplete: () => {
         veil.dataset.state = "covering";
         router.push(target);
-        window.setTimeout(() => {
+        coverTimer = window.setTimeout(() => {
           // The template took over, or a later click did. Nothing to do.
           if (veil.dataset.state !== "covering") return;
           veil.dataset.state = "clearing";

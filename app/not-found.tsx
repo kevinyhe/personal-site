@@ -11,11 +11,10 @@ export default function NotFound() {
   return (
     <SubpageShell>
       <section className="flex min-h-[60vh] flex-col justify-center pt-24 sm:pt-36">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          404
+        {/* Opacity on the inner span, not the revealed <p>: the reveal ends
+            with inline `opacity: 1`, which would beat the class for good. */}
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">404</span>
         </p>
         <h1
           className="mt-5 font-serif-display text-[clamp(2.5rem,8vw,5rem)] italic leading-none tracking-[-0.02em]"

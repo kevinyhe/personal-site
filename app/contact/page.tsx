@@ -20,11 +20,11 @@ export default function ContactPage() {
   return (
     <SubpageShell current="contact">
       <section className="pt-24 sm:pt-36">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          Contact
+        {/* Every caption here keeps its opacity on an inner span: the
+            reveal ends with inline `opacity: 1` on the [data-reveal]
+            element, which would beat the class for good. */}
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Contact</span>
         </p>
         <h1
           className="mt-5 max-w-[12ch] text-[clamp(2.4rem,6.5vw,5rem)] font-light leading-[1.04] tracking-[-0.03em]"
@@ -32,20 +32,14 @@ export default function ContactPage() {
         >
           Get in touch.
         </h1>
-        <p
-          className="mt-8 text-[0.95rem] leading-[1.75] opacity-70"
-          data-reveal
-        >
-          Email is fastest.
+        <p className="mt-8 text-[0.95rem] leading-[1.75]" data-reveal>
+          <span className="opacity-70">Email is fastest.</span>
         </p>
       </section>
 
       <section className="mt-16 sm:mt-24">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          Write to
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Write to</span>
         </p>
         <div className="mt-5 inline-flex max-w-full flex-col">
           {/* The same address as the home page, breaking the same way
@@ -74,11 +68,8 @@ export default function ContactPage() {
       </section>
 
       <section className="mt-20 sm:mt-28">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          Elsewhere
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Elsewhere</span>
         </p>
         <div
           aria-hidden="true"

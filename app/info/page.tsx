@@ -29,11 +29,11 @@ function Block({
 }) {
   return (
     <section className="mt-20 sm:mt-28">
-      <p
-        className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-        data-reveal
-      >
-        {label}
+      {/* Opacity on the inner span: the reveal ends with inline
+          `opacity: 1` on the [data-reveal] element, which would beat the
+          45% class for good. */}
+      <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+        <span className="opacity-45">{label}</span>
       </p>
       {/* The list's top rule: the first row's old border-t, drawn across
           on entry instead of appearing. Each row carries its own bottom
@@ -81,11 +81,8 @@ export default function InfoPage() {
   return (
     <SubpageShell current="info">
       <section className="pt-24 sm:pt-36">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          Info
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Info</span>
         </p>
         {/* The same words the home page's narration says, so the two do
             not describe the same person differently. */}
