@@ -31,11 +31,11 @@ export default function WorkPage() {
   return (
     <SubpageShell current="work">
       <section className="pt-24 sm:pt-36">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-45"
-          data-reveal
-        >
-          Work
+        {/* The opacity lives on the inner span, not the revealed <p>: the
+            reveal ends with inline `opacity: 1`, which would beat the 45%
+            class for good. Same for every caption on these pages. */}
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Work</span>
         </p>
         <h1
           className="mt-5 max-w-[14ch] text-[clamp(2.4rem,6.5vw,5rem)] font-light leading-[1.04] tracking-[-0.03em]"
