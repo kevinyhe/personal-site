@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
 import BranchRule from "@/components/BranchRule";
 import FractureText from "@/components/FractureText";
@@ -7,11 +8,11 @@ import HalftoneField from "@/components/HalftoneField";
 import LocalTime from "@/components/LocalTime";
 import { Narration, Stanza } from "@/components/Narration";
 import PetalDrift from "@/components/PetalDrift";
+import Rule from "@/components/Rule";
 import SakuraStage from "@/components/SakuraStage";
 import makeSakuraBlossomMarks from "@/components/sakuraBlossomMarks";
-import makeSakuraBough from "@/components/sakuraBough";
 import SectionHeader from "@/components/SectionHeader";
-import WorkPlate, { type PlateContent } from "@/components/WorkPlate";
+import type { PlateContent } from "@/components/WorkPlate";
 import {
   EMAIL,
   elsewhere,
@@ -21,6 +22,45 @@ import {
   type WorkEntry,
 } from "@/components/siteContent";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
+
+/**
+ * Two modules loaded after the page has painted: WorkPlate (~1.9 kB gz)
+ * and sakuraBough (~3.3 kB gz), the only two this file is the sole
+ * importer of. Together about 5 kB gz off the route's First Load JS —
+ * measured 494 kB against the 495 kB the batch started from (Next rounds;
+ * the route chunk itself went 347 → 343 kB), with the
+ * two arriving as their own chunks on first scroll.
+ *
+ * Nothing else here can move. HalftoneField, PetalDrift, SakuraStage,
+ * sakuraBlossomMarks and — through sakuraTree — three.js are all imported
+ * statically by HeroIntro on the same route, and webpack keeps a module in
+ * the first load if anyone on the route holds it that way. Wrapping them
+ * in dynamic() here would cost a delayed mount and a second render for a
+ * saving of zero, so they stay static: three arrives via HeroIntro and
+ * this file just uses it. (When HeroIntro's side goes lazy, three goes
+ * lazy for this file for free, because no static import here holds it.)
+ *
+ * `ssr: false` because both render into an empty <canvas> on the server
+ * anyway, and no `loading` state because there is nothing to stand in
+ * for — the type in front of them is the page. The bough loader builds the
+ * elements array once, at load, because SakuraStage keys its rebuild on
+ * the factories' identity.
+ */
+const WorkPlate = dynamic(() => import("@/components/WorkPlate"), {
+  ssr: false,
+});
+const SectionStage = dynamic(
+  async () => {
+    const elements = [
+      (await import("@/components/sakuraBough")).default,
+      makeSakuraBlossomMarks,
+    ];
+    return function SectionStage() {
+      return <SakuraStage elements={elements} gateSelector="[data-sections]" />;
+    };
+  },
+  { ssr: false },
+);
 
 /**
  * The page below the hero, told rather than listed.
@@ -89,6 +129,16 @@ function Aside({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Keyboard focus, drawn as the page's hairline: 1px, offset, no fill. The
+ * default UA ring is a 2px blue box, which is the one colour the page does
+ * not have. `outline-none` first so the UA ring never flashes under ours.
+ */
+const FOCUS_RING_LIGHT =
+  "outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#f0f0f0]/40";
+const FOCUS_RING_INK =
+  "outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#0a0a0a]/40";
+
 function WorkRow({
   entry,
   onHover,
@@ -98,12 +148,12 @@ function WorkRow({
 }) {
   const inner = (
     <div className="py-7 sm:py-10">
-      <h3 className="font-serif-display text-[clamp(1.7rem,4.4vw,4rem)] leading-[1.15] tracking-[-0.02em] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-3">
+      <h3 className="font-serif-display text-[clamp(1.7rem,4.4vw,4rem)] leading-[1.15] tracking-[-0.02em] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-3 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0">
         {entry.title}
         {entry.href ? (
           <span
             aria-hidden="true"
-            className="ml-3 inline-block align-middle text-[0.9rem] opacity-0 transition-opacity duration-300 group-hover:opacity-60"
+            className="ml-3 inline-block align-middle text-[0.9rem] opacity-0 transition-opacity duration-300 group-hover:opacity-60 motion-reduce:transition-none"
           >
             {"↗"}
           </span>
@@ -123,10 +173,13 @@ function WorkRow({
           summary was 4.09:1, and its group-hover lift to 85% is not a fix
           because hover is not the default state and does not exist on
           touch. */}
-      <p className="mt-3 text-[0.8rem] uppercase tracking-[0.1em] opacity-55">
+      {/* The year lifts with the summary on hover. It was the one line in
+          the row that did not, so it sat still while everything around it
+          brightened and read as stuck. */}
+      <p className="mt-3 text-[0.8rem] uppercase tracking-[0.1em] opacity-55 transition-opacity duration-300 group-hover:opacity-80 motion-reduce:transition-none">
         {entry.year}
       </p>
-      <p className="mt-2 max-w-[40rem] text-[0.95rem] leading-[1.7] opacity-60 transition-opacity duration-300 group-hover:opacity-85">
+      <p className="mt-2 max-w-[40rem] text-[0.95rem] leading-[1.7] opacity-60 transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none">
         {entry.description}
       </p>
     </div>
@@ -155,7 +208,15 @@ function WorkRow({
           It listens on this li for pointer and focus. */}
       <BranchRule seed={entry.title} />
       {entry.href ? (
-        <a href={entry.href} rel="noreferrer" target="_blank">
+        // block, so the focus outline is the row's box and not an inline
+        // ribbon around a block child. The ring is a 1px line at 40%: the
+        // page's hairline, offset far enough to clear the twig.
+        <a
+          className={FOCUS_RING_LIGHT + " block"}
+          href={entry.href}
+          rel="noreferrer"
+          target="_blank"
+        >
           {inner}
         </a>
       ) : (
@@ -181,14 +242,51 @@ function CopyEmail() {
     }
   }, []);
 
-  return (
-    <button
-      className="font-serif-display text-[1.05rem] italic opacity-50 transition-opacity duration-200 hover:opacity-100"
-      onClick={copy}
-      type="button"
+  // Both labels are always in the box, stacked on one grid cell, and the
+  // state only moves opacity between them: a 200 ms cross-fade on the
+  // page's curve instead of the text snapping. The cell is as wide as the
+  // wider label, so the button does not change size when the word does.
+  // inline-grid, not grid: the button is centred by its parent's
+  // text-align, and a block-level grid ignores that and sits at the left
+  // margin (it did, for one build).
+  //
+  // Both visible labels are aria-hidden and the button's name is fixed by
+  // aria-label, so nothing is announced twice: a screen reader hears one
+  // stable button, and the status span beside it — a live region, visually
+  // hidden — says "Copied" once when it happens. (Swapping which label was
+  // hidden while the button itself was the live region announced the new
+  // name AND the region change on some readers.)
+  const label = (text: string, shown: boolean) => (
+    <span
+      aria-hidden="true"
+      className={
+        "[grid-area:1/1] transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none " +
+        (shown ? "opacity-100" : "opacity-0")
+      }
     >
-      {copied ? "Copied" : "Copy it"}
-    </button>
+      {text}
+    </span>
+  );
+
+  return (
+    <>
+      <button
+        aria-label="Copy the email address"
+        className={
+          FOCUS_RING_INK +
+          " inline-grid font-serif-display text-[1.05rem] italic opacity-50 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:opacity-100 motion-reduce:transition-none"
+        }
+        data-copy-email
+        onClick={copy}
+        type="button"
+      >
+        {label("Copy it", !copied)}
+        {label("Copied", copied)}
+      </button>
+      <span aria-live="polite" className="sr-only">
+        {copied ? "Copied" : ""}
+      </span>
+    </>
   );
 }
 
@@ -245,10 +343,7 @@ export default function HomeSections() {
               second twig, competing with the work rows' own, repainting
               continuously, and now plainly redundant against the bough),
               PetalReveal (a third petal system, one canvas per text block). */}
-      <SakuraStage
-        elements={[makeSakuraBough, makeSakuraBlossomMarks]}
-        gateSelector="[data-sections]"
-      />
+      <SectionStage />
       {/* Behind the type, at z-0 with the stage and the dot field: body copy
           here runs to 55-60% white on #0a0a0a and any opaque pixel in front
           of a glyph puts it under 4.5:1. The cost is that the cream Contact
@@ -269,24 +364,34 @@ export default function HomeSections() {
           is the part a sentence should not carry — a list of dates, and a
           clock — which lands here, quietly, before the work. */}
       <section className="relative z-[1] px-6 pt-28 sm:px-16 sm:pt-40">
+        {/* Each column opens with a hairline that draws across before its
+            lines rise: the first thing after the hero is the first rule on
+            the page, and the two together are what the rest of the page
+            then repeats. */}
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 sm:gap-16">
-          <ul className="space-y-3">
-            {selected.map((item) => (
-              <li data-reveal key={item.title}>
+          <div>
+            <Rule className="mb-5" />
+            <ul className="space-y-3">
+              {selected.map((item) => (
+                <li data-reveal key={item.title}>
+                  <Aside>
+                    {item.year}. {item.title}
+                  </Aside>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <Rule className="mb-5" />
+            <ul className="space-y-3">
+              <li data-reveal>
                 <Aside>
-                  {item.year}. {item.title}
+                  {/* The one live thing on the page. */}
+                  Local time in Toronto: <LocalTime />
                 </Aside>
               </li>
-            ))}
-          </ul>
-          <ul className="space-y-3">
-            <li data-reveal>
-              <Aside>
-                {/* The one live thing on the page. */}
-                Local time in Toronto: <LocalTime />
-              </Aside>
-            </li>
-          </ul>
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -312,14 +417,27 @@ export default function HomeSections() {
           />
         </Narration>
 
-        <ul className="mt-20 sm:mt-28" data-work-list>
+        {/* The list is closed at both ends. A row's own hairline is
+            BranchRule's, and it only arrives on hover, so at rest the list
+            had no edges at all — the first title floated under the
+            narration and the last ran out into the GitHub line. The
+            bottom rule sits exactly where the last row's twig draws its
+            line, so hovering that row lays one 25% hairline over another:
+            the edge goes a shade brighter, which is what hover means
+            everywhere else on the row. */}
+        <Rule className="mt-20 sm:mt-28" />
+        <ul data-work-list>
           {workEntries.map((entry) => (
             <WorkRow entry={entry} key={entry.title} onHover={setPlate} />
           ))}
         </ul>
+        <Rule />
         <p className="mt-12" data-reveal>
           <a
-            className="font-serif-display text-[1.05rem] italic opacity-60 transition-opacity duration-200 hover:opacity-100"
+            className={
+              FOCUS_RING_LIGHT +
+              " font-serif-display text-[1.05rem] italic opacity-60 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
+            }
             href={GITHUB}
             rel="noreferrer"
             target="_blank"
@@ -337,6 +455,12 @@ export default function HomeSections() {
         className="relative z-[1] mt-40 bg-[#f4ece1] px-6 pb-10 pt-32 text-[#0a0a0a] sm:mt-64 sm:px-16 sm:pb-14 sm:pt-48"
         id="contact"
       >
+        {/* The panel's top edge, drawn. The cream used to arrive as a hard
+            cut against the black; now a hairline in the panel's own ink
+            draws itself along the edge as the panel comes in — a 1px step
+            between the two grounds, on the same beat as every other rule.
+            Absolute so it sits on the edge itself, not under the padding. */}
+        <Rule className="absolute inset-x-0 top-0" ink />
         <h2 className="sr-only">Contact</h2>
         <div className="mx-auto max-w-[54rem] text-center">
           <Narration>
@@ -359,7 +483,10 @@ export default function HomeSections() {
                 not in the address. */}
             <a
               aria-label={`Email ${EMAIL}`}
-              className="text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70"
+              className={
+                FOCUS_RING_INK +
+                " inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none"
+              }
               href={`mailto:${EMAIL}`}
             >
               <FractureText text={EMAIL} />
@@ -369,14 +496,17 @@ export default function HomeSections() {
             </div>
           </div>
 
-          <ul
-            className="mt-20 flex flex-wrap items-baseline justify-center gap-x-8 gap-y-3 sm:mt-28"
-            data-reveal
-          >
+          {/* data-reveal on each item, not the list: four links arriving
+              as one block read as a pasted footer, on the hook's 0.09 s
+              stagger they arrive as four things said in turn. */}
+          <ul className="mt-20 flex flex-wrap items-baseline justify-center gap-x-8 gap-y-3 sm:mt-28">
             {elsewhere.map((social) => (
-              <li key={social.label}>
+              <li data-reveal key={social.label}>
                 <a
-                  className="group font-serif-display text-[1.2rem] transition-opacity duration-200 hover:opacity-60"
+                  className={
+                    FOCUS_RING_INK +
+                    " group font-serif-display text-[1.2rem] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none"
+                  }
                   href={social.href}
                   rel="noreferrer"
                   target="_blank"
@@ -384,7 +514,7 @@ export default function HomeSections() {
                   {social.label}
                   <span
                     aria-hidden="true"
-                    className="ml-1.5 inline-block text-[0.75rem] opacity-0 transition-opacity duration-300 group-hover:opacity-60"
+                    className="ml-1.5 inline-block text-[0.75rem] opacity-0 transition-opacity duration-300 group-hover:opacity-60 motion-reduce:transition-none"
                   >
                     {"↗"}
                   </span>
@@ -394,8 +524,12 @@ export default function HomeSections() {
           </ul>
         </div>
 
+        {/* The same closing line the subpages have (SubpageShell), in ink
+            because this footer sits on cream. It draws first; the two
+            captions rise under it. */}
+        <Rule className="mt-28 sm:mt-40" ink />
         <footer
-          className="mt-28 flex flex-wrap items-baseline justify-between gap-4 font-serif-display text-[1rem] italic opacity-50 sm:mt-40"
+          className="mt-5 flex flex-wrap items-baseline justify-between gap-4 font-serif-display text-[1rem] italic opacity-50"
           data-reveal
         >
           {/* Sans, and not by preference. The serif is the Fontspring DEMO
@@ -411,7 +545,10 @@ export default function HomeSections() {
             {"©"} {new Date().getFullYear()}
           </p>
           <button
-            className="transition-opacity duration-200 hover:opacity-100"
+            className={
+              FOCUS_RING_INK +
+              " transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
+            }
             onClick={toTop}
             type="button"
           >
