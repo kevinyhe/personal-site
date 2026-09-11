@@ -1,16 +1,16 @@
-# Graph Report - arbor-web  (2026-09-10)
+# Graph Report - integrate  (2026-09-11)
 
 ## Corpus Check
-- 199 files · ~4,180,043 words
+- 205 files · ~4,191,391 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1797 nodes · 2741 edges · 162 communities (121 shown, 41 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 41 edges (avg confidence: 0.78)
+- 1820 nodes · 2795 edges · 164 communities (121 shown, 43 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 39 edges (avg confidence: 0.77)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e7e222e0`
+- Built from commit: `fe0a9670`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -61,7 +61,9 @@
 - caveman-review
 - caveman-stats
 - __init__.py
+- template.tsx
 - clamp01
+- not-found.tsx
 - polyfills.js
 - smoothstep
 - TreeTuner.tsx
@@ -159,14 +161,16 @@
 - .key
 - postcss
 - Narration.tsx
+- package.json
+- @types/node
 
 ## God Nodes (most connected - your core abstractions)
 1. `WeepingCherryGenerator` - 42 edges
 2. `lerp()` - 19 edges
 3. `WeepingCherryTreeCanvas()` - 19 edges
 4. `clamp01()` - 17 edges
-5. `compilerOptions` - 16 edges
-6. `PetalDrift()` - 15 edges
+5. `PetalDrift()` - 17 edges
+6. `compilerOptions` - 16 edges
 7. `ChunkedFigure()` - 15 edges
 8. `ballStatesAt()` - 15 edges
 9. `buildSimulation()` - 15 edges
@@ -177,26 +181,26 @@
   components/sakuraBlossomMarks.ts → .scratch-s54100/idxrender.mjs
 - `makeBlossomMarks()` --indirect_call--> `py()`  [INFERRED]
   components/sakuraBlossomMarks.ts → .scratch-s54100/idxrender.mjs
-- `ballStatesAt()` --indirect_call--> `carried()`  [INFERRED]
-  components/ballPhysics.ts → scripts/bake-balls.mjs
 - `PetalReveal()` --indirect_call--> `draw()`  [INFERRED]
   components/PetalReveal.tsx → .scratch-s54100/idxview.mjs
 - `WeepingCherryTreeCanvas()` --indirect_call--> `w()`  [INFERRED]
   components/BareThreeCanvas.tsx → .scratch-s54100/probe.mjs
+- `BranchRule()` --indirect_call--> `run()`  [INFERRED]
+  components/BranchRule.tsx → .scratch-smash/cost.mts
 
 ## Import Cycles
 - 1-file cycle: `components/SakuraStage.tsx -> components/SakuraStage.tsx`
 - 1-file cycle: `components/PetalDrift.tsx -> components/PetalDrift.tsx`
 
-## Communities (162 total, 41 thin omitted)
+## Communities (164 total, 43 thin omitted)
 
 ### Community 0 - "compilerOptions"
-Cohesion: 0.07
-Nodes (27): autoprefixer, eslint, eslint-config-next, @eslint/eslintrc, devDependencies, autoprefixer, eslint, eslint-config-next (+19 more)
+Cohesion: 0.09
+Nodes (23): autoprefixer, @dimforge/rapier3d-compat, eslint, eslint-config-next, @eslint/eslintrc, devDependencies, autoprefixer, @dimforge/rapier3d-compat (+15 more)
 
 ### Community 1 - "package.json"
-Cohesion: 0.09
-Nodes (23): d3-force, d3-selection, d3-zoom, @dimforge/rapier3d-compat, gsap, next, dependencies, d3-force (+15 more)
+Cohesion: 0.13
+Nodes (15): gsap, next, dependencies, gsap, next, react, react-dom, @react-three/fiber (+7 more)
 
 ### Community 2 - "What You Must Do When Invoked"
 Cohesion: 0.07
@@ -207,8 +211,8 @@ Cohesion: 0.07
 Nodes (26): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+18 more)
 
 ### Community 4 - "What You Must Do When Invoked"
-Cohesion: 0.23
-Nodes (4): Branch, getBranchFrame(), lerp(), sampleBlossomTint()
+Cohesion: 0.28
+Nodes (3): Branch, getBranchFrame(), lerp()
 
 ### Community 5 - "WeepingCherryTreeCanvas"
 Cohesion: 0.05
@@ -227,8 +231,8 @@ Cohesion: 0.22
 Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7a - FalkorDB export (only if --falkordb or --falkordb-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 9 - "clamp01"
-Cohesion: 0.43
-Nodes (6): addViewportChangeListener(), getViewportHeight(), getViewportMetrics(), getViewportWidth(), readDocumentDimension(), ViewportMetrics
+Cohesion: 0.19
+Nodes (18): makeChunkGeometries(), breakupAt(), CameraRig(), ChunkedFigure(), figureAt(), keyed(), smoothPhase(), StageFloor() (+10 more)
 
 ### Community 10 - "graphify reference: query, path, explain"
 Cohesion: 0.33
@@ -267,16 +271,16 @@ Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
 ### Community 28 - ".update"
-Cohesion: 0.21
-Nodes (7): arborGustEnvelope(), FallingPetalSystem, fbm2(), noiseHash2(), randomPointInUnitSphere(), valueNoise2(), wrapAngle()
+Cohesion: 0.33
+Nodes (4): FallingPetalSystem, randomPointInUnitSphere(), sampleBlossomTint(), wrapAngle()
 
 ### Community 33 - "CanopyOcclusion"
 Cohesion: 0.35
 Nodes (3): CanopyOcclusion, makeInsideTest(), planReleaseOrder()
 
 ### Community 34 - "createSakuraBlossomGeometry"
-Cohesion: 0.05
-Nodes (63): makeInteriorMaterial(), makeSurfaceMaterial(), useMarbleMaterials(), createRobotCameraState(), makeChunkGeometries(), ThinkerChunkData, breakupAt(), CAMERA_AIM_BEHIND_KEYS (+55 more)
+Cohesion: 0.07
+Nodes (32): createRobotCameraState(), DRIFT_FINISH, RobotCameraState, CAMERA_AIM_BEHIND_KEYS, CAMERA_AIM_HEIGHT, CAMERA_AZIMUTH, CAMERA_DISTANCE_KEYS, CAMERA_HEIGHT_KEYS (+24 more)
 
 ### Community 35 - "compress.py"
 Cohesion: 0.07
@@ -318,21 +322,29 @@ Nodes (9): caveman-review, Example output, How to invoke, See also, What it does
 Cohesion: 0.29
 Nodes (5): caveman-stats, Example output, How to invoke, See also, What it does
 
+### Community 46 - "template.tsx"
+Cohesion: 0.18
+Nodes (14): ThinkerChunkData, clamp01(), createPetalGeometry(), makeRng(), PETAL, PETAL_BASE, PETAL_EDGE, PETAL_MID (+6 more)
+
 ### Community 47 - "clamp01"
 Cohesion: 0.40
 Nodes (4): Boundaries, Compile-Only Verification, Rule, Workflow
+
+### Community 48 - "not-found.tsx"
+Cohesion: 0.39
+Nodes (7): CLOCK_FORMAT, LocalTime(), nowInToronto(), PLACEHOLDER, prefersReducedMotion(), Time, ZONE_FORMAT
 
 ### Community 49 - "polyfills.js"
 Cohesion: 0.04
 Nodes (38): ab, byColor, chassisInstances, chassisMeshCache, chassisPrims, chassisTris, colorIndex, colorReg (+30 more)
 
 ### Community 50 - "smoothstep"
-Cohesion: 0.06
-Nodes (37): BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchWindVectors, CanopyLobe, CanopyShadeUniforms (+29 more)
+Cohesion: 0.05
+Nodes (45): applyBlossomWind(), applyPetalTranslucency(), BareThreeCanvasProps, BLOSSOM_CALYX_COLOR, BLOSSOM_CENTER_COLOR, BlossomPlacement, BranchFrame, BranchWindVectors (+37 more)
 
 ### Community 51 - "TreeTuner.tsx"
 Cohesion: 0.06
-Nodes (50): BloomCursor(), BurstOptions, clamp01(), COLOURS, EmitFn, gustEnvelope(), Petal, petalOutline() (+42 more)
+Nodes (52): BloomCursor(), BurstOptions, clamp01(), COLOURS, EmitFn, gustEnvelope(), Petal, petalOutline() (+44 more)
 
 ### Community 53 - "Preserve Typography"
 Cohesion: 0.40
@@ -340,7 +352,7 @@ Nodes (4): Hard Rule, Preserve Typography, Verification, Workflow
 
 ### Community 54 - "thinkerFragments.ts"
 Cohesion: 0.07
-Nodes (32): buildOnMainThread(), ACCESSOR_ITEM_SIZE, AccessorValues, BreakPhase, CapBuildStats, CapLoop, CapNode, CellBuild (+24 more)
+Nodes (31): ACCESSOR_ITEM_SIZE, AccessorValues, BreakPhase, CapBuildStats, CapLoop, CapNode, CellBuild, COMPONENT_BYTE_SIZE (+23 more)
 
 ### Community 55 - "loadThinkerGeometry"
 Cohesion: 0.04
@@ -348,11 +360,11 @@ Nodes (38): blob, chassisDraws, chassisIdx, chassisMesh, chassisPos, drawCount, 
 
 ### Community 56 - "CanopyLobe"
 Cohesion: 0.09
-Nodes (32): assembleRig(), BallPhysicsModule, BallState, buildPlaceholderBall(), buildPlaceholderBallPhysics(), buildPlaceholderDriftPath(), buildPlaceholderGoal(), buildPlaceholderRobot() (+24 more)
+Nodes (31): assembleRig(), BallPhysicsModule, BallState, buildPlaceholderBall(), buildPlaceholderBallPhysics(), buildPlaceholderDriftPath(), buildPlaceholderGoal(), buildPlaceholderRobot() (+23 more)
 
 ### Community 57 - "fbm2"
 Cohesion: 0.07
-Nodes (58): arcLengths(), ballAt(), ballCount(), BallPlan, ballPlans(), ballSpin(), BallState, ballStatesAt() (+50 more)
+Nodes (59): arcLengths(), ballAt(), ballCount(), BallPlan, ballPlans(), ballSpin(), BallState, ballStatesAt() (+51 more)
 
 ### Community 58 - "carveCell"
 Cohesion: 0.33
@@ -379,32 +391,28 @@ Cohesion: 0.67
 Nodes (3): budgetedMesh(), compact(), simplify()
 
 ### Community 64 - "ProblemStatementTransition.tsx"
-Cohesion: 0.18
-Nodes (13): boxPlanOf(), clampStart(), HERO_POSE, HeroIntro(), HeroIntroProps, LOADING_POSE, narrationDrift(), makeNarrationBlossomMarks() (+5 more)
+Cohesion: 0.12
+Nodes (16): boxPlanOf(), clampStart(), FALLBACK_STAGE_CUES, HERO_POSE, HeroIntro(), HeroIntroProps, LOADING_POSE, loadThinkerStage() (+8 more)
 
 ### Community 65 - "scopeLocalMesh"
 Cohesion: 0.19
 Nodes (21): bakePrimitives(), ball, budgetedMesh(), budgetLoop(), buildBall(), buildGoal(), collectInstances(), compact() (+13 more)
 
 ### Community 72 - "carveCell"
-Cohesion: 0.23
-Nodes (12): cleanLoop(), clipToHalfSpace(), cutPolygons(), getPlaneBasis(), groupCapRegions(), idOf(), makeCapPolygons(), pointInLoop() (+4 more)
+Cohesion: 0.31
+Nodes (10): boundingPlanes(), cleanLoop(), clipToHalfSpace(), cutPolygons(), getPlaneBasis(), idOf(), sectionOf(), sectionSegments() (+2 more)
 
 ### Community 73 - "buildSolidThinkerChunks"
 Cohesion: 0.33
 Nodes (9): buildSolidThinkerChunks(), hash01(), makeFlatArrays(), planSeeds(), randomUnitVector(), sampleGradedSeeds(), signedHash(), sizeFieldAt() (+1 more)
 
 ### Community 74 - "scripts"
-Cohesion: 0.15
-Nodes (12): name, private, scripts, bake:balls, bake:cherry, bake:chunks, build, dev (+4 more)
+Cohesion: 0.20
+Nodes (10): scripts, bake:balls, bake:bg, bake:cherry, bake:chunks, build, dev, lint (+2 more)
 
 ### Community 75 - "fbm2"
 Cohesion: 0.20
 Nodes (6): box, center, PUB, size, tris3d, v
-
-### Community 76 - "createSakuraBlossomGeometry"
-Cohesion: 0.14
-Nodes (6): applyBlossomWind(), applyPetalTranslucency(), createPetalDetailTexture(), makeRng(), OccupiedPoint, WeepingCherryGenerator
 
 ### Community 77 - "budgetedMesh"
 Cohesion: 0.50
@@ -412,7 +420,7 @@ Nodes (4): budgetedMesh(), budgetLoop(), compact(), simplify()
 
 ### Community 78 - "Branch"
 Cohesion: 0.06
-Nodes (54): args, carried(), finalPose, FPS, frames, HERE, inTrough, maxSteps (+46 more)
+Nodes (53): args, finalPose, FPS, frames, HERE, inTrough, maxSteps, OUT (+45 more)
 
 ### Community 79 - "registerColor"
 Cohesion: 0.67
@@ -451,8 +459,8 @@ Cohesion: 0.17
 Nodes (9): basePts, centroid, idx, mix, pos, PUBLIC, size, stage (+1 more)
 
 ### Community 100 - "TreeTuner.tsx"
-Cohesion: 0.15
-Nodes (19): BranchWindUniforms, boughSpawn, BoughSpawnField, BLOSSOM_ATTRIBUTES, BLOSSOM_BUDGET, BOUGH_AIM, BRANCH_ATTRIBUTES, BranchRange (+11 more)
+Cohesion: 0.13
+Nodes (20): BranchWindUniforms, boughSpawn, BoughSpawnField, BLOSSOM_ATTRIBUTES, BLOSSOM_BUDGET, BOUGH_AIM, BRANCH_ATTRIBUTES, BranchRange (+12 more)
 
 ### Community 101 - "queue.mjs"
 Cohesion: 0.29
@@ -480,7 +488,7 @@ Nodes (4): b, h, PUBLIC, t
 
 ### Community 119 - "cost.mts"
 Cohesion: 0.05
-Nodes (70): sampleBoughSpawn(), Bloom, BLOSSOM_CENTER, Branch, BranchRule(), BranchRuleProps, buildBranch(), easeOut() (+62 more)
+Nodes (71): sampleBoughSpawn(), Bloom, BLOSSOM_CENTER, Branch, BranchRule(), BranchRuleProps, buildBranch(), easeOut() (+63 more)
 
 ### Community 123 - "cam2model.mts"
 Cohesion: 0.15
@@ -491,8 +499,8 @@ Cohesion: 0.23
 Nodes (11): AIMY, anchor(), at(), AZ, BEHIND, DIST, f, keyed() (+3 more)
 
 ### Community 125 - "idxrender.mjs"
-Cohesion: 0.18
-Nodes (16): Quality, resolveSceneQuality(), anchorProgress(), AnchorRecord, createPlacement(), disposeObject(), KEY_LIGHT_POSITION, LenisLike (+8 more)
+Cohesion: 0.14
+Nodes (20): resolveSceneQuality(), AnchorRecord, claimDraw(), createPlacement(), disposeObject(), drawArbiter, KEY_LIGHT_POSITION, LenisLike (+12 more)
 
 ### Community 126 - "keytest.mjs"
 Cohesion: 0.20
@@ -523,44 +531,40 @@ Cohesion: 0.14
 Nodes (14): createSakuraBlossomGeometry(), getTwigWindAmplitude(), getTwigWindFlutter(), sakuraPetalOutline(), BLOSSOM_FORWARD, BlossomSlot, buildBlossomMesh(), makeRng() (+6 more)
 
 ### Community 139 - "SakuraStage.tsx"
-Cohesion: 0.25
-Nodes (3): ScreenToWorld, StageElement, StageViewport
+Cohesion: 0.21
+Nodes (7): Quality, ScreenToWorld, StageBuildContext, StageElement, StageElementFactory, StagePlacement, StageViewport
 
 ### Community 140 - "sakuraBlossomMarks.ts"
-Cohesion: 0.18
-Nodes (15): BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, buildBudArrays(), makeBlossomMarks(), makeRng(), Mark (+7 more)
+Cohesion: 0.15
+Nodes (18): BLOSSOM_TINT_BRIGHT, BLOSSOM_TINT_PALE, BLOSSOM_TINT_ROSE, BLOSSOM_TINT_SOFT, buildBudArrays(), makeBlossomMarks(), makeRng(), makeSakuraBlossomMarks() (+10 more)
 
 ### Community 141 - "thinkerChunks.ts"
 Cohesion: 0.10
 Nodes (25): CHERRY_CHUNK_OPTIONS, loadCherryChunks(), BakedChunkRecord, BakedChunksHeader, buildInWorker(), CAMERA_OFFSET, CAMERA_OFFSET_CLOSE, ChunkBuildError (+17 more)
 
 ### Community 142 - "sakuraStage.ts"
-Cohesion: 0.18
-Nodes (8): metadata, metadata, elsewhere, workEntries, SubpageShell(), SubpageShellProps, TransitionLink(), TransitionLinkProps
+Cohesion: 0.21
+Nodes (8): Template(), metadata, SubpageShell(), SubpageShellProps, parkVeil(), TransitionLink(), TransitionLinkProps, useRevealOnScroll()
 
 ### Community 143 - ".append"
-Cohesion: 0.33
-Nodes (3): applyBranchWind(), BranchGeometryBuilder, createSakuraBudGeometry()
+Cohesion: 0.29
+Nodes (4): applyBranchWind(), BranchGeometryBuilder, createSakuraBudGeometry(), OccupiedPoint
 
 ### Community 144 - "HomeSections.tsx"
-Cohesion: 0.18
-Nodes (9): FractureText(), hashed(), HomeSections(), LenisLike, LocalTime(), nowInToronto(), makeSakuraBlossomMarks(), WorkEntry (+1 more)
+Cohesion: 0.13
+Nodes (10): SectionStage, WorkPlate, Line, Narration(), Run, Stanza(), Voice, workEntries (+2 more)
 
 ### Community 145 - "siteContent.ts"
-Cohesion: 0.19
-Nodes (6): metadata, LenisLike, currently, sectionLinks, selected, stack
-
-### Community 146 - "bake-chunks.mjs"
-Cohesion: 0.17
-Nodes (9): bin, build, header, int16s, int8s, placed, radii, records (+1 more)
+Cohesion: 0.12
+Nodes (14): metadata, CRT_ASSETS, HomeSections(), Band, prefersReducedMotion(), SectionHeader(), LenisLike, scrollToSection() (+6 more)
 
 ### Community 147 - "SubpageShell.tsx"
 Cohesion: 0.20
 Nodes (9): angle, buf, depth, H, img, names, px(), py() (+1 more)
 
 ### Community 148 - "page.tsx"
-Cohesion: 0.29
-Nodes (4): CRT_ASSETS, LenisLike, SectionLink(), socialLinks
+Cohesion: 0.38
+Nodes (4): metadata, FractureText(), hashed(), elsewhere
 
 ### Community 149 - "page.tsx"
 Cohesion: 0.03
@@ -571,56 +575,64 @@ Cohesion: 0.29
 Nodes (6): Acceptance checks (Node audit, no browser), Brief: the ball's journey and the scoring animation, as real physics, Materials, roughly, The five stages to reproduce, The hard constraint: it must be scrubbable, What the sim has to get right that the current version fakes
 
 ### Community 151 - "layout.tsx"
-Cohesion: 0.22
-Nodes (7): displaySerif, inter, metadata, SiteBackground(), SmoothScroll(), lenis, lenis
+Cohesion: 0.20
+Nodes (8): displaySerif, inter, metadata, viewport, SiteBackground(), SmoothScroll(), lenis, lenis
 
 ### Community 152 - "thinkerFragments.worker.ts"
-Cohesion: 0.40
-Nodes (4): BuildSolidChunkOptions, chunkTransferables(), scope, WorkerScope
+Cohesion: 0.22
+Nodes (8): buildOnMainThread(), BuildSolidChunkOptions, chunkTransferables(), fetchBuffer(), loadThinkerGeometry(), normalizeGeometry(), scope, WorkerScope
 
 ### Community 153 - "sakuraTree.ts"
-Cohesion: 0.36
-Nodes (8): StageResizeContext, BLOSSOM_BUDGET, clamp01(), disposeSubtree(), makeNarrationTree(), makeSakuraTree(), makeSakuraTreeFactory(), PETAL_BUDGET
+Cohesion: 0.26
+Nodes (11): holderStyle, NarrationScene(), makeNarrationBlossomMarks(), StageResizeContext, BLOSSOM_BUDGET, clamp01(), disposeSubtree(), makeNarrationTree() (+3 more)
 
 ### Community 154 - "eslint"
 Cohesion: 0.38
 Nodes (5): completeFile(), isFile(), OMITTED_EXTENSIONS, resolve(), ROOT
 
 ### Community 155 - "fractureIntoPieces"
-Cohesion: 0.26
-Nodes (10): BranchSamples, boundingPlanes(), carveCell(), componentKey(), countOpenGeometryEdges(), fractureIntoPieces(), makePiece(), makeSourcePiece() (+2 more)
+Cohesion: 0.32
+Nodes (8): carveCell(), componentKey(), countOpenGeometryEdges(), fractureIntoPieces(), makePiece(), makeSourcePiece(), polygonArea(), splitConnectedComponents()
 
 ### Community 156 - "branchRadius"
 Cohesion: 1.00
 Nodes (3): branchRadius(), clamp01(), smoothstep()
 
 ### Community 159 - ".key"
-Cohesion: 0.40
-Nodes (9): clamp01(), createBarkTextures(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getWindFlutterRamp(), getWindRamp() (+1 more)
+Cohesion: 0.35
+Nodes (9): arborGustEnvelope(), clamp01(), createFallingPetalGeometry(), getBranchWindVectors(), getLimbWindAmplitude(), getPetalVertexColor(), getWindFlutterRamp(), getWindRamp() (+1 more)
+
+### Community 160 - "postcss"
+Cohesion: 0.29
+Nodes (6): { chromium }, H, LAYERS, QUALITY, require, W
 
 ### Community 161 - "Narration.tsx"
-Cohesion: 0.33
-Nodes (5): Line, Narration(), Run, Stanza(), Voice
+Cohesion: 0.83
+Nodes (3): makeInteriorMaterial(), makeSurfaceMaterial(), useMarbleMaterials()
+
+### Community 162 - "package.json"
+Cohesion: 0.50
+Nodes (3): name, private, version
 
 ## Knowledge Gaps
-- **829 isolated node(s):** `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs`, `t0`, `vhs` (+824 more)
+- **838 isolated node(s):** `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs`, `t0`, `vhs` (+833 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **41 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **43 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `SmoothScroll()` connect `layout.tsx` to `.update`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
-- **Why does `lenis` connect `layout.tsx` to `package.json`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
-- **Why does `dependencies` connect `package.json` to `scripts`, `layout.tsx`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+- **Why does `ballStatesAt()` connect `fbm2` to `CanopyOcclusion`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `carried()` connect `fbm2` to `Branch`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._
+- **Why does `FractureText()` connect `page.tsx` to `HomeSections.tsx`, `CanopyOcclusion`?**
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `WeepingCherryTreeCanvas()` (e.g. with `.key()` and `w()`) actually correct?**
   _`WeepingCherryTreeCanvas()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `[outPrefix = "shot", fractionsArg = "0", waitArg = "1500"]`, `fractions`, `settleMs` to the rest of the system?**
-  _829 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _838 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `compilerOptions` be split into smaller, more focused modules?**
-  _Cohesion score 0.07407407407407407 - nodes in this community are weakly interconnected._
-- **Should `package.json` be split into smaller, more focused modules?**
   _Cohesion score 0.08695652173913043 - nodes in this community are weakly interconnected._
+- **Should `package.json` be split into smaller, more focused modules?**
+  _Cohesion score 0.13333333333333333 - nodes in this community are weakly interconnected._
