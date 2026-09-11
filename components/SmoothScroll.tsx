@@ -61,34 +61,82 @@ export default function SmoothScroll() {
       lerp: SCROLL_LERP,
       // Touch devices already have inertial scrolling of their own; adding
       // a second layer of it fights the platform.
-      // Lenis drives its own frame loop. The documented GSAP integration
-      // pumps it from gsap.ticker instead, to keep both on one clock, but
-      // that ticker is not guaranteed to be running at mount here — checked
-      // it, and lenis.raf never got called, so the page never eased at all.
-      // ScrollTrigger.update on every scroll (below) keeps the scenes in
-      // step regardless of which loop moved the page.
-      autoRaf: true,
-      smoothWheel: true,
       syncTouch: false,
+      smoothWheel: true,
+      // No loop of its own: gsap.ticker pumps it (below), so the page and
+      // every scrubbed scene step on the same clock. With autoRaf on there
+      // were two requestAnimationFrame loops a frame — Lenis' and gsap's —
+      // and on a long frame they disagreed about how much time had passed
+      // (see the lag-smoothing note below).
+      autoRaf: false,
     });
 
-    // ScrollTrigger has to be told the position changed, because Lenis
-    // moves the page between native scroll events.
-    const update = () => ScrollTrigger.update();
-    lenis.on("scroll", update);
+    // The documented Lenis + GSAP wiring. gsap.ticker hands out seconds;
+    // lenis.raf wants milliseconds. An earlier attempt at this was written
+    // off because "the ticker was not running at mount" — it cannot be:
+    // gsap.ticker.add() wakes the ticker itself (gsap-core, `add: ...
+    // _wake()`). Checked in the headless harness after the change:
+    // `__lenis.time` advances with the ticker at rest (3.5 s of clock over
+    // a 1.9 s window, the difference being the half-second software-GL
+    // frames it is sampled between) and a synthetic wheel event — which no
+    // native scroll can follow, so only lenis.raf can move the page — took
+    // the page 0 -> 592 -> 599 over successive frames, the lerp's
+    // approach. (.scratch-s54100/smooth.mjs reads 0 movements before and
+    // after: under software GL a frame lasts longer than the glide, and
+    // Playwright's mouse.wheel lands as a native scroll there anyway.)
+    //
+    // NOT `lenis.on("scroll", ScrollTrigger.update)`, which the Lenis docs
+    // add for setups that move a wrapper with a transform. Here Lenis
+    // scrolls the WINDOW, so every step it takes fires a native scroll
+    // event, and ScrollTrigger's own listener for that event runs the same
+    // full pass over every trigger (`_onScroll` -> `_updateAll`, no
+    // deferral). The manual call was a second identical pass on every
+    // moving frame, and it did not even land earlier: the native event is
+    // dispatched in the next frame's rendering steps, before the tick that
+    // renders the scrub tween — the same frame the scrub would have picked
+    // it up anyway.
+    const tick = (time: number) => lenis.raf(time * 1000);
+    gsap.ticker.add(tick);
+    // Added once, removed once. A version of this detached the tick on
+    // visibilitychange (nothing to ease while nobody is looking) and it
+    // cost more than it saved: a glide in flight when the tab went hidden
+    // stopped dead, and every lenis.scrollTo issued while hidden — which
+    // is how the headless captures and perf-e2e's hidden-tab step move
+    // the page — went nowhere until the tab came back. Browsers throttle
+    // rAF in a hidden tab on their own; the one cost of leaving the tick
+    // attached is that the first frame back sees the whole gap as its
+    // delta and lands any glide in one step, which is the right result
+    // for a scroll nobody watched.
 
     // Exposed for headless captures, which need to know the eased scroll
     // has settled before they photograph anything.
     (window as unknown as Record<string, unknown>).__lenis = lenis;
 
-    // GSAP's lag smoothing pauses tweens after a long frame to "catch up",
-    // which with a scrubbed page means the scroll and the scene disagree
-    // about where they are. The Thinker's fracture and the robot's GLB both
-    // produce frames long enough to trigger it.
+    // GSAP's lag smoothing: after a frame longer than 500 ms the ticker
+    // pretends only 33 ms passed, so time-based tweens resume instead of
+    // jumping. Kept OFF here, for the whole session, and this is why:
+    //
+    // The canvases do not run on gsap's clock. BareThreeCanvas and
+    // ThinkerStage time their own work off performance.now / THREE.Clock,
+    // and the reveal is choreographed across both clocks — the tree rising
+    // (a gsap tween on sceneFx.treeDrop) lands on the same frame as the
+    // canvas' own two-second orbit-and-bloom. A shader compile in the
+    // middle of that is exactly the kind of long frame smoothing acts on;
+    // smoothed, gsap's side would finish up to half a second after the
+    // canvas', and the two would visibly come apart. Both on real time,
+    // they stay together.
+    //
+    // With Lenis on gsap's ticker (above) the scroll and the scrubbed
+    // scenes now share a clock, so a long frame moves them by the same
+    // amount whichever setting this is — the old reason for turning it
+    // off (the page jumping while the scenes crawled to catch up) is gone.
+    // What is left is the reveal, so it stays off. The cost is that a tween
+    // running when the tab is hidden completes on return rather than
+    // resuming; nothing on this page runs a tween that long unattended.
     gsap.ticker.lagSmoothing(0);
 
     return () => {
-      lenis.off("scroll", update);
+      gsap.ticker.remove(tick);
       gsap.ticker.lagSmoothing(500, 33);
       delete (window as unknown as Record<string, unknown>).__lenis;
       lenis.destroy();
