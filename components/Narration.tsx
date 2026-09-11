@@ -56,7 +56,8 @@ const VOICE: Record<Voice, string> = {
  * `slide` is the narration's, and it is not a reveal at all — the line is
  * carried in from the left or the right and keeps travelling the whole time
  * it is on screen, driven by a scrub in HeroIntro. This only marks it; the
- * hook then knows to fade it and leave its position alone.
+ * scroll animation owns its position. These reading lines stay visible
+ * by default rather than depending on the separate reveal observer.
  */
 export function Stanza({
   center,
@@ -66,8 +67,8 @@ export function Stanza({
 }: {
   /**
    * Every line centred on the column, and the staircase indents ignored.
-   * The hero narration is set this way over the statue, which holds the
-   * middle of the frame; a staircase only makes sense with a margin to
+   * The hero narration is set this way on the television's screen, which
+   * holds the middle of the frame; a staircase only makes sense with a margin to
    * step into.
    */
   center?: boolean;
@@ -91,7 +92,8 @@ export function Stanza({
             "block w-fit " +
             (center ? "mx-auto" : "ml-0 sm:ml-[var(--indent)]")
           }
-          data-reveal={slide ? "slide" : far ? "far" : ""}
+          data-narration-slide={slide ? "" : undefined}
+          data-reveal={slide ? undefined : far ? "far" : ""}
           key={index}
           style={{ "--indent": `${line.indent}%` } as React.CSSProperties}
         >
@@ -119,7 +121,8 @@ export function Narration({
 }: {
   children: React.ReactNode;
   /**
-   * The hero narration, set over the statue at the reference's own size.
+   * The hero narration, set on the television's screen at the reference's
+   * own size.
    *
    * portfolio-2021.etiennepharabot.fr steps its intro copy by viewport:
    * 60px under 1345, 80px under 1600, 120px under 1920 and 180px above
@@ -142,7 +145,7 @@ export function Narration({
       className={
         "w-full font-serif-display leading-[1.75] tracking-[-0.02em] " +
         (stage
-          ? "text-[clamp(1.875rem,6.25vw,11.25rem)]"
+          ? "text-[clamp(1.78125rem,5.9375vw,10.6875rem)]"
           : "text-[clamp(1.7rem,5.6vw,5rem)]")
       }
     >

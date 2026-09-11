@@ -14,35 +14,22 @@ import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { sceneFx } from "@/components/sceneFx";
-// The panel-growth fractions the statue's stage and this timeline must
-// agree on. A leaf module, so reading them costs nothing and the two sides
-// cannot drift; the stage itself still arrives as its own chunk.
-import {
-  STAGE_CUT_AT as cutAt,
-  TREE_BREAK as treeBreak,
-} from "@/components/stageCues";
 import BareThreeCanvas from "@/components/BareThreeCanvas";
-import type { ThinkerTiming } from "@/components/ThinkerStage";
+import HalftoneField from "@/components/HalftoneField";
 import { Narration, Stanza } from "@/components/Narration";
 import { HERO_NARRATION } from "@/components/siteContent";
+import WorkSection from "@/components/WorkSection";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
-import { CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
-import { loadThinkerChunks } from "@/components/thinkerChunks";
 
 gsap.registerPlugin(ScrollTrigger);
 
 /**
  * What is split out of the page's first load, and what is not.
  *
- * OUT: ThinkerStage (1900 lines, react-three-fiber, the statue's
- * fragments, the robot and its outro) and NarrationScene (the blossom
- * scene's sakura stack). Neither is rendered until the reveal is done,
- * which is a good ten seconds after mount on any machine (the television
- * has to load, the statue's chunks have to be cut in the worker, the name
- * has to hold its minimum), so their chunks are fetched under the intro
- * and are long in by then. Measured with `next build`: the home route's
- * First Load JS went from 496 kB to 429 kB, its own chunk from 348 kB to
- * 281 kB.
+ * OUT: NarrationScene (the blossom scene's sakura stack). It is not
+ * rendered until the reveal is done, several seconds after mount on any
+ * machine (the television has to load and the name has to hold its
+ * minimum), so its chunk is fetched under the intro and is long in by then.
  *
  * NOT out: BareThreeCanvas, and with it three itself. Two reasons. The
  * page LOADS as the television shot, so the canvas' code is needed on the
@@ -54,14 +41,9 @@ gsap.registerPlugin(ScrollTrigger);
  * measured: 430 kB, with three's core still in the route's initial chunk
  * list.
  *
- * `ssr: false` because neither lazy piece renders anything the server
- * could usefully emit (a canvas). The stage's loader is named so the same
- * import() can be called directly (the cues effect below): webpack hands
- * back the one module promise, so calling it beside `dynamic()` costs no
- * second fetch.
+ * `ssr: false` because the lazy piece renders nothing the server could
+ * usefully emit (a canvas).
  */
-const loadThinkerStage = () => import("@/components/ThinkerStage");
-const ThinkerStage = dynamic(loadThinkerStage, { ssr: false });
 const NarrationScene = dynamic(() => import("@/components/NarrationScene"), {
   ssr: false,
 });
@@ -70,9 +52,8 @@ const NarrationScene = dynamic(() => import("@/components/NarrationScene"), {
  * A lazy chunk that fails to load (offline, a deploy swapped the hashes
  * under a stale tab) throws from render. There is no app/error.tsx, so
  * without this the whole page would unmount to Next's default error
- * screen — for a decoration. Each lazy piece renders nothing instead; the
- * stage's absence is covered by the cue fallback below, the narration's
- * by the black it would have drawn over.
+ * screen — for a decoration. The lazy piece renders nothing instead, and
+ * the black it would have drawn over stands in for it.
  */
 class StageErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -90,141 +71,97 @@ class StageErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
   }
 }
 
-/**
- * The stage's two cues the scroll timeline tweens toward — where the cut
- * lands in the panel's growth and the stretch of it the tree breaks over.
- * They are constants of ThinkerStage, read off its module once it has
- * loaded rather than imported statically: a static import of anything from
- * that file would pull the whole of it back into the first-load chunk and
- * undo the split above. The reveal waits for them (nothing scrolls before
- * the reveal is done, and the timeline is built on that same flag).
- */
-
 type HeroIntroProps = {
   children: ReactNode;
+  /**
+   * What fills the pin container after the hero's own scroll room, and so
+   * how long the stage stays on screen.
+   *
+   * Left out, it is the run this component was built around: the narration
+   * painted on the television's glass, then the projects, with the camera
+   * backing out of the tube underneath them (/crt still has that page).
+   *
+   * Given, that run is replaced wholesale — the narration window, the sheet
+   * over the stage and the about-and-work block are all skipped, and the
+   * scroll effect's narration and pull-back passes find nothing to drive
+   * and quietly do nothing. The home page passes the valley transition,
+   * which shrinks the stage into a framed picture instead (see
+   * components/ValleyTransition).
+   */
+  tail?: ReactNode;
 };
 
-// Scroll-driven orbit of the tree: 60% of the intro's 35-degree sweep, the
-// other way round (counter-clockwise from above).
+// The hero's scroll room is one scrubbed timeline over a short spacer (see
+// the markup: 200vh, so the timeline is one screen of scroll), and these
+// are fractions of it. Everything in it happens together: the name's
+// letters drop back under the line they rose through, the tree sinks out
+// of the bottom of the frame while the camera swings a little round it,
+// and the pink curtains behind it stay as they are. The narration's first line comes over the fold a beat
+// after, and the moment it does the camera starts backing straight out of
+// the television's glass (sceneFx.crtOut, driven from the narration run's
+// own trigger, further down) until the set is about 70% of the screen. The
+// words scroll up its screen the whole way.
+//
+// The letters' exit, start to finish, stagger included.
+const NAME_EXIT_DURATION = 0.45;
+// The tree's fall, and the swing round it that goes with it: 60% of the
+// intro's 35-degree sweep, the other way round (counter-clockwise from
+// above). Both as they were when the statue followed the tree.
+const TREE_DROP_DURATION = 0.62;
 const SCROLL_ORBIT = 0.6 * (35 * Math.PI) / 180;
-
-// How long the tree takes to drop out of frame. The name's rise to the
-// middle is pinned to exactly this, so the two land together: the tree is
-// gone and the name has arrived on the same frame.
-const TREE_DROP_DURATION = 0.292;
-// The panel starts the instant that happens — no gap — and finishes at the
-// timeline's end. The hero spacer is stretched (270vh originally, now
-// 432vh); the other tween fractions below are rescaled by 170/332 so the
-// name, tree and orbit keep their old absolute pacing. The Thinker inside
-// the panel starts breaking the moment it starts growing.
-const PANEL_GROW_AT = TREE_DROP_DURATION;
-// Where the box finishes growing and the statue's run ends, both on this
-// one frame. Everything from PANEL_GROW_AT to here is the statue's section
-// of the page; it was 0.712, and the whole section was stretched by a fifth
-// (0.42 of the timeline to 0.504) to scroll 20% slower. Nothing before
-// PANEL_GROW_AT moved, and the spacer below is the same height, so the
-// television, the tree's fall and the name's rise keep their exact pacing.
-const HERO_CUT_AT = 0.796;
-// How many times the visible stretch of the stage (the panel's first beat
-// to the black) the break is paced against. 2: the break is half done when
-// the black shuts.
-const BREAK_STRETCH = 2;
-const PANEL_GROW_DURATION = HERO_CUT_AT - PANEL_GROW_AT;
+const SCROLL_ORBIT_DURATION = 0.7;
+// The way out of the glass, in screens of scroll from the narration's first
+// line reaching the fold. Slow is the brief; the whole narration goes by
+// on the way.
+const CRT_OUT_OVER_SCREENS = 1.4;
+// The dot matrix goes over the first part of it, where the tube's own
+// raster takes over from it: scaled down, the dots moire against the
+// scanlines (the loading shot does the same the other way round). And the
+// backdrop comes down to this on the tube, which blooms and glows what it
+// shows; the loading shot holds it at 0.4 for the same reason.
+const HALFTONE_OUT_OVER = 0.45;
+const TUBE_BACKDROP_LEVEL = 0.42;
+// How far past the column's edge a line may sit at the start of its trip,
+// as a fraction of the viewport's width. Two thoughts to a line makes a
+// wide line, and a wide line has little room inside the column to move
+// in; the block clips what crosses the edge (overflow-x-clip, below), so
+// the overshoot never grows the page a scrollbar.
+const NARRATION_OVERSHOOT = 0.06;
 /**
- * The room the box leaves between its left edge and the last letter of
- * "Kevin", as a fraction of the viewport's width, for the whole of its
- * growth. The box grows from the middle of the screen, and "Kevin" is set
- * so wide that its "n" sits past the middle; so the words go first, and
- * the box only starts once "Kevin" has cleared this much of the centre
- * (see boxPlanOf and the growth tween).
+ * Where a line sits at `edge`: -1 as it enters at the bottom, 0 mid-screen,
+ * 1 as it leaves at the top. Lines alternate — even lines come in from the
+ * left and travel right, odd lines from the right and travel left, each
+ * reaching the centre as it leaves. That is the reference's own rule (its
+ * data-scroll-speed flips sign line by line) and what was asked for: each
+ * line moves the opposite way to the one before it. The old table of six
+ * positions repeated a side at its fourth and fifth entries, so two lines
+ * in a row went the same way.
  */
-const BOX_CLEARANCE = 0.1;
-
-/**
- * The box's growth against the words' exit, from the laid-out type.
- *
- * Over the growth window the two words move outward at one speed, a
- * total of `travel` px each; the box starts at `startAt` (0..1 of the
- * window) and its half width then grows at that same speed, so the gap
- * between its left edge and "Kevin" holds at BOX_CLEARANCE throughout.
- * Solved so the box fills the screen on the window's last frame: with
- * kevinRight the "n"'s edge from the left of the viewport,
- *   startAt = (kevinRight - (W/2 - clearance)) / travel
- *   travel  = kevinRight + clearance
- * which puts "Kevin" a clearance past the left edge at the end. Offsets,
- * not rects: the scrub's transforms must not feed back into the plan.
- */
-function boxPlanOf(root: HTMLElement | null) {
-  const lockup = root?.querySelector<HTMLElement>("[data-hero-lockup]");
-  const word = lockup?.querySelector<HTMLElement>("[data-hero-letters]");
+const narrationX = (line: HTMLElement, index: number, edge: -1 | 0 | 1) => {
   const width = window.innerWidth;
-  const clearance = width * BOX_CLEARANCE;
-  if (!lockup || !word) return { startAt: 0, travel: width / 2 + clearance };
-  const kevinRight = lockup.offsetLeft + word.offsetLeft + word.offsetWidth;
-  const travel = kevinRight + clearance;
-  return {
-    startAt: clampStart((kevinRight - (width / 2 - clearance)) / travel),
-    travel,
-  };
-}
-// Never past 0.9: a layout so wide the words could not clear the centre
-// in time would otherwise leave the box no window at all.
-const clampStart = (value: number) => Math.min(Math.max(value, 0), 0.9);
-/**
- * How far a narration line is carried sideways, as a fraction of the
- * viewport's width, either side of its centred rest, alternate lines the
- * opposite way.
- *
- * It was 0.07 for a staircase in a column beside the figure, 0.02 once
- * the lines were centred ("much less"), and is 0.045 now: asked for more
- * of the movement portfolio-2021.etiennepharabot.fr's intro has, whose
- * lines are carried sideways by the scroll at alternating speeds, without
- * scattering their resting positions. Nine percent of the width of travel
- * per line, centred, keeps every line on the screen.
- */
-const NARRATION_DRIFT = 0.045;
-/**
- * And less again on a phone, where 2% of the width is under 8px and the
- * lines already fill the screen: measured before, the leftmost line sat
- * 12px off the side of the screen at 9%, and content pushed off the LEFT
- * is clipped rather than added to scrollWidth, so an overflow check does
- * not catch it.
- */
-const NARRATION_DRIFT_NARROW = 0.02;
-const narrationDrift = () =>
-  window.innerWidth *
-  (window.innerWidth < 700 ? NARRATION_DRIFT_NARROW : NARRATION_DRIFT);
+  const narrow = width < 700;
+  const room = Math.max(0, ((line.parentElement?.clientWidth ?? 0) - line.offsetWidth) / 2);
+  const span = Math.min(
+    room + width * (narrow ? 0.03 : NARRATION_OVERSHOOT),
+    width * 0.28,
+  );
+  const direction = index % 2 === 0 ? 1 : -1;
+  return (-direction * span * (1 - edge)) / 2;
+};
 
-// When the statue's canvas starts drawing, as a fraction of the same
-// timeline. It MUST lead PANEL_GROW_AT: the canvas is frozen while the
-// panel is closed, so whatever scroll passes between this and the panel's
-// first pixel is the stage's only chance to compile its shaders and upload
-// the chunk geometry. It matters more now than it did — the box grows
-// linearly out of nothing, so it is big enough to see what is inside it
-// within a few vh rather than tens.
-const PANEL_OPEN_AT = 0.22;
-// Fraction of the narration's black-out (its own scrubbed stretch, below)
-// past which the sheet counts as shut: the statue's loop stops and the
-// blur under the sheet is dropped. The last percent is invisible.
+// The stretch of the Work section's approach the sheet shuts over: from
+// its top at the bottom of the viewport to this far up it. Short, so the
+// black is a beat and not a screen; the tree flowers in over it.
+const SCRIM_SHUT_OVER = 0.25;
+// Opacity past which the sheet counts as shut: the tree canvas stops
+// drawing (sceneFx.covered).
+// The last percent is invisible.
 const SCRIM_SHUT_AT = 0.99;
-// How far into the panel's growth the statue waits before it starts coming
-// apart, in viewport heights of scroll.
-//
-// 0, from 0.1 (and 0.3 before that): the first piece goes with the panel's
-// first pixel. This is the constant that gates the FIRST release: it
-// becomes ThinkerStage's `breakStart`, and the stage's own break measure is
-// (value - breakStart) / (BREAK_END - breakStart), so nothing moves until
-// the scroll passes it. The break's stretch runs about 5.44 viewports at
-// 1280x800, so 0.1 put breakStart at 0.018 and 0 puts it at 0.
-//
-// Kept at 0 when the even release was replaced by a ramping one (see
-// RELEASE_ACCELERATION in thinkerFragments): Kevin asked for an earlier
-// start one round before he asked for a break that builds, and the ramp's
-// slow opening is what a delay used to buy. The first pieces come off
-// early and few, 8 by panel value 0.05 and 17 by 0.1 (ad5861e, with 0.1
-// here and a geometric schedule: 13 and 24), and the pace builds after.
-const CHUNK_DELAY_VIEWPORTS = 0;
-
+// What the blossom scene settles to behind the project list, once the
+// heading has gone by: the tree flowers in at full strength for the
+// transition and then recedes, so the titles and their lines are read
+// against a dim canopy and not a bright one. 1 is the tree as it bloomed.
+const TREE_UNDER_LIST = 0.5;
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
 // the frame. The reveal then runs the old scroll choreography in reverse,
@@ -259,32 +196,35 @@ const HERO_POSE = {
 // the tree is never shown loading.
 const TV_DWELL_MS = 3700;
 
-export default function HeroIntro({ children }: HeroIntroProps) {
+export default function HeroIntro({ children, tail }: HeroIntroProps) {
+  // Whether a tail replaces the television's own run. A boolean, not the
+  // node: the node is a fresh element on every render and would retrigger
+  // the scroll effect it gates.
+  const hasTail = tail != null;
   const rootRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   const narrationSpaceRef = useRef<HTMLDivElement | null>(null);
+  // The narration itself, which is NOT in the flow: it lives in the layer
+  // the canvas warps onto the television's glass, in a viewport-sized
+  // window (`narrationWindowRef`), and is moved up through it by the scroll
+  // (`narrationTrackRef`). The flow keeps a spacer of the same height
+  // (`narrationSpaceRef`), so the page scrolls exactly as far as it would
+  // have with the words in it.
+  const narrationWindowRef = useRef<HTMLDivElement | null>(null);
+  const narrationTrackRef = useRef<HTMLDivElement | null>(null);
+  // The about-and-work run: the narration block and the Work section, one
+  // element in the flow over the pinned stage. The scrim, the blossom
+  // scene's fade and the camera's creep are all measured against it.
+  const aboutWorkRef = useRef<HTMLDivElement | null>(null);
   const narrationScrimRef = useRef<HTMLDivElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  // Whether the pinned stage is anywhere on screen. False once the hero's
-  // scroll room has gone by and the sections below own the viewport: the
-  // statue's canvas draws on "always" while its panel is open, and without
-  // this it kept running a full-screen WebGL scene, off screen, for the
-  // whole length of the page under it.
-  const [stageVisible, setStageVisible] = useState(true);
-  // The panel is "open" (the statue's canvas runs its live loop) from a
-  // little BEFORE the panel starts growing, so the stage is already drawn
-  // when the first pixel of the box appears; flipped by the scroll
-  // timeline, never on every frame.
-  const [panelOpen, setPanelOpen] = useState(false);
-  const panelOpenRef = useRef(false);
-  // The black scrim over the stage has closed completely (the narration's
-  // entry, below). Behind an opaque sheet the statue's canvas was still
-  // drawing a full-screen WebGL scene nobody could see; this puts its loop
-  // on "demand" for as long as the sheet is shut. Flipped by the scrim's
-  // timeline at SCRIM_SHUT_AT, never on every frame.
+  // The black scrim over the stage has closed completely (the hand-over to
+  // the Work section, below). Behind an opaque sheet the tree's canvas was
+  // drawing a full-screen WebGL scene nobody could see; sceneFx.covered
+  // stops its draw for as long as the sheet is shut. Flipped by the scrim's
+  // trigger at SCRIM_SHUT_AT, never on every frame.
   const [scrimCovered, setScrimCovered] = useState(false);
   const scrimCoveredRef = useRef(false);
   // The veil's bar is for the television's own assets only (GLB + four
@@ -296,8 +236,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   const [tvShown, setTvShown] = useState(false);
   const [revealStarted, setRevealStarted] = useState(false);
   const [revealComplete, setRevealComplete] = useState(false);
-  // The statue's chunks are cut and ready (or gave up trying).
-  const [thinkerReady, setThinkerReady] = useState(false);
 
   const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
   const crtProgressRef = useRef(0);
@@ -321,10 +259,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // the tuner) never starts half-way into the television.
   useLayoutEffect(() => {
     Object.assign(sceneFx, LOADING_POSE);
+    sceneFx.dolly = 0;
     // Exposed for headless verification (captures read and write these).
     (window as unknown as Record<string, unknown>).__sceneFx = sceneFx;
     return () => {
       Object.assign(sceneFx, HERO_POSE);
+      sceneFx.dolly = 0;
       delete (window as unknown as Record<string, unknown>).__sceneFx;
     };
   }, []);
@@ -438,17 +378,6 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [tvShown]);
 
-  // Fetch the stage's code once the television is up (its scene built, or
-  // its assets reported in). Not at mount: at mount the link is carrying
-  // the GLB and four textures the head preloads, and the ~150 kB chunk
-  // would share the bandwidth with the one thing the veil is waiting on.
-  // Nothing waits on it — the two numbers the timeline needs are static
-  // imports now (see stageCues) — so this is a warm-up, not a gate.
-  useEffect(() => {
-    if (!(sceneReady || crtReady)) return;
-    void loadThinkerStage().catch(() => undefined);
-  }, [crtReady, sceneReady]);
-
   // Never strand the page: if the model fails to report (network, a stuck
   // decode), carry on with whatever the rig has after a grace period. The
   // canvas also reports "ready" on load failure, so this is belt and braces.
@@ -465,13 +394,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   // time on screen. Nothing about any of that loading is shown; the name
   // simply holds until it is ready.
   useEffect(() => {
-    if (!tvShown || !sceneReady || !thinkerReady || revealStarted) {
+    if (!tvShown || !sceneReady || revealStarted) {
       return undefined;
     }
     let timeout = 0;
     const tryStart = () => {
-      const remaining =
-        TV_DWELL_MS - (performance.now() - tvShownAtRef.current);
+      const remaining = TV_DWELL_MS - (performance.now() - tvShownAtRef.current);
       // Headless captures set __heroHold to keep the television shot open.
       const hold = (window as unknown as Record<string, unknown>).__heroHold;
       if (remaining > 0 || hold) {
@@ -482,7 +410,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
     tryStart();
     return () => window.clearTimeout(timeout);
-  }, [revealStarted, sceneReady, thinkerReady, tvShown]);
+  }, [revealStarted, sceneReady, tvShown]);
 
   useEffect(() => {
     if (!revealStarted || revealComplete) return undefined;
@@ -578,6 +506,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
         defaults: { ease: "power3.out" },
         onComplete: () => setRevealComplete(true),
       });
+      // Everything the television needs: the name leaving the glass, the
+      // tube's glow dying, the room coming up, the camera pushing in
+      // through the screen, the dot matrix arriving under it. This is the
+      // page's own opening and it runs whatever follows the hero — a tail
+      // replaces the way OUT of the television (the camera backing out with
+      // the narration on the glass), not the way in.
       timeline
         .to(sceneFx, { glassName: 0, duration: 0.45, ease: "power2.out" }, 0)
         .to(sceneFx, { screenGlow: 0, duration: 0.9, ease: "power2.out" }, 0)
@@ -591,7 +525,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           { crtProgress: 0, duration: 1.6, ease: "power2.inOut" },
           0.15,
         )
-        .to(sceneFx, { halftone: 1, duration: 0.7, ease: "power1.in" }, 0.95)
+        .to(sceneFx, { halftone: 1, duration: 0.7, ease: "power1.in" }, 0.95);
+      timeline
         .to(sceneFx, { treeDrop: 0, duration: 1.6, ease: "power3.out" }, 0.1)
         // The name leads the page. Each letter slides up from below its
         // word's base, starting at the gap between the words and spreading
@@ -659,12 +594,12 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     };
   }, [revealComplete]);
 
-  // The next page, on scroll: one scrubbed timeline over 432vh. The top
-  // strip fades, the name sinks out of the bottom of the frame, and the
-  // tree sinks out too while the camera orbits it counter-clockwise
-  // through 60% of the intro's sweep; once the name has arrived in the
-  // middle its two words are pushed off the sides, and a viewport-sized
-  // panel grows from the centre behind them until it fills the frame.
+  // The next page, on scroll: one scrubbed timeline over the hero's scroll
+  // room. The top strip fades, the name drops back under the line it rose
+  // through, the tree sinks out of frame as the camera swings a little
+  // round it, and the camera
+  // then backs straight out of the television's glass (see the constants
+  // at the top of the file).
   useEffect(() => {
     const root = rootRef.current;
     const scrollSpace = scrollSpaceRef.current;
@@ -672,61 +607,31 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     if (!revealComplete || !root || !scrollSpace) return undefined;
     const strip = root.querySelector<HTMLElement>("[data-hero-strip]");
     const lockup = root.querySelector<HTMLElement>("[data-hero-lockup]");
-    const panel = root.querySelector<HTMLElement>("[data-hero-panel]");
-    if (!strip || !lockup || !panel) return undefined;
+    if (!strip || !lockup) return undefined;
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
     // Exposed so headless captures can read the scrubbed state.
     (window as unknown as Record<string, unknown>).__scrollScene = true;
+    // Set inside the context below; undone in this effect's cleanup.
+    let removeNarrationRefresh = () => {};
     const ctx = gsap.context(() => {
-      // The lockup no longer leaves down the bottom. It rises from its
-      // bottom-anchored rest to the MIDDLE of the viewport, arriving exactly
-      // as the panel starts to grow; the two words are then pushed apart to
-      // the edges by the growing box.
-      //
-      // All three measurements come from offsetTop/offsetLeft/offsetWidth,
-      // never getBoundingClientRect: offset* is the laid-out box and ignores
-      // the transform the scrub has already applied, so a refresh mid-scroll
-      // re-reads the same numbers instead of compounding them.
-      //
-      // The words are measured THROUGH the lockup: their offsetLeft is
-      // relative to it (it is positioned, see the markup) and the lockup's
-      // own offsetLeft is relative to the viewport-sized type layer. Read
-      // straight off the words, the number changed meaning mid-page — a
-      // transformed lockup becomes their offsetParent whether positioned
-      // or not, so the same call gave viewport coordinates before the
-      // scroll started and lockup coordinates after, 64px apart.
-      const centreOffset = () =>
-        (window.innerHeight - lockup.offsetHeight) / 2 - lockup.offsetTop;
-      const words = gsap.utils.toArray<HTMLElement>(
-        lockup.querySelectorAll("[data-hero-letters]"),
-      );
-      // The box grows from the MIDDLE of the screen, once the words are
-      // out of its way: see boxPlanOf. One scrubbed number, `growth`,
-      // drives both the words' exit and the box's scale, so the two
-      // cannot drift apart under the scrub; the plan is re-read from the
-      // layout on every refresh.
-      const growth = { progress: 0 };
-      let plan = boxPlanOf(root);
-      const replan = () => {
-        plan = boxPlanOf(root);
-      };
-      const applyGrowth = () => {
-        const p = growth.progress;
-        gsap.set(panel, { scale: Math.max((p - plan.startAt) / (1 - plan.startAt), 0) });
-        gsap.set(words[0], { x: -plan.travel * p });
-        gsap.set(words[1], { x: plan.travel * p });
-      };
+      // The name leaves the way it came. On the reveal each letter rises
+      // from under its word's base, starting at the gap between the two
+      // words and spreading outward; here each drops back under it in the
+      // same order. No opacity and no movement of the lockup itself: the
+      // words are clipped at their base (CLIP_AT_BASE in app/page.tsx), so
+      // a letter below the line is simply out of sight.
+      const letterGroups = gsap.utils
+        .toArray<HTMLElement>(lockup.querySelectorAll("[data-hero-letters]"))
+        .map((group) => ({
+          from: group.dataset.heroLetters === "rtl" ? "start" : "end",
+          letters: gsap.utils.toArray<HTMLElement>(
+            group.querySelectorAll("[data-hero-letter]"),
+          ),
+        }));
       const tl = gsap.timeline({
         defaults: { ease: "none" },
-        onUpdate: () => {
-          const open = tl.progress() > PANEL_OPEN_AT;
-          if (open !== panelOpenRef.current) {
-            panelOpenRef.current = open;
-            setPanelOpen(open);
-          }
-        },
         scrollTrigger: {
           end: "bottom bottom",
           invalidateOnRefresh: true,
@@ -734,275 +639,231 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           // This used to carry all the smoothing at 1.4, which on top of an
           // eased scroll would smooth twice and read as the scene dragging
           // behind the page. Enough is left to take the edge off.
-          onRefreshInit: replan,
           scrub: prefersReducedMotion ? true : 0.3,
           start: "top top",
           trigger: scrollSpace,
         },
       });
-      // Times are fractions of the whole 432vh scroll: the hero's exit in
-      // the first 0.205, the panel from TREE_DROP_DURATION.
-      //
       // A timeline is only as long as its longest child, and every offset
       // here is written as a fraction of the WHOLE scroll — so the length
-      // has to be pinned to 1 explicitly. It used to come out right by
-      // accident, because the panel's growth ran to the end; the moment that
-      // stopped being true the scrub stretched the whole choreography over
-      // the full scroll and every cue landed ~1.4x later than it reads here,
-      // with the robot cutting in before the name had finished leaving.
+      // is pinned to 1 explicitly, or the scrub would stretch whatever
+      // the longest tween happens to be over the full scroll.
       tl.set({}, {}, 1);
-      gsap.set(panel, { scale: 0, transformOrigin: "50% 50%" });
-      tl.to(strip, { autoAlpha: 0, duration: 0.103 }, 0)
-        // Up to the middle over the WHOLE of the tree's fall, on the TREE'S
-        // OWN EASE so the two move as one thing. Sharing only a start and an
-        // end is not enough: with power2.out on the name and power1.in on
-        // the tree they crossed the same window at completely different
-        // rates — half way through, the name was 87% of the way up and the
-        // tree had barely gone a quarter. The name rushed, then dawdled.
-        .to(
-          lockup,
-          { y: centreOffset, duration: TREE_DROP_DURATION, ease: "power1.in" },
-          0,
-        )
-        .to(
+      // The name leaves the way it came — but only when the stage is going
+      // to scroll away under it. With a tail the stage does not leave, it
+      // shrinks into a framed picture, and the name is part of the picture:
+      // it goes down with the whole screen rather than dropping out of it
+      // first. Same for the strip; a page that fades its own furniture and
+      // then shrinks is doing the move twice.
+      if (!hasTail) {
+        tl.to(strip, { autoAlpha: 0, duration: 0.25 }, 0);
+        for (const group of letterGroups) {
+          const each = 0.018;
+          tl.to(
+            group.letters,
+            {
+              duration: NAME_EXIT_DURATION - each * (group.letters.length - 1),
+              ease: "power2.in",
+              stagger: { each, from: group.from as "start" | "end" },
+              yPercent: 180,
+            },
+            0,
+          );
+        }
+      }
+      // The tree sinks and the camera swings, as one move — but only when
+      // the run below is the television's. When a tail takes over, the
+      // stage does not scroll away, it shrinks into a framed picture
+      // (ValleyTransition), and a picture of the scene the tree has just
+      // sunk out of is a picture of nothing. The tree stays; the camera
+      // still swings, so the picture is not a frozen frame.
+      if (!hasTail) {
+        tl.to(
           sceneFx,
           { treeDrop: 1, duration: TREE_DROP_DURATION, ease: "power1.in" },
           0,
-        )
-        .to(sceneFx, { orbit: SCROLL_ORBIT, duration: 0.343 }, 0)
-        // The dot matrix is the last of the television left on the page.
-        // It thins out over the name's rise and is gone by the time the box
-        // appears, so nothing inside the box is seen through it.
-        .to(
-          sceneFx,
-          { halftone: 0, duration: PANEL_GROW_AT, ease: "power1.in" },
-          0,
-        )
-        // The growth, linear on the scroll: the box grows out of NOTHING —
-        // it starts at scale 0 and is never set to any other size, so there
-        // is nothing to pop — and the ease is linear on purpose: an ease
-        // with no slope at its start leaves the box under 1% of the screen
-        // for tens of vh, which reads as a gap rather than a growth. The
-        // words leave first, pushed outward at the pace the box's edges
-        // will have; the box opens at the middle once "Kevin" is a tenth
-        // of the screen clear of it, and from then on a word and its edge
-        // move as one thing, that tenth between them to the last frame.
-        .to(
-          growth,
-          {
-            progress: 1,
-            duration: PANEL_GROW_DURATION,
-            ease: "none",
-            onUpdate: applyGrowth,
-          },
-          PANEL_GROW_AT,
-        )
-        // The box's growth as a number the stage can cut on: the same
-        // start and the same linear ease as the box's own tween, over the
-        // first 60% of its length (STAGE_CUT_AT), so this reaches exactly
-        // 1 on the frame the box is 60% grown — whatever the scrub is
-        // doing. (It used to cut on the name clearing the sides, about 90%
-        // of the way; the words still ride the box out, the cut no longer
-        // waits for them.)
-        .to(
-          sceneFx,
-          {
-            stageCut: 1,
-            duration: PANEL_GROW_DURATION * cutAt,
-            ease: "none",
-          },
-          PANEL_GROW_AT,
-        )
-        // And the tree's break, on the same clock: from a beat after the
-        // cut to where the statue's break ends, both as fractions of the
-        // growth (TREE_BREAK). Tweened here rather than read off the scroll
-        // in the stage so that it cannot run ahead of the cut it follows.
-        .to(
-          sceneFx,
-          {
-            treeBreak: 1,
-            duration: PANEL_GROW_DURATION * (treeBreak.end - treeBreak.start),
-            ease: "none",
-          },
-          PANEL_GROW_AT + PANEL_GROW_DURATION * treeBreak.start,
         );
+      }
+      // The camera used to swing round the tree as the page scrolled. With a
+      // tail it does not: the move there is a straight pull-back down the
+      // view axis (sceneFx.dolly, driven by ValleyTransition), and a turn on
+      // top of it reads as the tree spinning rather than as the camera
+      // leaving. The television's own run still swings, which is where the
+      // orbit was written for.
+      if (!hasTail) {
+        tl.to(sceneFx, { orbit: SCROLL_ORBIT, duration: SCROLL_ORBIT_DURATION }, 0);
+      }
+
 
       // ------------------------------------------------------------------
-      // The narration's sideways travel.
+      // The narration, on the glass.
       //
-      // Each line is carried across the screen as it scrolls, alternate
-      // lines from opposite sides, and it never stops: a line enters offset
-      // one way, passes through its true indent as it crosses the middle of
-      // the screen, and leaves offset the other way. So the staircase is
-      // always moving sideways under the reading position rather than
-      // arriving and then sitting still.
+      // The words are in the layer the canvas warps onto the television
+      // (see the markup), so they cannot scroll by being in the flow. The
+      // track they are set in is moved instead: its top is kept where the
+      // flow's spacer is, which is where it would have been. Same page
+      // speed, same distance, and the homography carries all of it onto
+      // the tube.
       //
-      // One trigger per line, each scrubbed over that line's own trip
-      // through the viewport, which is what keeps every line's phase tied
-      // to where IT is rather than to where the block is. The reveal hook
-      // fades the same elements in and is told not to move them
-      // (`data-reveal="slide"`), so the two never write the same property.
-      const slides = gsap.utils.toArray<HTMLElement>(
-        root.querySelectorAll('[data-reveal="slide"]'),
-      );
-      slides.forEach((line, index) => {
-        const from = index % 2 === 0 ? -1 : 1;
-        gsap.fromTo(
-          line,
-          { x: () => from * narrationDrift() },
-          {
-            ease: "none",
-            scrollTrigger: {
-              end: "bottom top",
-              invalidateOnRefresh: true,
-              scrub: prefersReducedMotion ? true : 0.4,
-              start: "top bottom",
-              trigger: line,
-            },
-            x: () => -from * narrationDrift(),
-          },
-        );
-      });
-
-      // ------------------------------------------------------------------
-      // The cut to black under the narration.
-      //
-      // This is what lukebaffait.fr does where its own frame sequence gives
-      // way to the about text: over the next section's approach — its top
-      // crossing from the bottom of the viewport to the top — a full-screen
-      // sheet over the sequence goes to 0.7, and on desktop the frames
-      // under it blur out (16px), while the sequence keeps playing its last
-      // stretch underneath. Here the sheet goes all the way to black: the
-      // narration runs over black now, not over the figure. Whatever the
-      // stage is still doing plays on under the rising black in just the
-      // same way, and once the sheet is shut the stage stops drawing (see
-      // scrimCovered).
-      //
-      // The stretch ends with the block's top a fifth of the way down, so
-      // the black is two thirds closed as the first line starts to fade in
-      // (components/useRevealOnScroll shows a line 8% up from the bottom;
-      // the block's padding puts the first line 45vh under its top) and is
-      // shut before that line has climbed to the middle. The reference is
-      // at 0.7 at that same two-thirds point.
-      //
-      // autoAlpha rather than opacity: at zero it also sets visibility
-      // hidden, and a hidden sheet has no backdrop to blur, so the filter
-      // costs nothing across the whole of the hero before this runs.
-      //
-      // Every width. This used to dim only phones, because on a wide screen
-      // the camera panned the figure out from under the words instead; that
-      // pan is gone.
+      // Each line travels sideways over its own trip through the window
+      // (in from its side at the bottom, to the centre as it leaves at the
+      // top, alternate lines from alternate sides: narrationX) and fades
+      // over the first and last eighth of it. These were a ScrollTrigger a
+      // line; a trigger measures its element in the document, and these
+      // are no longer anywhere in it. The numbers are the same ones, read
+      // off the track's own layout on refresh.
+      const track = narrationTrackRef.current;
+      const narrationWindow = narrationWindowRef.current;
       const narrationSpace = narrationSpaceRef.current;
-      const scrim = narrationScrimRef.current;
-      // The blossom scene's fades, in and out, from the block's own
-      // position each update rather than from a tween: in over the half
-      // screen after the scrim shuts (the block's top at a fifth of the
-      // viewport, see the scrim below), out over the last screen before
-      // the block's bottom reaches that same fifth — by which point the
-      // work sections' backdrop, which boots a screen ahead, is up.
+      const slides = gsap.utils.toArray<HTMLElement>(
+        root.querySelectorAll("[data-narration-slide]"),
+      );
+      const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
+      const offsetWithin = (element: HTMLElement, ancestor: HTMLElement) => {
+        let top = 0;
+        let node: HTMLElement | null = element;
+        while (node && node !== ancestor) {
+          top += node.offsetTop;
+          node = node.offsetParent as HTMLElement | null;
+        }
+        return top;
+      };
+      let lineLayout: { from: number; height: number; top: number }[] = [];
+      const measureNarration = () => {
+        if (!track || !narrationSpace) return;
+        narrationSpace.style.height = `${track.offsetHeight}px`;
+        lineLayout = slides.map((line, index) => ({
+          from: narrationX(line, index, -1),
+          height: line.offsetHeight,
+          top: offsetWithin(line, track),
+        }));
+      };
+      let lastTrackY = Number.NaN;
+      const placeNarration = (trackY: number, vh: number) => {
+        if (!track || !narrationWindow || trackY === lastTrackY) return;
+        lastTrackY = trackY;
+        const onScreen = trackY < vh && trackY + track.offsetHeight > 0;
+        narrationWindow.style.visibility = onScreen ? "visible" : "hidden";
+        if (!onScreen) return;
+        track.style.transform = `translate3d(0, ${trackY.toFixed(2)}px, 0)`;
+        slides.forEach((line, index) => {
+          const layout = lineLayout[index];
+          if (!layout) return;
+          const trip = clamp01(
+            (vh - (trackY + layout.top)) / (vh + layout.height),
+          );
+          const travel = prefersReducedMotion ? 0.5 : trip;
+          const fade = prefersReducedMotion
+            ? 1
+            : Math.min(1, trip / 0.125, (1 - trip) / 0.125);
+          line.style.transform = `translate3d(${(layout.from * (1 - travel)).toFixed(2)}px, 0, 0)`;
+          line.style.opacity = Math.max(0, fade).toFixed(3);
+        });
+      };
+
+      // ------------------------------------------------------------------
+      // The black, then the tree again.
       //
-      // Written as two custom properties on the block — `--narration-fx`
-      // (opacity) and `--narration-fx-vis` — which the scene's holders
-      // read through var() (see NarrationScene). The scene is a lazy
-      // chunk that mounts after this effect has run, so there is nothing
-      // to query for here; the block is always there.
-      if (narrationSpace) {
-        // The block's edges come from the trigger's own numbers, not from
-        // getBoundingClientRect. `start` is the scroll at which the top
-        // meets the bottom of the viewport and `end` the scroll at which
-        // the bottom meets the top, so at any scroll s the top sits at
-        // start + vh - s and the bottom at end - s; both are re-measured
-        // on every ScrollTrigger refresh like everything else. The rect
-        // read ran on every scroll update for most of the page (this
-        // trigger is live from a screen above the narration to its end),
-        // in the middle of the other triggers' style writes, where each
-        // one forces a style recalculation. Counted under the headless
-        // harness over an 80-step scroll from the top of the page to the
-        // bottom: 60 getBoundingClientRect calls on the block before, 16
-        // after — and those 16 are the blossom scene's own gate checks and
-        // thinkerTiming's refresh reads, not this.
-        //
-        // Writes only when the value moved. At rest, and for the whole of
-        // the hero's scroll before the block is near, alpha is a constant
-        // 0 and the block's style is left alone.
+      // Nothing dims the television while the narration runs: the words
+      // are on its screen, not over the picture of it.
+      //
+      // The sheet shuts over the quarter screen before the Work section's
+      // top (SCRIM_SHUT_OVER), and the blossom scene comes up over it as
+      // the tree flowers in: sakuraTree anchors the tree's bloom on #work's
+      // top rising through the first nine tenths of the viewport, and the
+      // scene's holders are faded in over the first third of that rise.
+      // Out again over the last screen before the run's bottom, where the
+      // Contact plate takes over.
+      //
+      // One trigger over the whole run and no tweens: the numbers are
+      // arithmetic on the trigger's own start and end and the Work
+      // section's offset in the run — measured on refresh, never per
+      // update — and each style is written only when it moved.
+      const run = aboutWorkRef.current;
+      const scrim = narrationScrimRef.current;
+      const work = run?.querySelector<HTMLElement>("#work");
+      if (run && scrim && work) {
+        // The spacer has to have its height before anything below it is
+        // measured, on the first pass and on every refresh after it.
+        measureNarration();
+        ScrollTrigger.addEventListener("refreshInit", measureNarration);
+        removeNarrationRefresh = () =>
+          ScrollTrigger.removeEventListener("refreshInit", measureNarration);
+        let workOffset = work.offsetTop;
         let lastAlpha = -1;
-        const applyFade = (self: ScrollTrigger) => {
+        let lastFx = -1;
+        const apply = (self: ScrollTrigger) => {
           const vh = window.innerHeight;
           const scroll = self.scroll();
-          const top = self.start + vh - scroll;
-          const bottom = self.end - scroll;
-          const shut = vh * 0.2;
-          const fadeIn = Math.min(Math.max((shut - top) / (vh * 0.5), 0), 1);
-          const fadeOut = Math.min(Math.max((bottom - shut) / (vh * 1.0), 0), 1);
-          const alpha = Math.min(fadeIn, fadeOut);
-          if (alpha === lastAlpha) return;
-          lastAlpha = alpha;
-          narrationSpace.style.setProperty("--narration-fx", alpha.toFixed(3));
-          narrationSpace.style.setProperty(
-            "--narration-fx-vis",
-            alpha > 0.001 ? "visible" : "hidden",
+          const runTop = self.start + vh - scroll;
+          const runBottom = self.end - scroll;
+          const workTop = runTop + workOffset;
+          const shut = clamp01((vh - workTop) / (vh * SCRIM_SHUT_OVER));
+          const alpha = shut;
+          // The way out of the glass, from the first line reaching the
+          // fold. Eased at both ends: it gathers way as the words arrive
+          // and settles at the far end, where a linear one starts and
+          // stops with the wheel. Written straight, no scrub: the page
+          // itself glides (SmoothScroll).
+          const outRaw = clamp01(
+            (vh - runTop - lineLayout[0]?.top) / (vh * CRT_OUT_OVER_SCREENS),
           );
-        };
-        const fadeTrigger = ScrollTrigger.create({
-          end: "bottom top",
-          onRefresh: applyFade,
-          onUpdate: applyFade,
-          start: "top bottom",
-          trigger: narrationSpace,
-        });
-        applyFade(fadeTrigger);
-      }
-      if (narrationSpace && scrim) {
-        const scrimTrigger = {
-          end: "top 20%",
-          invalidateOnRefresh: true,
-          scrub: prefersReducedMotion ? true : 0.3,
-          start: "top bottom",
-          trigger: narrationSpace,
-        };
-        const scrimTl = gsap.timeline({
-          defaults: { ease: "none" },
-          onUpdate: () => {
-            const covered = scrimTl.progress() >= SCRIM_SHUT_AT;
+          const out = 0.5 - 0.5 * Math.cos(Math.PI * outRaw);
+          sceneFx.crtOut = out;
+          sceneFx.halftone = 1 - clamp01(out / HALFTONE_OUT_OVER);
+          sceneFx.backdropLevel =
+            1 - (1 - TUBE_BACKDROP_LEVEL) * clamp01(out / 0.6);
+          // The spacer is the run's first child, so the run's top IS where
+          // the words would be in the flow.
+          placeNarration(runTop, vh);
+          if (alpha !== lastAlpha) {
+            lastAlpha = alpha;
+            // Hidden as well as clear at rest: a sheet at opacity 0 still
+            // composites over two WebGL canvases every frame.
+            scrim.style.opacity = alpha.toFixed(3);
+            scrim.style.visibility = alpha > 0.001 ? "visible" : "hidden";
+            // The words sit in a layer ABOVE the sheet, so they go out with
+            // it rather than being left standing on the black.
+            if (narrationWindow) {
+              narrationWindow.style.opacity = (1 - alpha).toFixed(3);
+            }
+            const covered = alpha >= SCRIM_SHUT_AT;
             if (covered !== scrimCoveredRef.current) {
               scrimCoveredRef.current = covered;
+              sceneFx.covered = covered;
               setScrimCovered(covered);
             }
+          }
+          const fadeIn = clamp01((vh * 0.9 - workTop) / (vh * 0.3));
+          const fadeOut = clamp01((runBottom - vh * 0.2) / vh);
+          // Recedes over the first project's arrival: from the heading's
+          // block leaving the top to a screen later (TREE_UNDER_LIST).
+          const recede =
+            1 - (1 - TREE_UNDER_LIST) * clamp01((-vh * 0.2 - workTop) / (vh * 0.7));
+          const fx = Math.min(fadeIn, fadeOut) * recede;
+          if (fx !== lastFx) {
+            lastFx = fx;
+            run.style.setProperty("--narration-fx", fx.toFixed(3));
+            run.style.setProperty(
+              "--narration-fx-vis",
+              fx > 0.001 ? "visible" : "hidden",
+            );
+          }
+        };
+        const trigger = ScrollTrigger.create({
+          end: "bottom top",
+          onRefresh: (self) => {
+            workOffset = work.offsetTop;
+            run.style.setProperty("--narration-h", `${workOffset}px`);
+            lastTrackY = Number.NaN;
+            apply(self);
           },
-          scrollTrigger: scrimTrigger,
+          onUpdate: apply,
+          start: "top bottom",
+          trigger: run,
         });
-        scrimTl.fromTo(scrim, { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 0);
-
-        // The blur, on the same stretch, desktop only (the reference's own
-        // rule: phones skip it, and a phone blurring two full-screen WebGL
-        // canvases through a sheet is exactly why). Its own timeline under
-        // gsap.matchMedia rather than a width check made once here, so a
-        // phone turned on its side and back gets the right answer each
-        // time instead of the one it loaded with; the context reverts it
-        // with everything else. Dropped to none once the sheet is shut —
-        // the browser blurs the backdrop of an opaque sheet all the same,
-        // for every frame of the narration, and nobody can see it. Going
-        // back up, the set renders backwards to the blur it replaced.
-        const canBlur =
-          !prefersReducedMotion &&
-          (CSS.supports("backdrop-filter", "blur(1px)") ||
-            CSS.supports("-webkit-backdrop-filter", "blur(1px)"));
-        if (canBlur) {
-          gsap.matchMedia().add("(min-width: 700px)", () => {
-            gsap
-              .timeline({
-                defaults: { ease: "none" },
-                scrollTrigger: { ...scrimTrigger },
-              })
-              .fromTo(
-                scrim,
-                { backdropFilter: "blur(0px)" },
-                { backdropFilter: "blur(16px)", duration: 1 },
-                0,
-              )
-              .set(scrim, { backdropFilter: "none" }, 1);
-          });
-        }
+        run.style.setProperty("--narration-h", `${workOffset}px`);
+        apply(trigger);
       }
     }, root);
     // The display serif is loaded with font-display: swap, and when it
@@ -1018,162 +879,35 @@ export default function HeroIntro({ children }: HeroIntroProps) {
     }
     return () => {
       fontsLive = false;
+      removeNarrationRefresh();
       ctx.revert();
-      // The next run's timeline starts at 0 and only reports changes, so
-      // a flag left shut here would keep the statue's loop off for good.
+      // The next run's trigger starts at 0 and only reports changes, so a
+      // flag left shut here would keep the canvas from drawing for good.
       scrimCoveredRef.current = false;
       setScrimCovered(false);
+      sceneFx.covered = false;
       sceneFx.treeDrop = 0;
       sceneFx.orbit = 0;
+      sceneFx.crtOut = 0;
+      sceneFx.backdropLevel = 1;
       sceneFx.halftone = 1;
-      sceneFx.stageCut = 0;
-      sceneFx.treeBreak = 0;
       delete (window as unknown as Record<string, unknown>).__scrollScene;
     };
-  }, [revealComplete]);
+  }, [hasTail, revealComplete]);
 
-  // The Thinker's chunks are cut in a worker from the moment the page
-  // mounts, and the tree's straight after them in the same worker. The
-  // television shot then HOLDS until both are ready (see the reveal gate
-  // below): the cuts take a few seconds, and the panel starts growing only
-  // 40vh into the scroll, so on a slower machine the scroll reached the
-  // panel before the statue existed and grew over an empty box. Nothing is
-  // ever shown loading — the name simply holds. A figure that FAILS to
-  // build (the model missing, a parse error) is logged once, by the
-  // loader, and not waited for: without the tree the stage keeps the
-  // statue past the cut (see ThinkerStage).
-  //
-  // The cutters stay statically imported: they are needed the moment this
-  // mounts, and three (their only heavy import) is in the first load
-  // anyway for the television's canvas, so a dynamic import here would
-  // add a round trip before the worker could start and save nothing.
-  useEffect(() => {
-    let live = true;
-    const ready = () => {
-      if (live) setThinkerReady(true);
-    };
-    const settled = (build: Promise<unknown>) => build.catch(() => undefined);
-    const builds = [settled(loadThinkerChunks())];
-    if (CUT_TO_TREE) builds.push(settled(loadCherryChunks()));
-    void Promise.all(builds).then(ready);
-    // Never strand the page on a fracture that FAILS — but this must not be
-    // reachable by one that is merely slow. It was 15 s, and the statue's
-    // cut alone measured 12.5 s in the worker at the time: slower machines
-    // crossed the line, the reveal went ahead without the chunks, and the
-    // box opened on an empty stage (nothing is drawn at all while `build`
-    // is null). Then 45 s, three and a half times that. The statue's cut is
-    // now ~220 seeds of shards (the page's scroll scene was ready 41 s
-    // after load on the dev box under software GL, most of it this build;
-    // ~70 ms a seed in a worker), and the tree's would follow it in the
-    // same worker if the cut were on (CUT_TO_TREE). This is the failure
-    // net, not a deadline — the fractures should always win the race; if
-    // a slower machine ever loses it, the fix is the seed count, not this.
-    const timeout = window.setTimeout(ready, 80000);
-    return () => {
-      live = false;
-      window.clearTimeout(timeout);
-    };
-  }, []);
-
-  // Capture aid: ?robotView jumps the page to its bottom once the reveal is
-  // done, which opens the panel, completes the statue and drives the robot
-  // phase to 1 through the real scroll path — arming and starting the run
-  // without hand-scrolling. Twice, because ThinkerStage schedules its own
-  // ScrollTrigger refresh ~250 ms after it mounts.
-  useEffect(() => {
-    if (!revealComplete) return undefined;
-    if (!window.location.search.includes("robotView")) return undefined;
-    const jump = () => window.scrollTo(0, document.documentElement.scrollHeight);
-    const first = window.setTimeout(jump, 600);
-    const second = window.setTimeout(jump, 1600);
-    return () => {
-      window.clearTimeout(first);
-      window.clearTimeout(second);
-    };
-  }, [revealComplete]);
-
-  // The stretch of scroll the statue's stage owns: from the panel starting
-  // to grow to the bottom of the page, breaking from its very first pixel.
-  // Read from the layout each time ScrollTrigger refreshes.
-  const thinkerTiming = useCallback<ThinkerTiming>(() => {
-    const scrollSpace = scrollSpaceRef.current;
-    const viewportHeight = window.innerHeight;
-    const documentTop = (element: HTMLElement | null) =>
-      element ? element.getBoundingClientRect().top + window.scrollY : 0;
-    // The hero timeline runs from the scroll space's top at the top of the
-    // viewport to its bottom at the bottom.
-    const heroStart = documentTop(scrollSpace);
-    const heroLength = scrollSpace ? scrollSpace.offsetHeight - viewportHeight : 0;
-    // The box's first pixel: a way into the growth window, after the words
-    // have made room for it (boxPlanOf).
-    const growStart =
-      heroStart +
-      heroLength * (PANEL_GROW_AT + PANEL_GROW_DURATION * boxPlanOf(rootRef.current).startAt);
-    const pageEnd = heroStart + heroLength;
-    const narrationSpace = narrationSpaceRef.current;
-    // The last frame of the stage anyone sees is where the black shuts:
-    // the narration scrim is opaque once the narration's top reaches a
-    // fifth of the way down the viewport (its timeline's `end: "top 20%"`,
-    // above). The break is paced against TWICE that stretch — the panel's
-    // growth and the scroll under the narration, and as much again that
-    // nobody scrolls — so it runs at half speed and is half done, the
-    // camera half way through its pull-out and swing, when the black
-    // closes over it. It used to finish as the box reached the full screen
-    // (HERO_CUT_AT), then at the black; each halving was asked for after
-    // watching it. No cut anywhere in it.
-    const blackAt = narrationSpace
-      ? documentTop(narrationSpace) - viewportHeight * 0.2
-      : Math.min(heroStart + heroLength * HERO_CUT_AT, pageEnd);
-    const statueEnd = growStart + (blackAt - growStart) * BREAK_STRETCH;
-    const end = pageEnd;
-    // The story's stretch, which only the camera reads now (and only after
-    // a cut, see ThinkerStage): from the break's end to the narration's.
-    const storyStart = statueEnd;
-    const storyEnd = narrationSpace
-      ? documentTop(narrationSpace) + narrationSpace.offsetHeight - viewportHeight
-      : end + 1;
-    return {
-      // The stage opens with the box, and the first piece goes with it
-      // (CHUNK_DELAY_VIEWPORTS is 0).
-      breakAt: growStart + viewportHeight * CHUNK_DELAY_VIEWPORTS,
-      end,
-      start: growStart,
-      statueEnd,
-      storyEnd,
-      storyStart,
-    };
-  }, []);
-
-  // The narration's lines are [data-reveal] like everything else on the
-  // page; this is the only tree outside HomeSections that has any.
+  // Reveal the section rules; the scrolling narration stays visible
+  // independently of this observer.
   useRevealOnScroll(rootRef);
 
-  // The statue's canvas runs its live loop only while there is something
-  // to see: the panel is open, the stage is on screen, and the black scrim
-  // has not shut over it.
-  const stageActive = panelOpen && stageVisible && !scrimCovered;
-
   // Exposed so headless captures can tell whether the canvas is drawing
-  // once the scrim has closed (the stage's own hook only reports the
-  // scrubbed progress, which keeps moving either way).
+  // once the scrim has closed.
   useEffect(() => {
-    const debug = { active: stageActive, covered: scrimCovered };
+    const debug = { covered: scrimCovered };
     (window as unknown as Record<string, unknown>).__narrationScrim = debug;
     return () => {
       delete (window as unknown as Record<string, unknown>).__narrationScrim;
     };
-  }, [scrimCovered, stageActive]);
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => setStageVisible(entry.isIntersecting),
-      { threshold: 0 },
-    );
-    observer.observe(stage);
-    return () => observer.disconnect();
-  }, []);
+  }, [scrimCovered]);
 
   // The canvas owns the DOM homography (same-frame application); on unmount
   // just clear whatever transform it left behind.
@@ -1187,14 +921,14 @@ export default function HeroIntro({ children }: HeroIntroProps) {
   return (
     <section className="relative" id="top" ref={rootRef}>
       {/* The pin container, and everything pinned inside it: the tree
-          canvas, the type, the statue's panel, the narration over it. Its
+          canvas, the type, the narration's sheet over them. Its
           height is the two spacers at the bottom of this file — the hero's
           own run, then the narration's — so the stage stays on screen
           across both and only scrolls away at the end of the second.
 
           Its height is deliberately NOT what the choreography is measured
           against. That is the first spacer, which the timeline triggers on
-          and thinkerTiming measures; the container being longer is what
+          on; the container being longer is what
           buys the narration its scroll without stretching the intro. */}
       <div className="relative">
         {/* Exactly one viewport, pinned to the top of it. The height comes
@@ -1202,9 +936,15 @@ export default function HeroIntro({ children }: HeroIntroProps) {
             stage, the type layer and the WebGL drawing buffer cannot
             disagree about how tall a screen is on mobile. */}
         <div
-          className="sticky top-0 h-[var(--arbor-screen-h)] w-full overflow-hidden"
+          className={
+            "sticky top-0 h-[var(--arbor-screen-h)] w-full overflow-hidden" +
+            // An explicit layer only when a tail is driving the stage. The
+            // valley transition puts one canvas of hills behind the stage
+            // and another in front of it, which needs all three to be on a
+            // stated z, not on document order.
+            (hasTail ? " z-[1]" : "")
+          }
           data-hero-stage
-          ref={stageRef}
         >
       <BareThreeCanvas
         introActive={revealStarted}
@@ -1225,43 +965,66 @@ export default function HeroIntro({ children }: HeroIntroProps) {
           `fixed inset-0`, which came to the same thing while the stage was
           pinned and the wrong thing once the stage scrolled away.) */}
       <div
-        // pointer-events-none is load-bearing: this layer sits above the
-        // statue's panel, and without it every drag meant for the statue
-        // dies here. The links inside re-enable their own events.
+        // pointer-events-none: the layer covers the whole stage. The links
+        // inside re-enable their own events.
         className="pointer-events-none absolute inset-0 z-20"
         ref={heroLayerRef}
         style={{ transformOrigin: "0 0", willChange: "transform" }}
       >
         {children}
+        {/* The narration, on the glass. A window the size of the screen,
+            and in it the track the scroll moves up through it (see the
+            scroll effect). In THIS layer because this is the layer the
+            canvas warps onto the television: whatever is in it is on the
+            tube, at whatever size the tube is. The flow keeps a spacer of
+            the track's height under #info. overflow-hidden clips the
+            sideways overshoot too (narrationX). Hidden until the scroll
+            reaches it. Skipped entirely when a `tail` replaces the run
+            these words belong to. */}
+        {tail ? null : (
+          <div
+            className="absolute inset-0 overflow-hidden text-[#f0f0f0]"
+            data-narration-window
+            ref={narrationWindowRef}
+            // The shadow is for the stretch of a line that crosses the aurora's
+            // highlights, where white on near-white was lost. Wide and soft,
+            // so it darkens the picture behind the words without drawing a
+            // box round them.
+            style={{
+              textShadow:
+                "0 0 0.3em rgba(4, 4, 10, 0.9), 0 0 1.1em rgba(4, 4, 10, 0.7)",
+              visibility: "hidden",
+            }}
+          >
+            <div
+              className="px-6 pb-[35vh] pt-[10vh] text-center will-change-transform sm:px-16"
+              ref={narrationTrackRef}
+            >
+              <Narration stage>
+                {HERO_NARRATION.map((lines, index) => (
+                  <Stanza center key={index} lines={lines} slide />
+                ))}
+              </Narration>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* The next page's panel: exactly the stage, grown from the centre
-          by the scroll timeline once the name has made room. Above the canvas,
-          below the type layer. Inside it, The Thinker: its own canvas,
-          scaled with the panel. */}
-      <div
-        className="pointer-events-none absolute inset-0 z-[15] bg-[#0a0a0a]"
-        data-hero-panel
-        style={{ transform: "scale(0)", transformOrigin: "50% 50%" }}
-      >
-        {revealComplete ? (
-          <StageErrorBoundary>
-            <ThinkerStage active={stageActive} timing={thinkerTiming} />
-          </StageErrorBoundary>
-        ) : null}
-      </div>
-
-      {/* The black the narration runs over: shut by the scrim's timeline as
-          the narration block arrives, at every width. Above the statue's
-          panel, below the type layer. Hidden as well as clear at rest, so
-          its blur has no backdrop to work on until it is needed. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[17] bg-[#0a0a0a]"
-        data-narration-scrim
-        ref={narrationScrimRef}
-        style={{ opacity: 0, visibility: "hidden" }}
-      />
+      {/* The sheet over the stage: clear while the narration runs on the
+          television, shut to black for the hand-over to the Work section
+          (the scrim's trigger, above). Above the canvas, below the type
+          layer, which is why the narration's window fades with it.
+          Hidden as well as clear at rest: a sheet at opacity 0 still
+          composites over the canvas every frame. */}
+      {tail ? null : (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[17] bg-[#0a0a0a]"
+          data-narration-scrim
+          ref={narrationScrimRef}
+          style={{ opacity: 0, visibility: "hidden" }}
+        />
+      )}
       {/* Black veil with the bar while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
           builds behind it. Removed from the DOM when the reveal is done. */}
@@ -1297,7 +1060,7 @@ export default function HeroIntro({ children }: HeroIntroProps) {
 
             The first is the hero's own run and nothing about it has moved:
             the timeline below triggers on THIS element, so its length still
-            sets every cue from the television to the statue's cut. The
+            sets every cue from the name's exit to the end of the pull-back. The
             second is the narration's, and it only exists because the
             container is taller than the trigger — lengthening the trigger
             would have stretched the whole intro to fit it.
@@ -1305,85 +1068,80 @@ export default function HeroIntro({ children }: HeroIntroProps) {
             The negative margin cancels the sticky stage's own place in the
             flow, so these two are what give the container its height. */}
         <div style={{ marginTop: "calc(var(--arbor-screen-h) * -1)" }}>
-          <div aria-hidden="true" className="h-[432vh]" ref={scrollSpaceRef} />
-          {/* The narration, IN FLOW, over the pinned statue, each line
-              centred on the figure, which holds the middle of the frame.
-              
-              It scrolls at page speed and reveals a line at a time on
-              entry, which is what the reference does — measured off it: its
-              lines track the scroll exactly 1:1, their staircase offsets
-              are static translates, and the only motion is each line coming
-              up ninety pixels as it arrives. Nothing is pinned and nothing
-              cross-fades.
+          {/* With a tail, the hero's own scroll room is gone: every tween it
+              held (the strip, the letters, the tree drop, the orbit) is
+              skipped with a tail, so its two screens were two screens of
+              scrolling where nothing moved. The transition's own lead is
+              the pause before the landscape; this only has to be as tall as
+              its lead is short of a screen, so the pull-back starts on the
+              first wheel tick. */}
+          <div
+            aria-hidden="true"
+            className={hasTail ? "h-[40vh]" : "h-[200vh]"}
+            ref={scrollSpaceRef}
+          />
+          {/* The about-and-work run, IN FLOW, over the pinned stage: the
+              narration, then the projects, on one ground.
 
-              Its own height is what extends the pin container, so the
-              statue stays behind it for exactly as long as there are words,
-              and the padding is the beat before the first line and after
-              the last. relative so it paints over the sticky stage (later
+              The narration's words are not in it (they are on the
+              television, in the stage above); its spacer is, so the scroll
+              is as long as the words are. The projects follow straight on
+              — the reference's own order, with nothing between the sentence
+              and the list — over the black the television shot ends on,
+              with the tree flowering in behind the heading
+              (NarrationScene).
+
+              The run's height is what extends the pin container, so the
+              stage stays behind it for exactly as long as there are words
+              and work. relative so it paints over the sticky stage (later
               in the tree, so it wins), but NO z-index: a z-index would make
               this block a stacking context, and the tree's canvas inside it
               (SakuraStage, fixed, mix-blend-lighten) would then blend with
-              nothing and paint its black frame over the statue — measured
+              nothing and paint its black frame over the stage — measured
               as a black screen the moment the narration came within a
               screen of the fold. Without one the canvas lightens the stage
               itself, and its black adds nothing. */}
-          <div
-            className="relative px-6 py-[45vh] text-center text-[#f0f0f0] sm:px-16"
-            id="info"
-            ref={narrationSpaceRef}
-          >
-            <h2 className="sr-only">About</h2>
-            {/* The intro's tree behind the words, in the landing page's
-                own style: its own stage, booted as this block comes within
-                a screen of the fold and gated on it, drawn through the
-                same halftone as the hero. The stage's canvas is fixed at
-                z-0 and the lines sit at z-[1] over it; the block itself
-                has no z-index, so the stage's lighten blend meets the page
-                rather than an empty context (see the note on the block).
-                (The work sections' bough-and-dot-field backdrop stood here
-                briefly and was the wrong tree for this part.) */}
-            {/* Every layer of the blossom scene sits in a holder the scroll
-                fades: in over the half screen after the scrim has shut
-                over the statue, out over the last screen before the work
-                sections' own backdrop takes over (see the narration fades
-                in the scroll effect). The dot field is the work sections'
-                (HalftoneField); the petals fall out of the tree's lowest
-                twigs (it publishes them the way the bough does). All three
-                live in NarrationScene, a lazy chunk, and are not mounted
-                until the reveal is done. */}
-            {revealComplete ? (
-              <StageErrorBoundary>
-                <NarrationScene />
-              </StageErrorBoundary>
-            ) : null}
-            <div className="relative z-[1]">
-              <Narration stage>
-                {HERO_NARRATION.map((lines, index) => (
-                  <Stanza center key={index} lines={lines} slide />
-                ))}
-              </Narration>
-            </div>
-            {/* The seam. This block's bottom edge is where the pinned stage
-                lets go and the work sections' plate (HomeSections, opaque)
-                takes the page; until now nothing marked it — the black
-                under the narration simply became the black of the plate.
-                A hairline the width of the screen, sitting ON the edge,
-                draws itself across as it comes 8% up from the bottom
-                (the [data-rule] motion in useRevealOnScroll: scaleX from
-                the left, power3.inOut, 0.9 s), the one motion the page's
-                own rules had been promised and this is the first to use.
-                It is the last thing inside the narration, so the blossom
-                scene is fading out under it (the fade above) as it draws,
-                and reduced motion shows it whole like every other rule.
-                Inside the block, not below it: HomeSections is z-10 and
-                would paint over anything that overlapped its top. */}
+          {tail ?? (
             <div
-              aria-hidden="true"
-              className="absolute inset-x-0 bottom-0 z-[1] h-px bg-white/20"
-              data-reveal
-              data-rule
-            />
-          </div>
+              className="relative text-[#f0f0f0]"
+              data-about-work
+              ref={aboutWorkRef}
+            >
+              {/* The dot field under the projects. It starts where the Work
+                  section does (--narration-h, set by the scroll effect): over
+                  the narration's stretch it would be dots laid across the
+                  picture of the television. */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 bottom-0"
+                data-introduction-background
+                style={{ top: "var(--narration-h, 100%)" }}
+              >
+                <HalftoneField />
+              </div>
+              {/* The tree behind the projects, in the landing page's own
+                  style: its own stage, booted as the run comes within a
+                  screen of the fold and gated on it, drawn through the same
+                  halftone as the hero. The stage's canvas is fixed at z-0 and
+                  the type sits at z-[1] over it. Its holders are faded by the
+                  scroll effect (see the note there). A lazy chunk, not
+                  mounted until the reveal is done. */}
+              {revealComplete ? (
+                <StageErrorBoundary>
+                  <NarrationScene />
+                </StageErrorBoundary>
+              ) : null}
+              {/* Where the narration would be in the flow. The words are on
+                  the television (see the narration window in the stage); this
+                  is their height, set from the track's by the scroll effect,
+                  so the page scrolls as far as it would with them in it, and
+                  #info still lands where they start. */}
+              <div className="relative" id="info" ref={narrationSpaceRef}>
+                <h2 className="sr-only">About</h2>
+              </div>
+              <WorkSection />
+            </div>
+          )}
         </div>
       </div>
     </section>

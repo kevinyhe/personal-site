@@ -1,10 +1,23 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef } from "react";
 
 /**
- * The site's background colour field: large, heavily blurred blobs drifting
- * over near-black, in the same sakura pinks the hero canvas uses.
+ * The aurora is what the field actually is now; the CSS blobs below are the
+ * ground it paints over and the picture if WebGL cannot start. Split out of
+ * the first load because nothing about the first paint depends on it — the
+ * page is readable on the flat field while its chunk arrives.
+ */
+const AuroraBackground = dynamic(() => import("@/components/AuroraBackground"), {
+  ssr: false,
+});
+
+/**
+ * The site's background colour field: the aurora — the same four backlit
+ * curtains the hero scene hangs behind its tree (AuroraBackground) — over a
+ * pair of pre-blurred blobs that are the ground it paints on and the picture
+ * if WebGL cannot start.
  *
  * This is the page background, not the WebGL backdrop inside the hero canvas.
  * The canvas only mounts on the home route, so /work, /info and /contact were
@@ -45,6 +58,7 @@ export default function SiteBackground() {
 
   return (
     <div aria-hidden="true" className="site-bg" ref={ref}>
+      <AuroraBackground />
       <div className="site-bg-vignette" />
       <div className="site-bg-grain" />
     </div>

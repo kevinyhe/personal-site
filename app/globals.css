@@ -45,6 +45,14 @@
 
 html {
   background: #0a0a0a;
+  /* The page is drawn at 3840 wide — a 4K screen at 100% — and SCALED to
+     the window, the way the reference does it (its rem is a share of the
+     viewport too). Every length on the site is in rem or vw/vh, so a 2K or
+     a 1080p window shows the 4K framing, smaller: the same picture, not
+     the same type in a narrower room. 100vw / 240 is 16px at 3840, 10.7px
+     at 2560, 8px at 1920. Floored for phones, where the px breakpoints
+     take over anyway. */
+  font-size: clamp(8px, 0.41667vw, 48px);
 }
 
 /* Transparent on purpose: .site-bg sits at z-index -1, and a negative-z child
@@ -404,16 +412,13 @@ canvas {
   display: block;
 }
 
-/* The hero's WebGL canvases — the tree's and the statue's — fill the stage
-   they sit in. Both are dropped into a layer that is already exactly the
-   viewport, so filling that layer and filling the screen are the same thing
-   while the stage is pinned.
+/* The hero's WebGL canvas fills the stage it sits in. It is dropped into a
+   layer that is already exactly the viewport, so filling that layer and
+   filling the screen are the same thing while the stage is pinned.
    
    Absolute, not fixed, and scoped, not global. Fixed glued them to the
    viewport, so at the end of the hero the stage scrolled away and the tree
-   stayed on screen over the sections. (The statue's canvas escaped that on
-   its own: its panel carries a scale transform, and a transform makes an
-   element a containing block for fixed descendants. The tree's did not.)
+   stayed on screen over the sections.
    And the scope matters as much as the position: as a bare `canvas` rule
    this also took the sections' 2D canvases out of flow, which collapsed the
    work plate's frame to the height of its caption. */
@@ -516,23 +521,52 @@ html::-webkit-scrollbar {
   display: none;
 }
 
-/* The work list dims the rows you are not on, so hovering reads as picking
-   one out rather than as one row twitching. Applied to the row's CONTENTS,
-   never the row itself: the reveal (components/useRevealOnScroll) animates
-   the <li>'s own opacity as an inline style, which a stylesheet cannot
-   reach and must not fight. */
-[data-work-list]:hover > li > * {
+/* The work list dims the projects you are not on, so hovering reads as
+   picking one out rather than as one block twitching. Applied to each
+   project's TEXT wrapper, never to anything the reveal touches: the reveal
+   (components/useRevealOnScroll) animates the [data-reveal] children's
+   opacity as an inline style, which a stylesheet cannot reach and must not
+   fight. */
+[data-work-list]:hover [data-work-text] {
   opacity: 0.4;
   transition: opacity 300ms ease;
 }
 
-[data-work-list] > li:hover > * {
+[data-work-list] > li:hover [data-work-text] {
   opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-work-list]:hover > li > * {
+  [data-work-list]:hover [data-work-text] {
     opacity: 1;
     transition: none;
   }
+}
+
+/* The aurora canvas (components/AuroraBackground) sits inside .site-bg, over
+   the blurred blobs and under the vignette and the grain: the blobs are the
+   ground and the fallback, the curtains are the field itself. */
+.site-bg-aurora {
+  position: absolute;
+  inset: 0;
+  /* Over BOTH blob layers and under the vignette (3) and the grain (4).
+     ::before paints before an element's in-flow children but ::after paints
+     after them, so anything under 2 here is covered by the warm blob. */
+  z-index: 2;
+}
+.site-bg-aurora canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* The blossoms beside the robot sentence (BelowIntro): a slow lift and a
+   few degrees of turn, each on its own phase. --r is the mark's resting
+   angle. Off under reduced motion, where the marks just sit. */
+@keyframes blossom-float {
+  0%, 100% { transform: rotate(var(--r, 0deg)) translateY(0); }
+  50% { transform: rotate(calc(var(--r, 0deg) + 7deg)) translateY(-9px); }
+}
+.blossom-float { animation: blossom-float var(--d, 7s) ease-in-out infinite; animation-delay: var(--p, 0s); }
+@media (prefers-reduced-motion: reduce) {
+  .blossom-float { animation: none; transform: rotate(var(--r, 0deg)); }
 }

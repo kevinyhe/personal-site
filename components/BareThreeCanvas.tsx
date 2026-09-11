@@ -22,6 +22,18 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
+
+/**
+ * The contact page's spray (WeepingCherryGenerator.generateSpray), in the
+ * generator's local units: the tree's primaries run 5.4-7.95 and its twigs
+ * 1.1-2.25, so this is one long primary's worth of stem with twig-sized
+ * sprigs along it. The stem's base radius is a primary's; solveRadii can
+ * only raise it.
+ */
+const SPRAY_STEM_LENGTH = 7.4;
+const SPRAY_STEM_RADIUS = 0.13;
+const SPRAY_SPRIG_COUNT = 10;
+const SPRAY_SPUR_COUNT = 7;
 // Hero composition: the tree floats alone in a near-black void. The camera
 // target sits on the tree axis (world x ~2.6) so the canopy reads
 // near-centered. The frame's bottom edge at the trunk plane sits at world
@@ -35,6 +47,8 @@ const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 8.35, 15.6);
 const INTRO_CAMERA_POSITION = new THREE.Vector3(13.7, 12.9, 15.27);
 const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
+// The CRT room's image-based light at rest; faded as the room goes white.
+const CRT_ENV_INTENSITY = 0.04;
 // How far (world units) the tree group sinks at sceneFx.treeDrop = 1, at
 // treeTuning.scale 1 (the render loop scales it up with the tuner's scale).
 // Sized by measurement so no branch, blossom or loose petal is left in the
@@ -185,7 +199,7 @@ void main() {
 // linear working space) and the halftone pass applies ACES + sRGB once —
 // same pipeline the old sRGB-texture backdrop went through, no
 // double-brightening.
-const VOID_BACKDROP_VERTEX_SHADER = /* glsl */ `
+export const VOID_BACKDROP_VERTEX_SHADER = /* glsl */ `
 varying vec2 vUv;
 void main() {
   vUv = uv;
@@ -193,7 +207,7 @@ void main() {
 }
 `;
 
-const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
+export const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
 uniform float uTime;
 uniform vec2 uPointer;
 uniform float uPointerForce;
@@ -201,6 +215,10 @@ uniform float uPointerForce;
 // the picture on the television, where the full-brightness curtains blow
 // out on the tube.
 uniform float uLevel;
+// 0 = the curtains as they are on the landing page (and on the tube), 1 =
+// the same curtains gone iridescent: the wall of the television's room
+// (see the film functions below and the wall in the CRT stage).
+uniform float uIridescence;
 uniform vec3 uBase;
 uniform vec3 uDeep;
 uniform vec3 uCore;
@@ -208,6 +226,20 @@ uniform vec3 uHot;
 uniform vec3 uViolet;
 uniform vec3 uWarmTint;
 uniform vec3 uCoolTint;
+// The hills behind the curtains: a canvas of the /valley scene drawn off
+// screen, laid over them. uSceneFit maps this plane's uv onto the rectangle
+// the camera can actually see of it, so the picture covers the frame instead
+// of being stretched across a 110x100 billboard.
+uniform sampler2D uScene;
+uniform float uSceneMix;
+uniform vec2 uSceneFit;
+uniform float uSceneGain;
+// How much of the curtain field the frame shows, in the units every constant
+// below is tuned in. The hero passes the plane's own size (1.774 x 1.6129,
+// which is 110 x 100 at p's 62-unit world scale); a full-screen quad with no
+// camera in front of it passes the rectangle the hero's camera would have
+// seen, so the curtains are the same size in both.
+uniform vec2 uFrame;
 varying vec2 vUv;
 
 // One vertical light shaft: a soft horizontal gaussian bump.
@@ -264,6 +296,36 @@ vec3 curtain(vec2 p, float wgt, float cx, float w, float amp, float ph,
   return vec3(i, i * i, i * i * hue);
 }
 
+// ---- Iridescence -----------------------------------------------------
+// The curtains as holographic foil. Thin-film interference: the colour of
+// light off a film a few wavelengths thick cycles through the spectrum
+// with the film's thickness and with the angle it is seen at, which is
+// why oil on water and a soap film run through every hue. Rendered the
+// usual way for real time: a cosine palette (Inigo Quilez) over a phase
+// that is the "thickness" plus a Fresnel term.
+//
+// The thickness here is the curtain's own light plus a slow warped flow,
+// so the bands follow the folds and drift along them. The Fresnel term
+// comes from a fake surface: the flow's gradient is taken as a normal, so
+// where the flow's slope is steep the film reads at a grazing angle and
+// flares with colour, and the flares sweep across the curtains as the flow
+// moves. No bubbles, no refraction: the curtains keep their shape and only
+// their colour changes. At uIridescence 0 none of this runs.
+float filmFlow(vec2 p, float t) {
+  vec2 q = p * 3.2;
+  q += 0.4 * vec2(sin(q.y * 1.3 + t * 0.21), cos(q.x * 1.1 - t * 0.17));
+  float h = sin(q.x * 1.7 + t * 0.3) * sin(q.y * 1.3 - t * 0.23);
+  h += 0.5 * sin(q.x * 3.1 - q.y * 2.2 + t * 0.41);
+  h += 0.25 * sin(q.y * 5.3 + q.x * 1.7 - t * 0.55);
+  return h * 0.5;
+}
+vec3 filmPalette(float phase) {
+  // Held toward magenta, violet, blue and cyan, with green and gold passing
+  // through: the holographic-foil range rather than a flat rainbow.
+  vec3 c = 0.5 + 0.5 * cos(6.2832 * (phase + vec3(0.0, 0.33, 0.67)));
+  return c * vec3(0.95, 0.85, 1.2);
+}
+
 void main() {
   // Plane-local coords corrected for the 110x62 plane aspect so radii are
   // isotropic. The camera sees roughly x in [-0.47, 0.45] and
@@ -271,7 +333,8 @@ void main() {
   // 1.774 = 110/62 and 1.6129 = 100/62: the plane grew to 110x100 for
   // ultrawide coverage, but p keeps the original 62-unit world scale so
   // every tuned constant below is unchanged.
-  vec2 p = vec2((vUv.x - 0.5) * 1.774, (vUv.y - 0.5) * 1.6129);
+  vec2 p = (vUv - 0.5) * uFrame;
+  vec2 plane = p;
   float t = uTime;
 
   // The reference background reads as tall backlit CURTAINS hanging from
@@ -338,6 +401,45 @@ void main() {
 
   // Mild rolloff keeps overlapping peaks luminous but not clipped.
   col = col / (1.0 + 0.35 * col);
+
+  float film = smoothstep(0.0, 1.0, uIridescence);
+  if (film > 0.001) {
+    float tf = t * 0.333;
+    float flow = filmFlow(p, tf);
+    float e = 0.004;
+    vec2 slope = vec2(
+      filmFlow(p + vec2(e, 0.0), tf) - flow,
+      filmFlow(p + vec2(0.0, e), tf) - flow
+    ) / e;
+    vec3 n = normalize(vec3(-slope * 0.13, 1.0));
+    float fres = pow(1.0 - n.z, 0.7);
+    // Thickness: the curtain's light, the flow, the curtain's own hue lean.
+    float thick = I * 1.3 + flow * 1.1 + hue * 0.25 + fres * 1.6 + tf * 0.02;
+    vec3 sheen = filmPalette(thick);
+    // On the curtains' own light, so the void stays void and the hot top
+    // of a curtain carries the most colour. Part of it everywhere the
+    // curtain is lit (the foil), more where the film is at a grazing angle
+    // (the flares).
+    float lum = dot(col, vec3(0.3, 0.5, 0.2));
+    float lit = smoothstep(0.02, 0.35, I);
+    float amount = film * lit * (0.7 + 0.3 * smoothstep(0.1, 0.7, fres));
+    col = mix(col, sheen * (0.04 + 1.9 * lum), amount * 0.9);
+    // A white gleam where the film catches the light square on.
+    vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
+    float gleam = smoothstep(0.93, 0.995, dot(r, normalize(vec3(-0.45, 0.7, 0.55))));
+    col += vec3(0.95, 0.96, 1.0) * gleam * lum * 0.5 * film;
+  }
+  if (uSceneMix > 0.001) {
+    vec2 su = (vUv - 0.5) * uSceneFit + 0.5;
+    vec3 sc = pow(texture2D(uScene, clamp(su, 0.0, 1.0)).rgb, vec3(2.2)) * uSceneGain;
+    // A shoulder, not a clamp. The valley's sky is already near white where
+    // the sun is, and on the television the tube's own bloom is multiplied
+    // over the top of it — which took that corner to flat white with the
+    // raster streaking through it. This rolls the top end off so nothing in
+    // the picture can reach 1 before the bloom has had it.
+    sc = sc / (1.0 + sc * 0.62);
+    col = mix(col, sc, uSceneMix);
+  }
   gl_FragColor = vec4(col * uLevel, 1.0);
 }
 `;
@@ -3620,6 +3722,9 @@ export class WeepingCherryGenerator {
   private terminalTwigs: Branch[] = [];
   private lobes: CanopyLobe[] = [];
   private occupied = new SpatialHash(0.72);
+  // Set by generateSpray: the blossom pass dresses a spray as clusters
+  // with wood showing between them, not as the canopy's unbroken sleeves.
+  private sprayMode = false;
 
   private params = {
     trunkHeight: 5.15,
@@ -3730,6 +3835,227 @@ export class WeepingCherryGenerator {
       branches: this.branches,
       lobes: this.lobes,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // One spray instead of a tree.
+  //
+  // The contact page hangs a branch across its right half (see
+  // components/sakuraBough.ts). It used to grow this whole tree and keep
+  // one primary limb of it, which was a piece of a weeping canopy turned
+  // on its side: the twigs all hung one way, the limb kinked where the
+  // canopy had pulled it, and nothing about it read as a branch you could
+  // hold. The shape wanted is the orchid stem lanceyan.com hangs behind its
+  // third page: one long stem coming in from the right, bowing gently
+  // across the frame, with a row of short flowering sprigs standing off
+  // it. This grows exactly that, out of the same parts as the tree: the
+  // same bark builder, the same blossom pass, the same wind chains. Only
+  // the skeleton is designed rather than grown towards a canopy.
+  //
+  // Local frame: the stem starts at the origin (its cut end) and runs
+  // along -x, rising a little and then bowing under the sprigs it carries.
+  // The caller orients, scales and places it. Nothing here is moved by the
+  // hero's baked group transform; the group stays at identity.
+  // -------------------------------------------------------------------------
+
+  async generateSpray(onPhase?: () => Promise<void>) {
+    const timings: Record<string, number> = {};
+    let phaseStart = performance.now();
+    const phase = async (name: string) => {
+      timings[name] = Math.round(performance.now() - phaseStart);
+      await onPhase?.();
+      phaseStart = performance.now();
+    };
+    this.group.name = "Procedural cherry spray";
+    this.sprayMode = true;
+    // One lobe, for the blossom pass: it reads a lobe's density and colour
+    // bias off every branch it dresses, and skips branches that have none.
+    this.lobes = [
+      new CanopyLobe({
+        id: 0,
+        center: new THREE.Vector3(),
+        radius: new THREE.Vector3(1, 1, 1),
+        colorBias: 0.08,
+        density: 1,
+        weight: 1,
+      }),
+    ];
+
+    const stem = this.createSprayStem();
+    this.createSpraySprigs(stem);
+    await phase("skeleton");
+
+    this.solveRadii(stem);
+    this.computeWeights(stem);
+    this.applySagging(stem);
+    this.computeWindChains(stem);
+    await phase("radii");
+    this.buildBranchMesh();
+    await phase("branchMesh");
+    this.buildBlossomMeshes();
+    await phase("blossoms");
+    (window as unknown as Record<string, unknown>).__sprayBuildTimings = timings;
+
+    return {
+      group: this.group,
+      branchMesh: this.branchMesh,
+      blossomMesh: this.blossomMesh,
+      lowBlossomMesh: this.lowBlossomMesh,
+      halfBlossomMesh: this.halfBlossomMesh,
+      budMesh: this.budMesh,
+      branchWindUniforms: this.branchWindUniforms,
+      blossomGrowth: this.blossomGrowth,
+      branches: this.branches,
+      stem,
+    };
+  }
+
+  /**
+   * The stem: SPRAY_STEM_LENGTH units along -x, its height an arc that
+   * rises through the first third and drops away past the middle, the
+   * way a cut branch bows once it is held out by the base. The rise and
+   * the drop are the reference's proportions (its stem climbs about a
+   * tenth of its length and falls about an eighth); the wobble in z and
+   * the jitter are what keep it from reading as a drawn curve.
+   *
+   * No parent: computeWindChains treats a parentless branch as the tree's
+   * root and gives it the trunk's small sway, which is right for the one
+   * thick piece of wood in the frame. The sprigs carry the motion.
+   */
+  private createSprayStem() {
+    const length = SPRAY_STEM_LENGTH;
+    // (t, y, z) — the arc, in stem-length units for y and z.
+    const spine: [number, number, number][] = [
+      [0, 0, 0],
+      [0.125, 0.043, 0.011],
+      [0.25, 0.078, 0.016],
+      [0.375, 0.095, 0.008],
+      [0.5, 0.084, -0.007],
+      [0.625, 0.051, -0.016],
+      [0.75, 0.003, -0.011],
+      [0.875, -0.057, 0.003],
+      [1, -0.122, 0.014],
+    ];
+    const points = spine.map(([t, y, z], i) => {
+      const jitter = i === 0 ? 0 : 0.012;
+      return new THREE.Vector3(
+        -t * length + this.rand(-jitter, jitter) * length,
+        y * length + this.rand(-jitter, jitter) * length,
+        z * length + this.rand(-jitter, jitter) * length,
+      );
+    });
+    const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.42);
+    curve.arcLengthDivisions = 200;
+    return this.createBranch({
+      parent: null,
+      depth: 1,
+      attachT: 0,
+      curve,
+      baseRadius: SPRAY_STEM_RADIUS,
+      tipRadius: SPRAY_STEM_RADIUS * 0.34,
+      lobeId: 0,
+    });
+  }
+
+  /**
+   * The sprigs: SPRAY_SPRIG_COUNT flowering twigs standing off the stem,
+   * alternating sides, leaning towards the tip and arching over, longest
+   * through the middle of the stem and shortest at either end; a finer
+   * drooping twig off some of them; and a handful of short spurs against
+   * the stem itself, so the blossom pass (which dresses depth 4 and up)
+   * puts clusters on the wood and not only out on the sprigs.
+   *
+   * Depth 4 for every leader, as the tree's twigs are: that is the tier
+   * the wind moves most and the tier the blossom walk starts at t=0.02
+   * on, so a sprig is flowered from its base. No collision hash: the
+   * layout is spaced by hand.
+   */
+  private createSpraySprigs(stem: Branch) {
+    const sprigTs = this.attachmentValues(SPRAY_SPRIG_COUNT, 0.1, 0.96);
+    const leaders: Branch[] = [];
+    sprigTs.forEach((attachT, i) => {
+      const start = stem.getPoint(attachT);
+      const tangent = stem.getTangent(attachT);
+      const side = new THREE.Vector3()
+        .crossVectors(UP, tangent)
+        .normalize()
+        .multiplyScalar(i % 2 === 0 ? 1 : -1);
+      const dir = new THREE.Vector3()
+        .addScaledVector(tangent, 0.35)
+        .addScaledVector(UP, this.rand(0.5, 0.9))
+        .addScaledVector(side, this.rand(0.35, 0.65))
+        .addScaledVector(this.randomVector(0.3), 0.12)
+        .normalize();
+      // Longest through the middle: 0.9 at the ends, 1.8 at the centre.
+      const u = SPRAY_SPRIG_COUNT > 1 ? i / (SPRAY_SPRIG_COUNT - 1) : 0.5;
+      const length =
+        (0.9 + 0.9 * Math.sin(Math.PI * u)) * this.rand(0.85, 1.15);
+      const curve = this.generateBranchCurve(
+        start,
+        dir,
+        length,
+        4,
+        this.rand(0.45, 0.85),
+        tangent,
+      );
+      // Thicker than the tree's twigs are against their parents: seen at
+      // this distance a twig-thin sprig is under one halftone cell and
+      // vanishes, leaving its flowers floating.
+      const radius = stem.baseRadius * this.rand(0.2, 0.3);
+      leaders.push(
+        this.createBranch({
+          parent: stem,
+          depth: 4,
+          attachT,
+          curve,
+          baseRadius: radius,
+          tipRadius: radius * 0.1,
+          lobeId: 0,
+          terminal: true,
+        }),
+      );
+    });
+
+    for (const leader of leaders) {
+      if (this.rng() > 0.45) continue;
+      const twig = this.createDroopTwig(leader, 5, this.rand(0.35, 0.8));
+      if (this.rng() < 0.25) this.createDroopTwig(twig, 6, this.rand(0.3, 0.7));
+    }
+
+    const spurTs = this.attachmentValues(SPRAY_SPUR_COUNT, 0.05, 0.92);
+    spurTs.forEach((attachT, i) => {
+      const start = stem.getPoint(attachT);
+      const tangent = stem.getTangent(attachT);
+      const side = new THREE.Vector3()
+        .crossVectors(UP, tangent)
+        .normalize()
+        .multiplyScalar(i % 2 === 0 ? -1 : 1);
+      const dir = new THREE.Vector3()
+        .addScaledVector(tangent, 0.2)
+        .addScaledVector(UP, this.rand(-0.2, 0.5))
+        .addScaledVector(side, this.rand(0.5, 0.9))
+        .addScaledVector(this.randomVector(0.5), 0.15)
+        .normalize();
+      const curve = this.generateBranchCurve(
+        start,
+        dir,
+        this.rand(0.22, 0.42),
+        4,
+        this.rand(0.2, 0.5),
+        tangent,
+      );
+      const radius = stem.baseRadius * this.rand(0.14, 0.2);
+      this.createBranch({
+        parent: stem,
+        depth: 4,
+        attachT,
+        curve,
+        baseRadius: radius,
+        tipRadius: radius * 0.1,
+        lobeId: 0,
+        terminal: true,
+      });
+    });
   }
 
   private createCanopyLobes() {
@@ -4908,8 +5234,12 @@ export class WeepingCherryGenerator {
     // the tier budget: high tier stays inside the 0.5-0.8 diameter band
     // (sleeves), lower tiers may stretch further apart instead of leaving
     // whole strands bare.
-    const spacingClamp: [number, number] =
-      this.quality === "low"
+    // A spray is the exception: its spurs sit a cluster's width apart or
+    // more, so each puff reads as a bunch of flowers on visible wood — the
+    // reference stem's row of blooms, not a sleeve.
+    const spacingClamp: [number, number] = this.sprayMode
+      ? [1.0, 1.5]
+      : this.quality === "low"
         ? [0.6, 1.7]
         : this.quality === "medium"
           ? [0.55, 1.15]
@@ -4921,10 +5251,12 @@ export class WeepingCherryGenerator {
     );
     // Cluster size range derived from the same budget: at the target
     // spacing each spur needs avgClusterGoal flowers on average.
+    // Cherry spurs carry two to five flowers; the canopy's nine-flower
+    // puffs are a mass seen from far off, and the spray is seen close.
     const avgClusterGoal = THREE.MathUtils.clamp(
       totalTarget / (totalRunLength / spacing),
-      3,
-      9,
+      this.sprayMode ? 2 : 3,
+      this.sprayMode ? 5 : 9,
     );
     const clusterLo = Math.max(2, Math.round(avgClusterGoal - 1.6));
     const clusterHi = Math.min(9, Math.round(avgClusterGoal + 1.9));
@@ -5012,6 +5344,9 @@ export class WeepingCherryGenerator {
         // change reads purely as variation.
         const flowerScale =
           0.133 *
+          // Seen close, on one branch, a corolla can be a real flower and
+          // not a dot in a mass.
+          (this.sprayMode ? 1.3 : 1) *
           clusterScaleBias *
           (0.86 + 0.28 * this.rng()) *
           woodMaturity *
@@ -5860,8 +6195,20 @@ void main() {
       // and the floor in front of it — the one thing in the room that is
       // allowed to be bright. Driven from updateCrtRig with the tube's
       // warm-up pulse.
+      // The iridescent wall, set up with the room's backdrop below and
+      // driven from updateCrtRig.
+      let crtWall: {
+        aspect: { value: number };
+        uniforms: { uTime: { value: number }; uLevel: { value: number } };
+      } | null = null;
+      // Its speed, as a fraction of the landing page's aurora.
+      const CRT_WALL_SPEED = 0.2;
+      // How bright it gets: the tube and its bloom are in front of it, and
+      // a wall as bright as the page would take the picture's place.
+      const CRT_WALL_LEVEL = 1.0;
       const crtBgUniforms = {
         uScreenLight: { value: 0 },
+        uWhite: { value: 0 },
         get uResolution() {
           return crtBgResolution;
         },
@@ -5890,10 +6237,11 @@ void main() {
             uniform vec2 uResolution;
             // Palette, as sRGB.
             const vec3 BASE = vec3(0.012); // ~#030303: unlit room
-            const vec3 DEEP = vec3(0.4275, 0.1020, 0.2353); // #6d1a3c
-            const vec3 CORE = vec3(0.8392, 0.2353, 0.4706); // #d63c78
-            const vec3 HOT = vec3(1.0, 0.5608, 0.6824); // #ff8fae
-            const vec3 VIOLET = vec3(0.3608, 0.1843, 0.4784); // #5c2f7a
+            // The plum of the loading shot's pink room, or a neutral grey
+            // once the scroll has backed out into the white one.
+            const vec3 DEEP_PINK = vec3(0.4275, 0.1020, 0.2353); // #6d1a3c
+            const vec3 DEEP_WHITE = vec3(0.22, 0.22, 0.26);
+            uniform float uWhite;
             float hash(vec2 p) {
               return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
             }
@@ -5923,7 +6271,7 @@ void main() {
               vec3 c = BASE;
               // Nothing lights the room but the set: the only trace of it
               // on the wall is the tube's own halo, kept faint.
-              c = mix(c, DEEP, clamp(screenLight * 0.35, 0.0, 1.0));
+              c = mix(c, mix(DEEP_PINK, DEEP_WHITE, uWhite), clamp(screenLight * 0.35, 0.0, 1.0));
               // An 8-bit sRGB canvas bands on a gradient this slow; half a
               // code of noise hides the steps.
               c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
@@ -5937,6 +6285,60 @@ void main() {
         bgMesh.frustumCulled = false;
         bgMesh.renderOrder = -10;
         crtScene.add(bgMesh);
+
+        // The wall behind the set, once the scroll has backed the camera
+        // out: the landing page's aurora again, gone iridescent (the film
+        // in the backdrop shader, uIridescence 1), at a fifth of the
+        // page's speed. The same fragment shader as the tree's backdrop
+        // with its own uniforms; the vertex shader maps the screen onto
+        // the window of the plane the hero camera sees, so the curtains
+        // hang at the size they do on the landing page. Added over the
+        // dark room (the mesh above) and brought up by uLevel, so the
+        // loading shot's room stays as black as it was.
+        // The same palette as the tree's backdrop (voidBackdropUniforms,
+        // built later in this function; the values are repeated here).
+        const wallUniforms = {
+          uTime: { value: 0 },
+          uPointer: { value: new THREE.Vector2(0, 0.1) },
+          uPointerForce: { value: 0 },
+          uLevel: { value: 0 },
+          uIridescence: { value: 1 },
+          uBase: { value: new THREE.Color(0x000000) },
+          uDeep: { value: new THREE.Color(0x6d1a3c) },
+          uCore: { value: new THREE.Color(0xd63c78) },
+          uHot: { value: new THREE.Color(0xff8fae) },
+          uViolet: { value: new THREE.Color(0x5c2f7a) },
+          uWarmTint: { value: new THREE.Vector3(1.14, 0.93, 0.86) },
+          uCoolTint: { value: new THREE.Vector3(0.8, 0.85, 1.2) },
+        };
+        const wallAspect = { value: 16 / 9 };
+        const wallMaterial = new THREE.ShaderMaterial({
+          uniforms: { ...wallUniforms, uAspect: wallAspect },
+          vertexShader: /* glsl */ `
+            uniform float uAspect;
+            varying vec2 vUv;
+            void main() {
+              // A wider window on the plane than the hero camera's (which
+              // sees about x in [-0.46, 0.46] of its p-space), so all four
+              // curtains are in it; the height follows the screen's aspect.
+              // p = (vUv - 0.5) * (1.774, 1.6129) in the fragment shader.
+              // Centred a little up the plane, so the curtains' bright tops
+              // sit at the set's height and their dissolve lands at the floor.
+              vUv = vec2(0.52, 0.56) + position.xy * vec2(0.66 / 1.774, 0.66 / uAspect / 1.6129);
+              gl_Position = vec4(position.xy, 0.99999, 1.0);
+            }
+          `,
+          fragmentShader: VOID_BACKDROP_FRAGMENT_SHADER,
+          blending: THREE.AdditiveBlending,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        });
+        const wallMesh = new THREE.Mesh(bgGeometry, wallMaterial);
+        wallMesh.frustumCulled = false;
+        wallMesh.renderOrder = -9;
+        crtScene.add(wallMesh);
+        crtWall = { aspect: wallAspect, uniforms: wallUniforms };
       }
       // Image-based lighting from a tiny equirect painted in the room's own
       // palette (same recipe as the tree scene's env below): a bright pink
@@ -5982,7 +6384,7 @@ void main() {
         envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
         crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
-        crtScene.environmentIntensity = 0.04;
+        crtScene.environmentIntensity = CRT_ENV_INTENSITY;
         envTex.dispose();
         pmrem.dispose();
       }
@@ -6005,6 +6407,11 @@ void main() {
           color: 0x0d0a10,
           roughness: 0.96,
           metalness: 0,
+          // Part-clear, so the iridescent wall behind (see the CRT stage's
+          // backdrop) shows through the floor, dimmed, as a floor would
+          // reflect it. It still takes the set's shadow.
+          transparent: true,
+          opacity: 0.6,
         }),
       );
       crtGround.rotation.x = -Math.PI / 2;
@@ -6038,8 +6445,13 @@ void main() {
       // WebGLPrograms.getParameters), so the composer's input is the direct
       // render byte for byte and the chain works in display space on top of
       // it. HalfFloat so the vignette and grain math never quantises.
-      const crtPostRamp = () =>
-        smoothstep(0.02, 0.4, clamp01(sceneFx.crtProgress));
+      // How far the camera is out of the glass, by either road: the loading
+      // shot's swing out to the reference angle (crtProgress) or the
+      // scroll's straight retreat (crtOut). Never both at once; whichever
+      // is up drives everything that only cares THAT the camera is out.
+      const crtAmount = () =>
+        clamp01(Math.max(sceneFx.crtProgress, sceneFx.crtOut));
+      const crtPostRamp = () => smoothstep(0.02, 0.4, crtAmount());
       const markDisplaySpaceTarget = (target: THREE.WebGLRenderTarget) => {
         target.texture.colorSpace = THREE.SRGBColorSpace;
         (target as THREE.WebGLRenderTarget & { isXRRenderTarget?: boolean })
@@ -6231,6 +6643,30 @@ void main() {
       // Measured off the reference photo: the set spans ~74% of the frame
       // height, centred. 0.72 with a pure-centre target reproduces that.
       const CRT_END_FILL = 0.72;
+      // The scroll's pull-back (sceneFx.crtOut): straight back down the
+      // screen's own normal, no swing, while the lens opens from the rig's
+      // 30 degrees to this. At the end the machine is this much of the
+      // frame's height. On the normal the glass stays a rectangle whatever
+      // the lens does, so the page on it stays square to the viewport.
+      const CRT_OUT_FOV = 52;
+      // The room's two colour sets (see updateCrtRig).
+      const CRT_ROOM_PINK = {
+        base: new THREE.Color(0xa39db8),
+        fill: new THREE.Color(0x7c78ff),
+        glow: new THREE.Color(0xff7fae),
+        key: new THREE.Color(0xffb0c9),
+        kicker: new THREE.Color(0xf26bd6),
+      };
+      const CRT_ROOM_WHITE = new THREE.Color(0xffffff);
+      const CRT_ROOM_WHITE_FILL = new THREE.Color(0xf2f4ff);
+      const CRT_ROOM_WHITE_BASE = new THREE.Color(0xbdbdbd);
+      const CRT_ROOM_WHITE_GLOW = new THREE.Color(0xe8ecff);
+      const CRT_OUT_FILL = 0.7;
+      // On a screen narrower than the machine is at that height (a phone
+      // held upright) the width decides instead: the machine, which is
+      // about 0.95 as wide as it is tall, takes this much of the WIDTH.
+      const CRT_OUT_FILL_WIDE = 0.88;
+      const CRT_MACHINE_ASPECT = 0.95;
 
       const crtRoot = new THREE.Group();
       crtRoot.rotation.y = CRT_YAW;
@@ -6300,6 +6736,9 @@ void main() {
         // the glossy-glass reflections (set per frame in updateCrtRig).
         // The room lamp's level, for what the glass reflects of it.
         uRoomGlass: { value: 1 },
+        // 0 = the loading shot's pink room, 1 = the white room the scroll
+        // backs out into (see the light colours in updateCrtRig).
+        uWhite: { value: 0 },
         uKeyDir: { value: new THREE.Vector3(1, 0.5, 0.3).normalize() },
         uFillDir: { value: new THREE.Vector3(-1, 0.6, 0.8).normalize() },
         uTime: { value: 0 },
@@ -6352,6 +6791,7 @@ void main() {
           uniform vec3 uKeyDir;
           uniform vec3 uFillDir;
           uniform float uRoomGlass;
+          uniform float uWhite;
           uniform float uTime;
           // Virtual raster (columns, lines): the tube's own resolution, far
           // below the display texture's. Chosen per viewport so one line
@@ -6604,14 +7044,14 @@ void main() {
               float lampRefl = exp(-dot(kp, kp) * 2.2);
               float floorRefl = smoothstep(0.55, 0.05, buv.y) * (0.4 + 0.6 * buv.x);
               vec3 roomRefl =
-                vec3(1.0, 0.76, 0.85) * lampRefl * 0.6 +
-                vec3(0.52, 0.38, 0.5) * floorRefl * 0.16;
+                mix(vec3(1.0, 0.76, 0.85), vec3(1.0), uWhite) * lampRefl * 0.6 +
+                mix(vec3(0.52, 0.38, 0.5), vec3(0.48), uWhite) * floorRefl * 0.16;
               // The picture itself washes reflections out; the dark tube
               // shows them in full.
               float showRefl = mix(1.0, 0.1, smoothstep(0.3, 1.0, uPower));
               col += uFx * showRefl * fresnel * uRoomGlass * (
-                vec3(1.0, 0.74, 0.83) * keySpec +
-                vec3(0.6, 0.56, 1.0) * fillSpec +
+                mix(vec3(1.0, 0.74, 0.83), vec3(1.0), uWhite) * keySpec +
+                mix(vec3(0.6, 0.56, 1.0), vec3(0.92, 0.94, 1.0), uWhite) * fillSpec +
                 roomRefl);
             }
 
@@ -6892,6 +7332,8 @@ void main() {
       };
       const updateCrtRig = (elapsed: number) => {
         const p = clamp01(sceneFx.crtProgress);
+        const out = p > 0 ? 0 : clamp01(sceneFx.crtOut);
+        const amount = Math.max(p, out);
         crtCamera.aspect = drawingBufferSize.x / Math.max(1, drawingBufferSize.y);
 
         crtScreenMesh.updateMatrixWorld(true);
@@ -6921,7 +7363,7 @@ void main() {
         // the pull-back proceeds. The apex depth is constant by
         // construction (uApexH), so the p=0 framing never shifts, and the
         // model's own dome can never poke through mid-transition.
-        crtScreenUniforms.uBulgeT.value = smoothstep(0.04, 0.45, p);
+        crtScreenUniforms.uBulgeT.value = smoothstep(0.04, 0.45, amount);
         const planeProud = crtScreenUniforms.uApexH.value;
         const d0 = crtExt.bandH / 2 / CRT_FOV_TAN + planeProud;
         const endFrameH = crtScreenState.monitorHeight / CRT_END_FILL;
@@ -6930,7 +7372,29 @@ void main() {
         // FACTOR, and a linear lerp across a 10x range spends 1.5x of zoom
         // in the first 6% of scroll then crawls. Constant zoom rate reads
         // as a steady camera pull.
-        const d = d0 * Math.pow(d1 / d0, p);
+        let d = d0 * Math.pow(d1 / d0, p);
+        let fov = 30;
+        if (out > 0) {
+          // The straight road. What is interpolated (geometrically, for
+          // the same constant-zoom reason) is the HEIGHT OF WORLD the frame
+          // shows at the glass, from the viewport band to the machine at
+          // CRT_OUT_FILL; the lens opens alongside, and the distance is
+          // whatever that height needs through that lens. At out = 0 this
+          // is d0 through 30 degrees exactly, the flat page.
+          const frameFrom = crtExt.bandH;
+          const frameTo = Math.max(
+            crtScreenState.monitorHeight / CRT_OUT_FILL,
+            (crtScreenState.monitorHeight * CRT_MACHINE_ASPECT) /
+              CRT_OUT_FILL_WIDE /
+              Math.max(crtCamera.aspect, 0.1),
+          );
+          const frameH = frameFrom * Math.pow(frameTo / frameFrom, out);
+          fov = 30 + (CRT_OUT_FOV - 30) * smoothstep(0, 1, out);
+          d =
+            frameH / 2 / Math.tan((fov * Math.PI) / 180 / 2) +
+            planeProud * (1 - out);
+        }
+        if (Math.abs(crtCamera.fov - fov) > 0.001) crtCamera.fov = fov;
 
         // Target: a DIRECT interpolation between the two poses — the
         // viewport band's centre at p=0 and the machine's centre at p=1.
@@ -6941,7 +7405,7 @@ void main() {
         // mid-scroll, which is what made the centre jump around.)
         const bandCenterY = -0.5 + crtExt.bandH / 2;
         const targetY =
-          bandCenterY + (crtScreenState.monitorCenterY - bandCenterY) * p;
+          bandCenterY + (crtScreenState.monitorCenterY - bandCenterY) * amount;
         crtTarget.set(0, targetY, 0);
 
         crtCamera.position.set(
@@ -7021,7 +7485,7 @@ void main() {
           }
         }
 
-        const fx = smoothstep(0.08, 0.55, p);
+        const fx = smoothstep(0.08, 0.55, amount);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
         crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
@@ -7029,6 +7493,29 @@ void main() {
         // The room's lamp: one curve scales every practical in the room,
         // and what the glass reflects of them.
         const roomLight = Math.max(0, sceneFx.roomLight);
+        // The room's colour. Pink for the loading shot (Kevin: keep the
+        // intro pink), white once the scroll backs the camera out: every
+        // light, the spill, the halo, what the glass reflects and what the
+        // tube throws on the wall are blended between the two on `out`.
+        // The environment map stays the pink one; it is faded down as the
+        // whites come up so it does not tint them.
+        const white = smoothstep(0.05, 0.6, out);
+        crtKey.color.lerpColors(CRT_ROOM_PINK.key, CRT_ROOM_WHITE, white);
+        crtFill.color.lerpColors(CRT_ROOM_PINK.fill, CRT_ROOM_WHITE_FILL, white);
+        crtKicker.color.lerpColors(CRT_ROOM_PINK.kicker, CRT_ROOM_WHITE, white);
+        crtBase.color.lerpColors(CRT_ROOM_PINK.base, CRT_ROOM_WHITE_BASE, white);
+        crtGlow.color.lerpColors(CRT_ROOM_PINK.glow, CRT_ROOM_WHITE_GLOW, white);
+        crtHaloUniforms.uColor.value.lerpColors(CRT_ROOM_PINK.glow, CRT_ROOM_WHITE_GLOW, white);
+        crtScreenUniforms.uWhite.value = white;
+        crtBgUniforms.uWhite.value = white;
+        if (crtWall) {
+          // 3 is the page aurora's own playback rate (VOID_BACKDROP_SPEED,
+          // declared with it further down).
+          crtWall.uniforms.uTime.value = elapsed * 3 * CRT_WALL_SPEED;
+          crtWall.uniforms.uLevel.value = CRT_WALL_LEVEL * smoothstep(0.03, 0.6, out);
+          crtWall.aspect.value = crtCamera.aspect;
+        }
+        crtScene.environmentIntensity = CRT_ENV_INTENSITY * (1 - 0.7 * white);
         crtKey.intensity = CRT_KEY_INTENSITY * roomLight;
         crtFill.intensity = CRT_FILL_INTENSITY * roomLight;
         crtKicker.intensity = CRT_KICKER_INTENSITY * roomLight;
@@ -7327,7 +7814,7 @@ void main() {
       const renderComposite = (elapsed: number) => {
         renderer.setRenderTarget(sceneTarget);
         renderer.render(scene, camera);
-        if (sceneFx.crtProgress <= 0.001) {
+        if (crtAmount() <= 0.001) {
           // Hero path: samples only the viewport band of the extended scene
           // texture — pixel-identical to a plain viewport render.
           applyDomTransform(HOMOGRAPHY_IDENTITY);
@@ -7466,6 +7953,7 @@ void main() {
         uPointer: { value: new THREE.Vector2(0, 0.1) },
         uPointerForce: { value: 0 },
         uLevel: { value: 1 },
+        uIridescence: { value: 0 },
         uBase: { value: new THREE.Color(0x0a0a0a) },
         // Curtain ramp: deep rose-maroon -> saturated pink -> warm light
         // pink, the reference's maroon/red/orange ramp shifted to pink.
@@ -7479,7 +7967,63 @@ void main() {
         // a 1.14 gain into something else entirely.
         uWarmTint: { value: new THREE.Vector3(1.14, 0.93, 0.86) },
         uCoolTint: { value: new THREE.Vector3(0.8, 0.85, 1.2) },
+        uScene: { value: null as THREE.Texture | null },
+        uSceneMix: { value: 0 },
+        uSceneFit: { value: new THREE.Vector2(1, 1) },
+        // Its canvas is sRGB and already tone mapped, and the halftone pass
+        // tone maps once more on the way out. 0.45 cancels the two almost
+        // exactly (it is 0.6/1.15, the exposure the second ACES pass
+        // applies), but exact is not what this wants: the valley is a dusk
+        // scene seen through a dot matrix behind a tree, and at parity its
+        // lower half — which is most of the ranges — went to black. Lifted.
+        uSceneGain: { value: 0.78 },
+        uFrame: { value: new THREE.Vector2(1.774, 1.6129) },
       };
+      // A 1x1 black stands in until a page hands a canvas over, so the
+      // sampler is never left unbound (some drivers draw undefined then).
+      const blankScene = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+      blankScene.needsUpdate = true;
+      voidBackdropUniforms.uScene.value = blankScene;
+      let sceneTexture: THREE.CanvasTexture | null = null;
+      let sceneTextureFor: HTMLCanvasElement | null = null;
+      /**
+       * Hands the backdrop whatever off-screen scene the page has set on
+       * sceneFx, and works out the slice of this billboard the camera can
+       * see so the picture is mapped onto exactly that.
+       */
+      const updateBackdropFrame = () => {
+        const wanted = sceneFx.backdropScene;
+        const mix = clamp01(sceneFx.backdropSceneMix);
+        if (wanted !== sceneTextureFor) {
+          sceneTexture?.dispose();
+          sceneTexture = null;
+          sceneTextureFor = wanted;
+          if (wanted) {
+            sceneTexture = new THREE.CanvasTexture(wanted);
+            sceneTexture.colorSpace = THREE.NoColorSpace;
+            sceneTexture.minFilter = THREE.LinearFilter;
+            sceneTexture.magFilter = THREE.LinearFilter;
+            sceneTexture.generateMipmaps = false;
+            sceneTexture.wrapS = THREE.ClampToEdgeWrapping;
+            sceneTexture.wrapT = THREE.ClampToEdgeWrapping;
+          }
+        }
+        const on = mix > 0.001 && sceneTexture != null && (wanted?.width ?? 0) > 1;
+        voidBackdropUniforms.uSceneMix.value = on ? mix : 0;
+        if (!on) return;
+        voidBackdropUniforms.uScene.value = sceneTexture;
+        sceneTexture!.needsUpdate = true;
+        // What the camera sees of the plane at its fixed distance, in the
+        // plane's own units. The backdrop is a billboard on the view axis,
+        // so the visible rectangle is centred on it.
+        const visibleH =
+          2 * VOID_BACKDROP_DISTANCE * Math.tan((camera.fov * Math.PI) / 360);
+        voidBackdropUniforms.uSceneFit.value.set(
+          110 / Math.max(1e-3, visibleH * camera.aspect),
+          100 / Math.max(1e-3, visibleH),
+        );
+      };
+
       const createVoidBackdrop = () => {
         const backdrop = new THREE.Mesh(
           // 100 tall (was 62): the upward-extended render's top ray
@@ -7540,6 +8084,7 @@ void main() {
         const elapsed = loadingClock.getElapsedTime();
         voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
         voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
+        updateBackdropFrame();
         camera.position.copy(INTRO_CAMERA_POSITION);
         camera.lookAt(HERO_CAMERA_TARGET);
         placeVoidBackdrop();
@@ -7726,6 +8271,54 @@ void main() {
           .applyAxisAngle(UP, sceneFx.orbit)
           .add(HERO_CAMERA_TARGET);
       };
+      // Scroll-driven pull-back (sceneFx.dolly): the camera slides straight
+      // away from the hero target down its own view axis. The reference
+      // shrinks its hero into a framed picture and dollies the camera inside
+      // that picture at the same time; without this half the page just gets
+      // a smaller copy of the same frame, which is a window closing rather
+      // than a view opening.
+      // The scroll dollies the camera FORWARD, down its own view axis toward
+      // the hero target, and opens the lens as it goes. It used to back away
+      // on a long lens, which shrank the tree neatly but flattened
+      // everything: a pull-back on a narrow field is the one camera move
+      // that REMOVES parallax. Going the other way is what puts it back —
+      // the nearer a thing is the faster it sweeps out of frame, so the
+      // hillsides at the edges pass you and the ranges behind them barely
+      // move, and the shot reads as going somewhere.
+      //
+      // 13 units, from a standing distance of about 17: the camera goes INTO
+      // the canopy and out the far side of it. The tree is at the hero
+      // target, so this is the move that takes you past it — the branches
+      // sweep out of frame while the valley behind opens up, and the picture
+      // is fading over the same stretch, so what you are left looking at is
+      // the country rather than a close-up of bark.
+      const DOLLY_IN = 13;
+      const DOLLY_FOV = 52;
+      /**
+       * And UP, by this much, over the same travel. Straight down the view
+       * axis the camera arrives at the hero target, which is the trunk — you
+       * fly into the wood. Lifted, the same path passes through the canopy
+       * instead, which is where the blossom is. The look-at is raised with it
+       * so the shot stays level rather than tipping to keep the trunk in
+       * frame; that is what makes it read as going through rather than as
+       * craning over.
+       */
+      const DOLLY_RISE = 4.2;
+      const dollyAxis = new THREE.Vector3();
+      const applyScrollDolly = (aim: THREE.Vector3) => {
+        const amount = sceneFx.dolly;
+        if (amount <= 0) return;
+        dollyAxis.copy(camera.position).sub(HERO_CAMERA_TARGET);
+        const distance = dollyAxis.length();
+        if (distance < 1e-4) return;
+        const moved = Math.max(2.5, distance - DOLLY_IN * amount);
+        camera.position
+          .copy(HERO_CAMERA_TARGET)
+          .addScaledVector(dollyAxis, moved / distance);
+        camera.position.y += DOLLY_RISE * amount;
+        aim.y += DOLLY_RISE * amount * 0.72;
+        setCameraFov(HERO_CAMERA_FOV + (DOLLY_FOV - HERO_CAMERA_FOV) * amount);
+      };
       const setCameraFov = (fov: number) => {
         if (Math.abs(camera.fov - fov) < 0.01) return;
         camera.fov = fov;
@@ -7828,6 +8421,10 @@ void main() {
         }
         forceOneFrame = false;
         frame = requestAnimationFrame(animate);
+        // The black sheet is shut over the stage (the hand-over to the Work
+        // section): nothing drawn here could be seen. The loop keeps
+        // ticking so the first frame after the sheet opens is immediate.
+        if (reportedReady && sceneFx.covered) return;
         const parallaxMoving =
           !prefersReducedMotion &&
           (Math.abs(pointerParallaxTarget.x - pointerParallaxSmooth.x) >
@@ -7859,6 +8456,7 @@ void main() {
         const elapsed = clock.elapsedTime;
         voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
         voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
+        updateBackdropFrame();
         // Scroll-driven halftone level: the dot-matrix pass fades out as the
         // site view shrinks into the CRT, leaving the smooth render behind
         // the monitor glass. Written every frame; sceneFx is scrubbed by the
@@ -8051,6 +8649,7 @@ void main() {
               reportIntroComplete();
             }
             applyScrollOrbit();
+            applyScrollDolly(lookTarget);
           } else {
             camera.position.copy(INTRO_CAMERA_POSITION);
             lookTarget.copy(HERO_CAMERA_TARGET);
@@ -8062,6 +8661,7 @@ void main() {
           lookTarget.copy(HERO_CAMERA_TARGET);
           setCameraFov(HERO_CAMERA_FOV);
           applyScrollOrbit();
+          applyScrollDolly(lookTarget);
         }
         // Blossoms bloom out of their spur points during the intro dolly.
         // (The scroll-driven tree drop above is a group translation, so the
@@ -8076,7 +8676,7 @@ void main() {
           // picture around inside a fixed bezel — the screen content looked
           // unanchored — so it eases out over the first half of the
           // pull-back.
-          const parallaxGain = 1 - smoothstep(0, 0.5, clamp01(sceneFx.crtProgress));
+          const parallaxGain = 1 - smoothstep(0, 0.5, crtAmount());
           // Half the original travel (0.32 / 0.18 / 0.16 / 0.09).
           camera.position.x += pointerParallaxSmooth.x * 0.16 * parallaxGain;
           camera.position.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
@@ -8115,6 +8715,10 @@ void main() {
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
+        sceneTexture?.dispose();
+        sceneTexture = null;
+        blankScene.dispose();
+
         glassName.dispose();
         overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.

@@ -20,7 +20,7 @@ import { INTRO_TREE_SEED } from "@/components/treeTuning";
 
 /**
  * The intro's tree, standing behind a block of scrolling text — the
- * narration that runs over the black after the statue.
+ * narration that runs over the black after the television shot.
  *
  * The page had ONE limb of a cherry hung over the work sections
  * (sakuraBough), a real bough but one bough, which read as a prop rather
@@ -52,31 +52,27 @@ const TREE_HEIGHT = 1.35;
 /** Where the trunk stands across the screen: right of the reading column. */
 const TRUNK_X = 0.66;
 /**
- * The tree rises at this share of the page's scroll. Measured at 0.55 its
- * canopy was above the top of the screen before the block's own top had
- * reached it, and one screen later only the foot of the trunk was left;
- * at 0.3 the canopy was gone two screens in. At 0.2 with the base starting
- * BASE_BELOW_FOLD down, the canopy fills the screen as the block's top
- * arrives and its upper half is still overhead three screens later.
+ * The tree rises at this share of the page's scroll. With the base
+ * starting BASE_BELOW_FOLD down, the canopy comes up out of the fold as
+ * the block's top arrives and its upper half is still overhead five
+ * screens later — behind the whole of the work list, which is four
+ * projects at half a screen each. It was 0.45, and Kevin asked for half
+ * the travel.
  */
-const TREE_PARALLAX = 0.2;
+const TREE_PARALLAX = 0.225;
 /**
  * Where the base sits as the block arrives, below the fold by this share
- * of the viewport, so the canopy is what comes in first and the trunk
- * follows.
+ * of the viewport. The tree is TREE_HEIGHT screens tall, so at 1.15 the
+ * canopy's top is 0.8 of a screen down on the frame the block's top
+ * reaches the bottom, and 0.4 down when the buds have finished opening
+ * (nine tenths of a screen later, see update): the canopy comes up out
+ * of the fold as it flowers, under the last line of the narration. It
+ * was 0.35 — the whole canopy on screen from the first frame — and Kevin
+ * asked for it to start 80vh lower.
  */
-const BASE_BELOW_FOLD = 0.45;
+const BASE_BELOW_FOLD = 1.15;
 /** The canopy's heaviest lobe turned toward the reader, as the contact tree had it. */
 const TREE_YAW = -0.34;
-/**
- * The statue must be gone before any of this shows. The scrim over the
- * statue is opaque once the narration's top reaches this share of the
- * viewport's height (HeroIntro's scrim timeline, `end: "top 20%"`); the
- * tree is hidden until then, and over the next ENTRY_SCREENS of scroll it
- * rises from below the fold onto its parallax track.
- */
-const SCRIM_SHUT_AT = 0.2;
-const ENTRY_SCREENS = 1.1;
 const MODEL_HEIGHT_FALLBACK = 8.6;
 
 /**
@@ -161,16 +157,13 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
     group.scale.setScalar((heightPx * worldUnitsPerPixel(depth)) / modelHeight);
     const risen = Math.max(0, viewport.height - blockTop);
     const trackY = viewport.height * (1 + BASE_BELOW_FOLD) - risen * TREE_PARALLAX;
-    // Nothing until the black is complete over the statue; then the tree
-    // comes up from entirely below the fold onto its track.
-    const shutY = viewport.height * SCRIM_SHUT_AT;
-    const entryRaw = (shutY - blockTop) / (viewport.height * ENTRY_SCREENS);
-    const entry = clamp01(entryRaw);
-    const eased = entry * entry * (3 - 2 * entry);
-    group.visible = entry > 0;
-    const hiddenY = viewport.height + heightPx + 8;
-    const baseY = hiddenY + (Math.min(trackY, hiddenY) - hiddenY) * eased;
-    screenToWorld(viewport.width * TRUNK_X, baseY, depth, scratch);
+    // Drawn from the moment the block's top enters the viewport: whether
+    // any of it SHOWS is the holder's fade (HeroIntro's scroll effect),
+    // which comes up over the black shutting on the television shot. It used to
+    // hide itself until the block's top was a fifth of the way up, when
+    // the old black had shut — the bloom was over by then.
+    group.visible = blockTop < viewport.height;
+    screenToWorld(viewport.width * TRUNK_X, trackY, depth, scratch);
     group.position.copy(scratch);
   };
 
@@ -325,7 +318,7 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
 }
 
 /** The factory the narration's stage registers. */
-export const makeNarrationTree: StageElementFactory = () => makeSakuraTree("#info");
+export const makeNarrationTree: StageElementFactory = () => makeSakuraTree("#work");
 
 const makeSakuraTreeFactory: StageElementFactory = () => makeSakuraTree();
 
