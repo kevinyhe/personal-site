@@ -126,6 +126,18 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
   let tipPoints = new Float32Array(0);
   const scratch = new THREE.Vector3();
   let bloom = 0;
+  // This element's own spawn buffer, published by reference with its count.
+  // boughSpawn is shared with the sections' bough, and both are live for the
+  // screen where this tree hands off to it; see the same note in
+  // sakuraBough.ts. A zero is published only over our own record, so the
+  // bough's points stand once it has taken the record over.
+  let spawnPoints = new Float32Array(0);
+  const publishSpawn = (count: number, frameIndex: number) => {
+    boughSpawn.points = spawnPoints;
+    boughSpawn.count = count;
+    boughSpawn.frame = frameIndex;
+  };
+  const owningSpawn = () => boughSpawn.points === spawnPoints;
 
   const depthFor = (quality: StageQuality) =>
     quality === "low" ? TREE_DEPTH_LOW : TREE_DEPTH;
@@ -218,8 +230,7 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
       tipPoints[i * 3 + 1] = point.y;
       tipPoints[i * 3 + 2] = point.z;
     }
-    boughSpawn.points = new Float32Array(wanted * 2);
-    boughSpawn.count = 0;
+    spawnPoints = new Float32Array(wanted * 2);
 
     group = wrapper;
     const block = ctx.anchor(blockSelector);
@@ -247,8 +258,7 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
         tree.branchWindUniforms.uWindStrength.value = 0;
       }
       place(viewport, frame.quality, blockTop, frame.screenToWorld, frame.worldUnitsPerPixel);
-      boughSpawn.count = 0;
-      boughSpawn.frame = frame.frameIndex;
+      if (owningSpawn()) publishSpawn(0, frame.frameIndex);
       return;
     }
 
@@ -271,13 +281,12 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
     // Twig tips into viewport pixels for the petal field.
     const tipCount = tipPoints.length / 3;
     if (tipCount === 0 || bloom < 0.15) {
-      boughSpawn.count = 0;
-      boughSpawn.frame = frame.frameIndex;
+      if (owningSpawn()) publishSpawn(0, frame.frameIndex);
       return;
     }
     group.updateMatrixWorld(true);
     const inner = tree.group;
-    const points = boughSpawn.points;
+    const points = spawnPoints;
     let usable = 0;
     for (let i = 0; i < tipCount; i += 1) {
       scratch.set(tipPoints[i * 3], tipPoints[i * 3 + 1], tipPoints[i * 3 + 2]);
@@ -291,8 +300,7 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
       points[usable * 2 + 1] = y;
       usable += 1;
     }
-    boughSpawn.count = usable;
-    boughSpawn.frame = frame.frameIndex;
+    publishSpawn(usable, frame.frameIndex);
   };
 
   const resize = (ctx: StageResizeContext) => {
@@ -301,8 +309,11 @@ export function makeSakuraTree(blockSelector = "[data-sections]"): StageElement 
   };
 
   const dispose = () => {
-    boughSpawn.count = 0;
-    boughSpawn.points = new Float32Array(0);
+    if (owningSpawn()) {
+      boughSpawn.count = 0;
+      boughSpawn.points = new Float32Array(0);
+    }
+    spawnPoints = new Float32Array(0);
     tipPoints = new Float32Array(0);
     if (group) disposeSubtree(group);
     group = null;

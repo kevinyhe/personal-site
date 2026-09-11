@@ -53,12 +53,117 @@ import { getViewportMetrics } from "@/components/viewportMetrics";
  * running the hero's HALFTONE_FRAGMENT_SHADER -> canvas. Same shader, same
  * cell size, same strength and the same render pixel ratio as the hero, so
  * the dot lattice below the fold is the same lattice as above it.
+ *
+ * TWO of these are mounted, not one: the narration's (HeroIntro, gate
+ * "#info", the whole tree) and the work sections' (HomeSections, gate
+ * "[data-sections]", one bough). They are not merged into one renderer, and
+ * the reason is where each canvas has to sit. The narration's canvas must
+ * blend inside #info, which has no z-index so its lighten meets the pinned
+ * hero stage; the sections' canvas must blend inside the sections block's
+ * own stacking context (relative z-10) or it paints the hero black (see
+ * setMountVisible). One WebGL canvas cannot be in both places, and feeding
+ * two canvases from one context means copying a full-viewport frame per
+ * frame — more than the second context costs. What IS shared is the loop
+ * discipline: each instance runs only while its own gate block intersects
+ * the viewport, and the two gates are adjacent blocks, so both draw only
+ * during the one screen where #info leaves and the sections arrive — which
+ * is exactly the screen HeroIntro cross-fades the narration's holders over.
+ * Outside that screen only one of them has a running rAF (the hand-off
+ * sweep in the PR that added this note: 1 loop at every stop but the
+ * cross-fade). Inside it the narration's loop still ticks but skips the
+ * draw once its holder is hidden (see tick), and while both holders are
+ * showing the two loops take turns: one stage draws per animation frame,
+ * never two (see claimDraw), so the frame never carries two scene passes
+ * and two full-viewport halftones at once.
  */
 
 type LenisLike = { scroll?: number };
 
-/** Device pixel ratio for the render. See the note at applySize(). */
+/**
+ * Device pixel ratio for the render, on every display. See the note at
+ * applySize(): the halftone cell is measured in CSS px, so a retina render
+ * would halve the dots. It also means a DPR-3 phone pays the same fill as a
+ * DPR-1 laptop of the same CSS size, which is why resolveSceneQuality's
+ * "dpr > 2.5 -> low" is about the phone's GPU class, not about fill here.
+ */
 const RENDER_PIXEL_RATIO = 1;
+
+/**
+ * The first frame fades in rather than snapping on. The stage boots one
+ * viewport early and draws its first frame when its block arrives; without
+ * this the whole canopy appears between one frame and the next. 600 ms on
+ * the site's reveal curve. A CSS transition rather than a uniform: the
+ * halftone has a 0.05 print floor, so an exposure ramp would have the dots
+ * pop in as each cell crosses it instead of fading. Under reduced motion
+ * there is no ramp; the settled frame is shown at once.
+ */
+const FADE_IN_MS = 600;
+const FADE_IN_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+/**
+ * At most ONE stage draws in any animation frame. Module-level because it
+ * spans the two mounted instances, which do not know about each other.
+ *
+ * For the screen where the narration hands off to the work sections, both
+ * gates intersect the viewport and both holders are showing, so without
+ * this each frame ran two scene renders and two full-viewport halftone
+ * passes — the one place on the page where that happened, and the place
+ * where the sweep measured its lowest frame rate (sections-top 10 rAF/s
+ * against 20 one viewport further down, software GL). With it the two
+ * loops alternate: each canvas updates every other frame for that one
+ * screen, and a frame costs what a single stage costs everywhere else.
+ *
+ * Fairness is by turn, not by callback order. rAF callbacks run in the
+ * order they were registered and each loop re-registers itself every
+ * frame, so "first caller wins" would freeze the SAME canvas for the whole
+ * hand-off. Instead the stage that drew last yields when another stage
+ * asked to draw in the previous frame — the yielded-to stage's callback is
+ * later in the same frame and takes the draw. Callbacks within one frame
+ * share a timestamp (the spec hands every callback in a frame the same
+ * time), which is how a new frame is detected without a counter of its
+ * own. A stage that is hidden by an ancestor does not contend (see tick),
+ * so a lone visible stage keeps every frame.
+ */
+const drawArbiter = {
+  timestamp: -1,
+  drawn: false,
+  /** Stages that asked to draw in the previous frame. */
+  contendersLast: 0,
+  contenders: 0,
+  lastDrawer: null as object | null,
+};
+function claimDraw(stage: object, timestamp: number): boolean {
+  const arbiter = drawArbiter;
+  if (arbiter.timestamp !== timestamp) {
+    arbiter.timestamp = timestamp;
+    arbiter.drawn = false;
+    arbiter.contendersLast = arbiter.contenders;
+    arbiter.contenders = 0;
+  }
+  arbiter.contenders += 1;
+  if (arbiter.drawn) return false;
+  if (arbiter.contendersLast > 1 && arbiter.lastDrawer === stage) return false;
+  arbiter.drawn = true;
+  arbiter.lastDrawer = stage;
+  return true;
+}
+
+/**
+ * window.__sakuraStageTimings[gateSelector], the sibling of
+ * window.__treeBuildTimings: the boot's cost per stage and, after it, how
+ * many frames the loop drew, how many it skipped because an ancestor had
+ * hidden the mount (see hiddenByAncestor) and how many it gave to the other
+ * stage (see claimDraw). Debug only; nothing reads it.
+ */
+type StageStats = {
+  gpuMs: number;
+  elements: Record<string, number>;
+  totalMs: number;
+  framesDrawn: number;
+  framesSkipped: number;
+  framesYielded: number;
+};
+type StageTimings = Record<string, StageStats>;
 
 /**
  * Stage lights, copied by value from the hero's key and rim (their positions
@@ -177,6 +282,15 @@ export default function SakuraStage({
     let layoutStale = true;
     let viewportStale = true;
 
+    const stats: StageStats = {
+      elements: {},
+      framesDrawn: 0,
+      framesSkipped: 0,
+      framesYielded: 0,
+      gpuMs: 0,
+      totalMs: 0,
+    };
+
     const anchors = new Map<string, AnchorRecord>();
     const anchorFor = (selector: string): StageAnchor => {
       const existing = anchors.get(selector);
@@ -290,6 +404,8 @@ export default function SakuraStage({
     let ready = false;
     let contextLost = false;
     let onScreen = false;
+    /** The first drawn frame has started the canvas fade-in. */
+    let revealed = false;
     let frame = 0;
     let settleFrame = 0;
     let lastTimestamp = 0;
@@ -303,11 +419,27 @@ export default function SakuraStage({
         requestAnimationFrame(() => resolve());
       });
 
+    // The CSS size the renderer was last set to. A resize event that does not
+    // change the viewport (a scrollbar appearing, the ResizeObserver firing
+    // for a font swap, visualViewport noise on a phone) must not touch the
+    // GL side: renderer.setSize rewrites canvas.width, which clears the
+    // drawing buffer, and the half-float target would be reallocated.
+    let sizedWidth = 0;
+    let sizedHeight = 0;
+    const bufferSize = new THREE.Vector2();
+
     const applySize = () => {
       if (!renderer || !camera || !sceneTarget || !halftoneUniforms) return;
       const metrics = getViewportMetrics();
-      viewport.width = Math.max(1, Math.round(metrics.width));
-      viewport.height = Math.max(1, Math.round(metrics.height));
+      const width = Math.max(1, Math.round(metrics.width));
+      const height = Math.max(1, Math.round(metrics.height));
+      viewportStale = false;
+      layoutStale = true;
+      if (width === sizedWidth && height === sizedHeight) return;
+      sizedWidth = width;
+      sizedHeight = height;
+      viewport.width = width;
+      viewport.height = height;
       viewport.aspect = viewport.width / viewport.height;
       // The hero renders at min(dpr, 1) — one render pixel per CSS pixel on
       // every display — because the halftone cell is measured in CSS px and a
@@ -322,11 +454,10 @@ export default function SakuraStage({
       camera.aspect = viewport.aspect;
       camera.updateProjectionMatrix();
 
-      const buffer = new THREE.Vector2();
-      renderer.getDrawingBufferSize(buffer);
-      sceneTarget.setSize(buffer.x, buffer.y);
+      renderer.getDrawingBufferSize(bufferSize);
+      sceneTarget.setSize(bufferSize.x, bufferSize.y);
       halftoneUniforms.uScene.value = sceneTarget.texture;
-      halftoneUniforms.uResolution.value.set(buffer.x, buffer.y);
+      halftoneUniforms.uResolution.value.set(bufferSize.x, bufferSize.y);
       halftoneUniforms.uCellSize.value =
         (quality === "low" ? HALFTONE_CELL_CSS_PX + 1 : HALFTONE_CELL_CSS_PX) *
         viewport.pixelRatio;
@@ -345,8 +476,6 @@ export default function SakuraStage({
           console.error(`SakuraStage: ${entry.element.name} resize failed`, error);
         }
       }
-      viewportStale = false;
-      layoutStale = true;
     };
 
     // One frame object, rewritten in place. Elements get the same reference
@@ -397,7 +526,55 @@ export default function SakuraStage({
       renderer.render(scene, camera);
       renderer.setRenderTarget(null);
       renderer.render(halftoneScene, halftoneCamera);
+      stats.framesDrawn += 1;
+
+      if (!revealed) revealCanvas(renderer.domElement);
     };
+
+    /**
+     * The fade-in, started on the first frame that has actually been drawn —
+     * not at boot, which happens a viewport early behind visibility: hidden,
+     * and not on later re-entries, where the canvas is continuous with the
+     * page and a fade would read as a flicker. The canvas has been at
+     * opacity 0 since it was appended, several frames ago (the build yields
+     * between elements), so the transition has a committed start value; the
+     * getComputedStyle read is the belt to that brace for a stage with no
+     * elements, where the first frame follows the append by one rAF.
+     */
+    const revealCanvas = (canvas: HTMLCanvasElement) => {
+      revealed = true;
+      if (reducedMotion) {
+        canvas.style.transition = "none";
+      } else {
+        void getComputedStyle(canvas).opacity;
+        canvas.style.transition = `opacity ${FADE_IN_MS}ms ${FADE_IN_EASE}`;
+      }
+      canvas.style.opacity = "1";
+    };
+
+    /**
+     * Whether something ABOVE this stage has hidden it. HeroIntro keeps the
+     * narration's holder at visibility: hidden until the scrim has shut over
+     * the statue and again once it has faded the blossom scene out ahead of
+     * the work sections; #info is on screen for about a screen of scroll in
+     * each of those states, and without this check the stage drew the whole
+     * tree through the halftone into a hidden div for all of it. This is
+     * the only style read the loop makes, and it is one element's computed
+     * visibility, forced only when a scroll handler has just dirtied it —
+     * which the browser was about to resolve for the paint anyway.
+     */
+    // One options object for the life of the stage: the loop must not
+    // allocate per frame, and this is read 60 times a second.
+    const visibilityOptions: CheckVisibilityOptions = {
+      opacityProperty: true,
+      visibilityProperty: true,
+    };
+    const hiddenByAncestor = () =>
+      typeof mount.checkVisibility === "function"
+        ? !mount.checkVisibility(visibilityOptions)
+        : getComputedStyle(mount).visibility === "hidden";
+    /** This stage's identity for claimDraw; any object that lives as long. */
+    const stageToken = stats;
 
     const tick = (timestamp: number) => {
       const raw = lastTimestamp ? (timestamp - lastTimestamp) / 1000 : 0;
@@ -412,7 +589,14 @@ export default function SakuraStage({
       }
       lastScroll = scroll;
 
-      renderFrame(dt);
+      // Keep ticking while hidden so the first visible frame is drawn the
+      // frame the holder shows, but draw nothing: two render passes and a
+      // full-viewport halftone into a div nobody can see. `elapsed` and the
+      // scroll velocity were advanced above regardless, so a skipped frame
+      // loses no time; the next drawn frame lands where it would have.
+      if (hiddenByAncestor()) stats.framesSkipped += 1;
+      else if (!claimDraw(stageToken, timestamp)) stats.framesYielded += 1;
+      else renderFrame(dt);
       frame =
         onScreen && !document.hidden && !contextLost
           ? requestAnimationFrame(tick)
@@ -517,6 +701,8 @@ export default function SakuraStage({
       canvas.style.top = "0";
       canvas.style.width = "100%";
       canvas.style.height = "100%";
+      // Transparent until the first frame is drawn; see revealCanvas().
+      canvas.style.opacity = "0";
       canvas.addEventListener("webglcontextlost", onContextLost, false);
       canvas.addEventListener("webglcontextrestored", onContextRestored, false);
       mount.appendChild(canvas);
@@ -570,7 +756,12 @@ export default function SakuraStage({
     const boot = async () => {
       if (disposed || booting || renderer) return;
       booting = true;
+      // Profiling hook, the sibling of window.__treeBuildTimings: per stage
+      // (keyed by gate), the GPU setup and each element's build in ms, wall
+      // clock including the frames yielded. Written once per boot.
+      const bootStart = performance.now();
       buildGpu();
+      stats.gpuMs = Math.round(performance.now() - bootStart);
       if (!renderer || !scene || !camera || !lights) {
         booting = false;
         return;
@@ -607,6 +798,7 @@ export default function SakuraStage({
         // Register the element's anchor now rather than on its first update,
         // so the box is already measured when that frame arrives.
         if (element.anchorSelector) anchorFor(element.anchorSelector);
+        const elementStart = performance.now();
         try {
           const object = await element.build(buildContext);
           if (disposed) break;
@@ -617,11 +809,16 @@ export default function SakuraStage({
         } catch (error) {
           console.error(`SakuraStage: ${element.name} build failed`, error);
         }
+        stats.elements[element.name] = Math.round(performance.now() - elementStart);
         // Between elements, hand the page a frame back. Long builds must not
         // be one uninterrupted block of main thread.
         await yieldFrame();
       }
       if (disposed) return;
+
+      stats.totalMs = Math.round(performance.now() - bootStart);
+      const debug = window as unknown as { __sakuraStageTimings?: StageTimings };
+      (debug.__sakuraStageTimings ??= {})[gateSelector] = stats;
 
       booting = false;
       ready = true;
@@ -689,6 +886,9 @@ export default function SakuraStage({
       halftoneUniforms = null;
       ready = false;
       booting = false;
+      revealed = false;
+      sizedWidth = 0;
+      sizedHeight = 0;
       frameIndex = 0;
       elapsed = 0;
     };
