@@ -34,10 +34,13 @@ export function useRevealOnScroll(
       return undefined;
     }
 
-    // A [data-rule] element is a hairline: it draws itself across instead
-    // of rising into place, which is the one motion the page's own rules
-    // (the row borders, the footer line) suggest but never had.
-    const isRule = (el: HTMLElement) => el.hasAttribute("data-rule");
+    // A rule is a hairline: it draws itself across instead of rising into
+    // place, which is the one motion the page's own rules (the row borders,
+    // the footer line) suggest but never had. `data-reveal="rule"` marks
+    // one, the same way "far" and "slide" mark the risers below; a separate
+    // [data-rule] attribute is still honoured for anything that used it.
+    const isRule = (el: HTMLElement) =>
+      el.dataset.reveal === "rule" || el.hasAttribute("data-rule");
     const rules = items.filter(isRule);
     const risers = items.filter((el) => !isRule(el));
     // Guarded: gsap warns "target not found" on an empty list, and a page
@@ -65,12 +68,33 @@ export function useRevealOnScroll(
     let startTimer = 0;
     const waiting = new Set(items);
 
+    // Everything that watches, taken down in one place: on unmount, and as
+    // soon as the last element has been revealed. Safe to call twice. It
+    // reads bindings declared further down (the listeners, the timers);
+    // that is fine only because nothing calls it before start() has run.
+    const stop = () => {
+      window.clearTimeout(sweepTimer);
+      if (scrollFrame) cancelAnimationFrame(scrollFrame);
+      scrollFrame = 0;
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      observer?.disconnect();
+      observer = null;
+    };
+
     const reveal = (batch: HTMLElement[]) => {
       if (!batch.length) return;
       batch.forEach((el) => {
         waiting.delete(el);
         observer?.unobserve(el);
       });
+      // Nothing left to reveal means nothing left to listen for. Without
+      // this the scroll listener, its per-frame document measure and the
+      // failsafe timer below all ran for the life of the page — one more
+      // rAF and a scrollHeight read on every scrolled frame, forever, to
+      // check an empty set. The tweens just started still run; only the
+      // watching stops.
+      if (!waiting.size) stop();
       const batchRisers = batch.filter((el) => !isRule(el));
       const batchRules = batch.filter(isRule);
       if (batchRisers.length) {
@@ -167,7 +191,11 @@ export function useRevealOnScroll(
     const sweepSoon = () => {
       sweeps += 1;
       sweep();
-      if (sweeps < 6 && !observerAlive) {
+      // Six passes at most, and none once the observer has spoken or the
+      // set is empty. (`waiting.size` is checked here as well as in
+      // reveal(): a sweep that finds nothing stranded reveals nothing, so
+      // reveal() never gets the chance to stop the chain.)
+      if (sweeps < 6 && !observerAlive && waiting.size) {
         sweepTimer = window.setTimeout(sweepSoon, 900);
       }
     };
@@ -190,8 +218,12 @@ export function useRevealOnScroll(
       items.forEach((el) => observer?.observe(el));
       window.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("resize", onResize);
-      atDocumentEnd();
+      // The timer is armed BEFORE the end-of-document check: on a short
+      // page, or a reload at the bottom, that check reveals everything and
+      // calls stop(), and a timer armed after it would outlive the
+      // teardown it was meant to be cleared by.
       sweepTimer = window.setTimeout(sweepSoon, 900);
+      atDocumentEnd();
     };
 
     // If we arrived under the transition wipe, hold the first batch until
@@ -205,11 +237,7 @@ export function useRevealOnScroll(
 
     return () => {
       window.clearTimeout(startTimer);
-      window.clearTimeout(sweepTimer);
-      if (scrollFrame) cancelAnimationFrame(scrollFrame);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
-      observer?.disconnect();
+      stop();
       gsap.killTweensOf(items);
     };
   }, [holdForVeil, rootRef]);
