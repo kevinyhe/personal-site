@@ -425,7 +425,10 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // up. That is not an argument for widening this field, which is random
   // where the outward push is structured — it is why the field can stay
   // where it is.
-  flightScatter: { tilt: 0.4, yaw: 0.2, grain: 0.8, shares: [0.97, 0, 0.03] },
+  // 0.3 / 0.15, from 0.4 / 0.2, with the same ask: this is the part of the
+  // spread that is random rather than structured, so it is cheap to give up.
+  // Most of the fan was the steering pass, not this (see FLIGHT_SPREAD).
+  flightScatter: { tilt: 0.3, yaw: 0.15, grain: 0.8, shares: [0.97, 0, 0.03] },
   // The pieces' spin rates spread out: most turn a little slower, a few
   // clearly faster. The reference's pieces turned, in the picture plane,
   // 0.08 / 0.23 / 0.62 / 1.41 degrees a frame pair at p25 / median / p75 /
@@ -563,6 +566,26 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // piece released inside the drawn window is bigger than 0.318, where the
   // exponential grading let a 0.534 through.
   spacingHold: 1.05,
+  // The width of the cells right where the break OPENS, easing up to
+  // `spacingNear` across the hold. Asked for: "have less bigger pieces at the
+  // start of the breaking, the big pieces are too big." The hold, new last
+  // round, had flattened the grading — every cell in the body was 0.125 wide,
+  // including the head and the upper chest the break opens on, and with the
+  // radial stretch on top the first pieces off came out at a 0.31 radius
+  // against a median of 0.19. Six of the first fifteen were over 0.26.
+  //
+  // At 0.09 the first fifteen off run to a 0.240 radius and no further, and
+  // the first forty-five to 0.240 against 0.308; the piece count is 423 from
+  // 320. 0.07 takes those to 0.221 and 0.225 and the count to 489, which is
+  // 53% more pieces than the budget was set at; 0.11 leaves a 0.294 piece in
+  // the first fifteen, which is the size that was complained about.
+  //
+  // (Bringing the TOP of the size field down instead does not do it: at
+  // `sizeVariationUp` 0.4 and 0.25 the biggest piece in the first fifteen
+  // still measured 0.289 and 0.307. The early pieces are big because the
+  // grading made them big, not because the field's coarse patches landed on
+  // them.)
+  spacingOpening: 0.09,
   // The width of the ramp that follows the hold, in the same units: the
   // cells go from `spacingNear` to `spacingFar` over it, so full coarseness
   // lands at 1.75 along the order — past the drawn window, short of the
@@ -829,7 +852,10 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // faces a cavity has actually opened and no others.
 // 20: the shrink to `scale` is held off until a piece is a quarter of the
 // way out (stageShrinkAt), which the crossing checks pose pieces with.
-export const FRACTURE_VERSION = 20;
+// 21: `steerClearOfSolids` ignores the moments before a piece is out of its
+// socket (STEER_MOVED), so it steers the pieces that are really in the way
+// and leaves the rest on the line the plan gave them.
+export const FRACTURE_VERSION = 21;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };

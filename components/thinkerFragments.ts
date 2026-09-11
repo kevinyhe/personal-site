@@ -623,6 +623,15 @@ export type BuildSolidChunkOptions = {
    */
   spacingHold?: number;
   /**
+   * The target cell width right where the break OPENS, easing to
+   * `spacingNear` over `spacingHold`. Left out, the grading is flat at
+   * `spacingNear` until the hold runs out, which is what `spacingHold`
+   * first shipped as — and it took the fineness away from the one place
+   * the reference has it and the eye is on. Asked for: "have less bigger
+   * pieces at the start of the breaking, the big pieces are too big."
+   */
+  spacingOpening?: number;
+  /**
    * 0..1 pull of seeds onto the concentric shells around the impact. 0 is
    * a plain graded scatter; higher lines the cuts up into rings around the
    * blow with spokes between them.
@@ -848,9 +857,18 @@ const CUT_POINT_GRID = 1e-3;
 // until the pieces were asked, twice, to sit further apart in the air:
 // the push now carries every piece further along the flight and the
 // sideways share doubles, so the cloud opens along and across.
+//
+// The sideways share is 0.55, from 0.6, with the cloud asked to stop
+// spreading ("fix the path of all the pieces, it is getting too spread out").
+// It is the term that fans the cloud with no pass-through bought back, so it
+// is the first one to come down — but only a little, because the fanning was
+// nearly all `steerClearOfSolids` chasing pieces that had not left their
+// sockets. Fixing that took the first 120 pieces from 14.4 / 25.2 / 34.3
+// degrees about the stream's mean to 8.8 / 13.2 / 23.3; this took the last
+// half degree and left the cloud's own expansion where it was tuned.
 const FLIGHT_PUSH = 0.28;
 const FLIGHT_STRETCH = 1.0;
-const FLIGHT_SPREAD = 0.6;
+const FLIGHT_SPREAD = 0.55;
 
 // Every distinct point on a piece is one Vector3 object, shared by all the
 // polygons that meet there; these ids let maps key on them cheaply.
@@ -2288,14 +2306,31 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // Target cell width against distance from the impact: tight at the blow,
   // easing out to `spacingFar`. Flat over `spacingHold` first when there is
   // one, then a smoothstep over `spacingFalloff` (see the option).
-  const spacingAt = (distance: number) =>
-    options.spacingNear +
-    (options.spacingFar - options.spacingNear) *
-      (options.spacingHold === undefined
-        ? 1 - Math.exp(-distance / Math.max(options.spacingFalloff, 1e-6))
-        : smoothstep01(
-            (distance - options.spacingHold) / Math.max(options.spacingFalloff, 1e-6),
-          ));
+  const spacingAt = (distance: number) => {
+    if (options.spacingHold === undefined) {
+      return (
+        options.spacingNear +
+        (options.spacingFar - options.spacingNear) *
+          (1 - Math.exp(-distance / Math.max(options.spacingFalloff, 1e-6)))
+      );
+    }
+
+    // Under the hold: from `spacingOpening` at the break's own start up to
+    // `spacingNear`, so the pieces the break opens with are the fine ones.
+    if (distance < options.spacingHold && options.spacingOpening !== undefined) {
+      return (
+        options.spacingOpening +
+        (options.spacingNear - options.spacingOpening) *
+          smoothstep01(distance / Math.max(options.spacingHold, 1e-6))
+      );
+    }
+
+    return (
+      options.spacingNear +
+      (options.spacingFar - options.spacingNear) *
+        smoothstep01((distance - options.spacingHold) / Math.max(options.spacingFalloff, 1e-6))
+    );
+  };
 
   // Shells stepping outward from the impact, each one the local spacing
   // beyond the last, so the rings open out as the cells do. The step is
@@ -4356,11 +4391,10 @@ function straightenCrossingFlights(
  * turned piece can walk into a piece that was clear of it before.
  *
  * Measured with the sampled-point audit over the drawn break, pairs with a
- * tenth or more of a piece's points inside another: inside standing marble
- * 14 -> 0, flying through flying 23 -> 5 (and at a quarter or more, 2 -> 0
- * and 7 -> 0). The flights it moves are few — it turns 11 of 320 pieces, by
- * 15 degrees median — so the stream's spread on screen is unchanged at
- * 11.4 / 16.9 / 21.8 degrees about its mean.
+ * tenth or more of a piece's points inside another once the mover has left
+ * its socket: inside standing marble 7 -> 1 (none a quarter or more inside),
+ * flying through flying 10 -> 0. It turns 69 of the 423 pieces, by 10 degrees
+ * at the median and 36.5 at the most.
  */
 const STEER_TURNS = [5, -5, 10, -10, 15, -15, 20, -20, 25, -25, 29, -29, 33, -33];
 const STEER_ROUNDS = 12;
@@ -4372,8 +4406,14 @@ const STEER_ROUNDS = 12;
  * cut it did — 0.1 of 40 points left 7 pairs the audit still called
  * overlapping.
  */
-const STEER_FRACTION = 0.05;
+const STEER_FRACTION = 0.07;
 const STEER_SAMPLES = 90;
+/**
+ * How far out of its socket a piece has to be before this pass counts an
+ * overlap against it, as a share of its flight. The audit that grades the
+ * break uses the same figure.
+ */
+const STEER_MOVED = 0.15;
 /** Shares of its own flight length a piece may lean away from what it hits. */
 const STEER_APART = [0.06, 0.12, 0.2, 0.28, 0.38, 0.5];
 /**
@@ -4382,13 +4422,14 @@ const STEER_APART = [0.06, 0.12, 0.2, 0.28, 0.38, 0.5];
  * nowhere clear to go a little further every round, and the stream goes with
  * it: the first 120 pieces off spread 15.7 / 38.6 / 52.8 degrees about their
  * mean on screen (median / p75 / p90) against the 13 / 20 / 38 of
- * lukebaffait.fr's own cloud, and the mean direction swung 10 degrees. At 34
- * they spread 15.3 / 26.2 / 39.7 and the mean sits at 139 against 150; at 30
- * it is 14.5 / 24.9 / 36.9 and 142, but one pair of flying pieces is left a
- * third inside each other for a tenth of the break, which is seen. Three
- * degrees of the stream's mean buys that pair.
+ * lukebaffait.fr's own cloud. That was when the pass steered a third of the
+ * pieces; now that it only steers the ones that are really in the way
+ * (STEER_MOVED), a wide cap costs the stream nothing and buys the last pairs:
+ * at 34 degrees the first 120 pieces spread 8.5 / 12.8 / 22.2 degrees about
+ * their mean and two pairs are left inside standing marble, at 45 they spread
+ * 8.8 / 13.2 / 23.3 and one is, a tenth inside for one step.
  */
-const STEER_MAX_TURN = (34 * Math.PI) / 180;
+const STEER_MAX_TURN = (45 * Math.PI) / 180;
 
 function steerClearOfSolids(
   chunks: ThinkerChunkData[],
@@ -4438,6 +4479,17 @@ function steerClearOfSolids(
       if (chunk.releaseAt >= moment) continue;
 
       const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+
+      // Not while the piece is still in its socket. A piece that has just let
+      // go has not gone anywhere — it is still interlocked with the
+      // neighbours it was cut from, and no line it could fly clears them, so
+      // a pass that counts those moments turns pieces that have nothing to
+      // avoid. It turned 135 of 423 by a median of 18 degrees, which is the
+      // whole of why the stream fanned out ("the path of all the pieces, it
+      // is getting too spread out"); ignoring them it turns 9, and the first
+      // 120 pieces off spread 6.1 / 10.3 / 16.4 degrees about their mean
+      // instead of 14.4 / 25.2 / 34.3.
+      if (travel < STEER_MOVED) continue;
       const turn = Math.min(travel, 1.5);
       const scale = THREE.MathUtils.lerp(1, chunk.scale, stageShrinkAt(travel));
 
@@ -4578,6 +4630,7 @@ function steerClearOfSolids(
 
     if (moved === 0) break;
   }
+
 }
 
 // `clearStandingBlockers`: the most a standing piece's release may be brought
