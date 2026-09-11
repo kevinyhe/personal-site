@@ -22,6 +22,15 @@
 /** Quantisation levels. Below ~8 the ramp bands visibly; above ~16 it costs. */
 export const DOT_STEPS = 12;
 
+/**
+ * Frame budget, ms, for the 2D canvas layers once nothing on them is moving
+ * fast: HalftoneField's grain, WorkPlate's sheen. Both cross under a cell a
+ * frame at 30fps, so 60 and 30 paint the same picture and the loops sleep
+ * to this. Each file says how it spends the budget; BranchProgress keeps
+ * its own copy for its sway.
+ */
+export const FRAME_MS = 33;
+
 export type DotGrid = {
   /** Cell size in CSS pixels. */
   cell: number;
@@ -202,6 +211,27 @@ export function sampleLuminance(
 }
 
 /**
+ * Sizes a canvas's backing store to a CSS box at the device ratio, capped,
+ * and returns the ratio used. Each dimension is written only when it
+ * changes: assigning a canvas's width, even to the value it already has,
+ * throws the backing store away and clears it — and a phone fires resize on
+ * every address-bar show and hide without the viewport changing size.
+ */
+export function fitBackingStore(
+  canvas: HTMLCanvasElement,
+  cssWidth: number,
+  cssHeight: number,
+  maxRatio = 2,
+): number {
+  const ratio = Math.min(window.devicePixelRatio || 1, maxRatio);
+  const width = Math.round(Math.max(1, Math.round(cssWidth)) * ratio);
+  const height = Math.round(Math.max(1, Math.round(cssHeight)) * ratio);
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return ratio;
+}
+
+/**
  * Sizes a canvas's backing store to its CSS box and returns the grid that
  * fits. Capped at 2x: the dots are small solid shapes, and a third pixel
  * per axis buys nothing anyone can see for 2.25x the fill.
@@ -212,15 +242,9 @@ export function fitCanvas(
   cssHeight: number,
   cell: number,
 ): DotGrid {
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(1, Math.round(cssWidth));
   const height = Math.max(1, Math.round(cssHeight));
-  if (canvas.width !== Math.round(width * ratio)) {
-    canvas.width = Math.round(width * ratio);
-  }
-  if (canvas.height !== Math.round(height * ratio)) {
-    canvas.height = Math.round(height * ratio);
-  }
+  const ratio = fitBackingStore(canvas, width, height);
   const ctx = canvas.getContext("2d");
   ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
   return {
