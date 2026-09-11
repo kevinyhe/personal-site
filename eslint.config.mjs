@@ -11,7 +11,9 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   {
-    ignores: [".next/**", "node_modules/**", "next-env.d.ts"],
+    // .next-*/ are the per-session dist dirs next.config.ts allows (NEXT_DIST_DIR);
+    // without this every build in one made `npm run lint` report ~350 errors.
+    ignores: [".next/**", ".next-*/**", ".scratch-*/**", "node_modules/**", "next-env.d.ts"],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
