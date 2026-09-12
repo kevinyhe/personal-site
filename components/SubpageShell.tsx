@@ -9,9 +9,6 @@ import { useRevealOnScroll } from "@/components/useRevealOnScroll";
 const NAV_LINKS = sectionLinks;
 const SOCIAL_LINKS = socialLinks;
 
-/** Keyboard focus ring for the external links; TransitionLink carries its own. */
-const FOCUS_RING =
-  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-current";
 
 type SubpageShellProps = {
   children: ReactNode;
@@ -117,7 +114,7 @@ export default function SubpageShell({ children, current }: SubpageShellProps) {
                   </span>
                 ) : null}
                 <a
-                  className={`transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none ${FOCUS_RING}`}
+                  className="transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none"
                   href={social.href}
                   rel="noreferrer"
                   target="_blank"

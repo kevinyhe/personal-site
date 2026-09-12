@@ -27,12 +27,6 @@ const prefersReducedMotion = () =>
   (reducedMotionQuery ??= window.matchMedia("(prefers-reduced-motion: reduce)"))
     .matches;
 
-/** Same focus mark on all four controls. The header has no background of
- *  its own, so a ring (box-shadow) and an outline look the same here; the
- *  outline is the one that does not need an offset colour. */
-const FOCUS_RING =
-  "rounded-sm focus-visible:outline focus-visible:outline-1 " +
-  "focus-visible:outline-offset-4 focus-visible:outline-current ";
 
 /**
  * The header that carries the rest of the page, once the hero has gone.
@@ -289,8 +283,7 @@ export default function SectionHeader() {
       />
       <button
         className={
-          "font-serif-display text-[1.05rem] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none sm:text-[1.2rem] " +
-          FOCUS_RING
+          "font-serif-display text-[1.05rem] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none sm:text-[1.2rem]"
         }
         onClick={toTop}
         type="button"
@@ -308,8 +301,7 @@ export default function SectionHeader() {
             aria-current={active === link.id ? "true" : undefined}
             className={
               "font-serif-display text-[1.05rem] transition-opacity duration-300 motion-reduce:transition-none sm:text-[1.2rem] " +
-              (active === link.id ? "opacity-100 " : "opacity-45 hover:opacity-100 ") +
-              FOCUS_RING
+              (active === link.id ? "opacity-100" : "opacity-45 hover:opacity-100")
             }
             key={link.id}
             onClick={() => jump(link.id)}

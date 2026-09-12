@@ -15,9 +15,17 @@
  * them along a path.
  */
 
+import { register } from "node:module";
 import { writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
+
+// robotDrift.ts imports "@/components/robotConstants" (the leaf the stage
+// and the outro share). Plain node cannot resolve that alias, so this died
+// at import time with ERR_MODULE_NOT_FOUND until the hooks were registered
+// here the way bake-chunks.mjs and bake-cherry.mjs already do.
+const REPO = dirname(dirname(fileURLToPath(import.meta.url))) + "/";
+register(pathToFileURL(REPO + "scripts/ts-hooks.mjs"), pathToFileURL(REPO));
 
 import { buildSimulation, SIM_DT } from "./ballSim/run.mjs";
 import { BALL_RADIUS, BELT_SPEED, guideLength } from "./ballSim/world.mjs";

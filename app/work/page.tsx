@@ -8,9 +8,6 @@ export const metadata: Metadata = {
     "Work by Kevin He: The Actually Company, Founders Inc., VEX 82855Z, and a few hackathon builds.",
 };
 
-const FOCUS_RING =
-  "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-current";
-
 /**
  * The home page's work-list hover, in Tailwind rather than the
  * [data-work-list] rules in globals.css: hovering the list dims every
@@ -92,7 +89,7 @@ export default function WorkPage() {
                 />
                 {entry.href ? (
                   <a
-                    className={`block ${FOCUS_RING}`}
+                    className="block"
                     href={entry.href}
                     rel="noreferrer"
                     target="_blank"
@@ -117,7 +114,7 @@ export default function WorkPage() {
           data-reveal
         >
           <a
-            className={`group/more inline-block opacity-45 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none ${FOCUS_RING}`}
+            className={`group/more inline-block opacity-45 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none`}
             href={GITHUB}
             rel="noreferrer"
             target="_blank"

@@ -58,17 +58,10 @@ export function scrollToSection(
  * link, not a page-down through the pinned hero.
  *
  * Both handlers take the event over whenever the target is in the
- * document. The anchor's own jump would land in the same place, but it
- * also rewrites the URL hash, and the Lenis path never does; one behaviour
- * for the two is simpler than a hash that depends on which scroll ran.
+ * document, and write the hash themselves (see scrollTo) so the URL says
+ * where the reader is whichever scroll ran.
  */
 
-/** The focus mark, in the strip's own colour. The strip is painted on the
- *  hero stage, so an outline is the one mark that is visible over whatever
- *  the stage is showing behind it. */
-const FOCUS_RING =
-  "rounded-sm focus-visible:outline focus-visible:outline-1 " +
-  "focus-visible:outline-offset-4 focus-visible:outline-current";
 
 export default function SectionLink({
   children,
@@ -85,6 +78,13 @@ export default function SectionLink({
     const target = document.getElementById(id);
     if (!target) return false;
     scrollToSection(target, 1.6);
+    // Put the hash back. Taking the click means the browser never sets it,
+    // so the URL stayed bare: reload, Back, or a copied link all landed at
+    // the top of the page instead of the section the reader was on.
+    // replaceState rather than pushState, which is what the anchor would
+    // have done: the App Router owns this history entry and a one-pager
+    // that stacks an entry per section makes Back walk up the page.
+    window.history.replaceState(null, "", `#${id}`);
     return true;
   };
 
@@ -109,7 +109,7 @@ export default function SectionLink({
 
   return (
     <a
-      className={`${className ?? ""} ${FOCUS_RING}`}
+      className={className}
       href={`#${id}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
