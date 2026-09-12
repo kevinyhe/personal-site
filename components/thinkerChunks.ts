@@ -73,25 +73,40 @@ const OPENING_EYE = (() => {
   return [eye.x, eye.y, eye.z] as [number, number, number];
 })();
 
-// The way the pieces fly: level, toward the viewer, drifting left as they
-// come (after lukebaffait.fr, whose fragments stream past the viewer).
-// Toward the viewer is what lets the break start at the hand — it is the
-// part of the figure nearest the lens, so nothing stands in its way — and
-// each piece behind it finds its own path clear once the ones in front
-// have gone. The camera sits above the figure, so its own direction has a
-// lift in it; the drift takes that out, so that the chest is not in the
-// hand's path nor the knees in the chest's. Turned back through the
-// stage's yaw so the builder can plan it in the figure's own space.
+// The way the pieces fly: level, out to the viewer's RIGHT and a little
+// toward the lens (after lukebaffait.fr, whose fragments stream past the
+// viewer). Turned back through the stage's yaw so the builder can plan it
+// in the figure's own space, where it comes to about (+0.70, -0.02,
+// +0.71): out of the figure's own LEFT side and out of its front.
+//
+// The direction settles the ORDER of the break, not just the look. A
+// piece may not start before one its own flight would drive through
+// (planReleaseOrder in thinkerFragments), so the break always begins at
+// the end of the figure the flight points AT and travels back against it.
+// It used to point along the figure's -x, out to the viewer's left and at
+// the lens (drift -0.95, sum 60 degrees off the camera axis), and so the
+// break began at the head and the propping arm — the figure's right, up
+// on the SCREEN LEFT — and swept right and down (first 15 pieces mean
+// x -1.09, last 15 x +1.09). Asked for the opposite: begin at the body's
+// LEFT shoulder and sweep left and down. That is only possible with the
+// flight pointing the other way across the figure, so the drift is
+// mirrored: the pieces now leave to the viewer's right (0.90 of the
+// flight across the frame, 0.42 toward the lens) and the break front
+// travels left against them. The far side of the figure is the side the
+// camera is NOT on, so this also costs some of the "coming at you" — the
+// flight is 65 degrees off the camera axis rather than 60 on the other
+// side. Measured: at figure +z alone (drift x +0.235) the break came
+// apart front-to-back and hardly moved sideways at all; the +x part of
+// the flight has to outweigh the +z part over the figure's width before
+// the order reads as a sideways wipe.
+//
 // (A version that sent the pieces climbing at ~30 degrees, y +0.3, was
-// tried and put back to level.) Then asked for 30% less lift and more
-// sideways: the small climb left in the sum (0.3 - 0.216) is cut by 30%
-// (y -0.241) and the leftward drift goes -0.758 -> -0.95.
-// Compensated when the camera moved right (0.42 -> 0.85): the flight is
-// defined as CAMERA_OFFSET + this, so moving the camera would otherwise have
-// swung the pieces' path with it — and the pieces' motion was to stay exactly
-// as it was. Solved so the sum, and therefore the flight direction in figure
-// space, is unchanged to 0.0000 degrees.
-const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-0.95, -0.241, 0.146);
+// tried and put back to level; the drift's y takes out the lift the
+// camera's own direction carries, leaving the small fall of -0.018 that
+// the "30% less lift" pass settled on. The old note that the flight was
+// held unchanged when the camera moved right (0.42 -> 0.85) no longer
+// applies: this pass changed it on purpose.)
+const FLIGHT_DRIFT_VIEW = new THREE.Vector3(0.336, -0.241, -0.995);
 
 function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
@@ -132,25 +147,37 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   bakedPath: "/model/thinker/chunks",
   // Where the figure struck: the HAND itself, hanging over the knee. It is
   // the part of the figure nearest the lens, so it is both what a forward
-  // topple lands on and the one place the break can start with nothing in
-  // front of it. Measured on the model surface (it was the first point of
-  // the arm path this fracture replaced). The break radiates from here, so
-  // this is also what comes apart first — put it up the forearm instead and
-  // the whole arm goes at once rather than the hand alone.
+  // topple lands on (it was also, when the pieces flew at the lens, the
+  // one place the break could start with nothing in front of it; the
+  // break now starts at the far shoulder instead, see releaseFrom).
+  // Measured on the model surface (it was the first point of
+  // the arm path this fracture replaced). The CELLS are graded around this
+  // point — finest here, coarsening away — so put it up the forearm instead
+  // and the arm's cuts move with it. Which pieces come apart first is
+  // releaseFrom's business, not this one's.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
-  // The order of the break: it spreads from the figure's RIGHT SHOULDER
-  // across the body to its left side, a little downward. The origin is
-  // the shoulder itself, measured off the bake (the -x extreme of the
-  // chunk centres at shoulder height; the figure's right is -x, its front
-  // +z), and distance from it counts a step up double and a step down
-  // 1.3x — so the head, which sits above and to the right, comes after
-  // the chest that is level with the shoulder rather than before it, the
-  // knee below the shoulder later still (at 0.8 it went as early as the
-  // head), and the far side of the body last. A plane sweep was tried first
-  // and always started at the head, the top being the extreme of any
-  // downward-tilted axis; a spread from the camera's opening eye
-  // (OPENING_EYE) before that.
-  releaseFrom: [-0.9, 0.78, 0.4],
+  // The order of the break: it starts at the figure's LEFT SHOULDER — the
+  // far side from the camera, on the SCREEN RIGHT — and spreads across
+  // the body to its right side, a little downward. The origin is the
+  // shoulder itself, measured off the bake (the +x extreme of the chunk
+  // centres at shoulder height, (0.08, 1.01, 0.29); the figure's right is
+  // -x, its front +z), and distance from it counts a step up double and a
+  // step down 1.3x — so the head, which sits above and across, comes
+  // after the chest that is level with the shoulder rather than before
+  // it, and the knee below the shoulder later still (at 0.8 it went as
+  // early as the head).
+  //
+  // This only decides the order among the pieces the constraint graph has
+  // already freed; that graph, not this point, is what settles the
+  // direction the break travels (see FLIGHT_DRIFT_VIEW). Moving this
+  // point alone, with the old flight, moved the first 20 pieces' mean x
+  // by 0.02 and nothing else. A plane sweep (releaseSweep) was tried
+  // first and always started at the head, the top being the extreme of
+  // any downward-tilted axis; a spread from the camera's opening eye
+  // (OPENING_EYE) before that; and the shoulder it used to start from was
+  // the RIGHT one, (-0.9, 0.78, 0.4), back when the flight pointed that
+  // way.
+  releaseFrom: [0.06, 0.95, 0.4],
   releaseWeights: { across: 1, down: 1.3, up: 2 },
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
