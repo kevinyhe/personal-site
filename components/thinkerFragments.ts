@@ -591,6 +591,21 @@ const ISLAND_MIN_AREA = 0.0015;
 // land inside the neighbour for that to count.
 const RELEASE_PROBE_STEP = 0.08;
 const RELEASE_PROBE_FRACTION = 0.03;
+// How much later in the wanted order (`releaseFrom`/`releaseSweep` rank,
+// 0..1 across the figure) a blocker has to sit before it is allowed to
+// hold a piece back. Without this the graph reverses any break asked to
+// travel the same way the pieces fly, because the leading piece always
+// has unbroken marble in front of it: measured, moving `releaseFrom`
+// right across the body shifted the first fifteen pieces' mean x by 0.02
+// and two `releaseSweep` settings were overridden outright. A blocker
+// only a little later goes a moment after the mover anyway, so the
+// overlap is brief and inside the cloud; a blocker much later is the
+// "piece emerges through the chest" case the guard was written for, and
+// that edge is kept. Touching neighbours are the worst case — they start
+// with faces in contact — so they get a tighter tolerance than pieces the
+// mover only flies past.
+const RELEASE_ORDER_TOLERANCE_TOUCHING = 0.12;
+const RELEASE_ORDER_TOLERANCE_DISTANT = 0.4;
 
 // The flight, in multiples of `spread`: the push every piece gets along the
 // direction; the extra the piece furthest along it gets over the piece
@@ -2361,15 +2376,16 @@ function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
 }
 
 // When each piece starts moving, 0..1 of the breakup, one piece at a time:
-// the pieces whose flight has nothing in front of it first, in rank order
-// (see `releaseFrom`), then the ones they unblock — so the break begins at
-// the end of the figure the flight points at and travels back against
-// it. A piece may never start before a touching neighbour that its own
-// flight points at, or it would drive into it while the neighbour still
-// sits; where that cuts across the order, the neighbour goes just before
-// it instead. Touching means sharing cut points, so this follows the real
-// cuts, not a guess. The islands of one seed count as one piece
-// throughout.
+// in rank order (see `releaseFrom`), held back only where a piece would
+// drive into marble that is still standing well after it leaves. Touching
+// means sharing cut points, so this follows the real cuts, not a guess.
+// The islands of one seed count as one piece throughout.
+//
+// The hold-back is graded (RELEASE_ORDER_TOLERANCE_*): an ungraded guard
+// makes the break begin at the end the flight points AT and travel back
+// against it, which is the opposite of a break asked to sweep the same
+// way its pieces fly. Only a blocker that sits much later in the rank
+// keeps its edge now, so the rank, not the flight, sets the direction.
 function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   const count = cells.length;
 
@@ -2510,12 +2526,18 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
 
       if (ua === ub) continue;
 
+      // Graded: an edge only counts when the blocker is far enough behind
+      // the mover in the wanted order that the mover would sit inside it
+      // for a real stretch of the break.
+      const holds = (mover: number, blocker: number, tolerance: number) =>
+        unitRank[blocker] - unitRank[mover] > tolerance;
+
       if (touching(a, b)) {
-        if (pointsAt(a, b)) before[ua].add(ub);
-        if (pointsAt(b, a)) before[ub].add(ua);
+        if (holds(ua, ub, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(a, b)) before[ua].add(ub);
+        if (holds(ub, ua, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(b, a)) before[ub].add(ua);
       } else {
-        if (fliesThrough(a, b)) before[ua].add(ub);
-        if (fliesThrough(b, a)) before[ub].add(ua);
+        if (holds(ua, ub, RELEASE_ORDER_TOLERANCE_DISTANT) && fliesThrough(a, b)) before[ua].add(ub);
+        if (holds(ub, ua, RELEASE_ORDER_TOLERANCE_DISTANT) && fliesThrough(b, a)) before[ub].add(ua);
       }
     }
   }

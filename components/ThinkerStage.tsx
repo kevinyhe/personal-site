@@ -18,6 +18,7 @@ import {
   CAMERA_OFFSET,
   CAMERA_OFFSET_CLOSE,
   IMPACT_AIM_LIFT,
+  OPENING_AIM_POINT,
   loadThinkerChunks,
   THINKER_BASE_YAW,
 } from "@/components/thinkerChunks";
@@ -150,13 +151,13 @@ export type ThinkerTiming = () => {
 const CAMERA_DISTANCE = 5.0;
 const CAMERA_DISTANCE_BROKEN = 6.2;
 const CAMERA_DISTANCE_COMPACT_BROKEN = 7.4;
-// The shot OPENS on the blow — where the figure struck the floor, the point
-// the whole fracture is measured from — and pulls out from there. The
-// position comes from the build itself (`breakOrigin`), turned into world
-// space by the stage group's own rotation, so if the impact moves the
-// camera follows it without anything here being retyped. This is the
-// fallback for the frames before the build has landed.
-const IMPACT_FALLBACK = new THREE.Vector3(-0.15, -1.5, 0.25);
+// The shot OPENS on the blow — the hand, the nearest part of the figure to
+// the lens — and pulls out from there. It used to follow the build's own
+// `breakOrigin`, which was the same point; the fracture's grading point
+// has since moved up to the shoulder where the break starts, and the shot
+// must NOT follow it there, because lifted by IMPACT_AIM_LIFT the aim
+// would land above the head. So the aim is OPENING_AIM_POINT, beside the
+// flight direction in thinkerChunks.
 // The opening shot's offset, distance and aim lift live in thinkerChunks,
 // beside the flight direction: the break's order is measured from that
 // same eye, so the two cannot drift apart.
@@ -1692,15 +1693,13 @@ function ThinkerCanvas({
   // figure's own coordinates, so it has to go through the stage group's
   // rotation before the camera can aim at it.
   const openAim = useMemo(() => {
-    const point = build
-      ? new THREE.Vector3(...build.breakOrigin)
-      : IMPACT_FALLBACK.clone();
+    const point = OPENING_AIM_POINT.clone();
 
     point.applyEuler(new THREE.Euler(...STAGE_ROTATION));
     point.y += IMPACT_AIM_LIFT;
 
     return point;
-  }, [build]);
+  }, []);
   // Where the cloud ends up, in world space. The build reports the mean of
   // the chunks' offsets in the figure's own coordinates, so it goes through
   // the stage group's rotation like the blow does.

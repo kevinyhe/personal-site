@@ -55,58 +55,75 @@ export const CAMERA_DISTANCE_CLOSE = 2.2;
  */
 export const IMPACT_AIM_LIFT = 0.78;
 
-/** The blow, in the figure's own units: the hand, nearest the lens. */
-const IMPACT_POINT = new THREE.Vector3(-1.157, -0.229, 0.628);
+/**
+ * The blow, in the figure's own units: the figure's LEFT SHOULDER, which
+ * is where the break now begins (releaseFrom below sits on the same
+ * point). The cells are graded around this point, so the first pieces the
+ * eye sees are the fine ones. It used to be the HAND (-1.157, -0.229,
+ * 0.628), from when the break started there; that left the shoulder on
+ * the coarse end of the grading, and the pieces coming off first read as
+ * too big.
+ */
+const IMPACT_POINT = new THREE.Vector3(0.06, 0.95, 0.4);
+/**
+ * The hand, the nearest point of the figure to the lens, and where the
+ * opening shot still aims: the camera used to follow the build's own
+ * `breakOrigin`, which was the same point, but the grading has moved up
+ * to the shoulder and the shot should not follow it there — lifted by
+ * IMPACT_AIM_LIFT the aim would sit above the head.
+ */
+export const OPENING_AIM_POINT = new THREE.Vector3(-1.157, -0.229, 0.628);
 
 /**
- * The camera's opening eye in the figure's own space: the aim (the blow,
- * lifted) plus the opening offset at its distance, turned back through
- * the stage's yaw. The pieces come loose in order of their distance from
- * here, nearest the lens first (see `releaseFrom`).
+ * The camera's opening eye in the figure's own space: the aim plus the
+ * opening offset at its distance, turned back through the stage's yaw.
+ * The break's order was once measured from here — see `releaseFrom`, which
+ * is a point on the figure now — so nothing reads this; it is kept because
+ * the eye is the only place a camera-relative order could be measured
+ * from if one is wanted again.
  */
 const OPENING_EYE = (() => {
   const eye = CAMERA_OFFSET_CLOSE.clone()
     .multiplyScalar(CAMERA_DISTANCE_CLOSE)
     .applyAxisAngle(new THREE.Vector3(0, 1, 0), -THINKER_BASE_YAW)
-    .add(IMPACT_POINT);
+    .add(OPENING_AIM_POINT);
   eye.y += IMPACT_AIM_LIFT;
   return [eye.x, eye.y, eye.z] as [number, number, number];
 })();
 
-// The way the pieces fly: level, out to the viewer's RIGHT and a little
-// toward the lens (after lukebaffait.fr, whose fragments stream past the
-// viewer). Turned back through the stage's yaw so the builder can plan it
-// in the figure's own space, where it comes to about (+0.70, -0.02,
-// +0.71): out of the figure's own LEFT side and out of its front.
+// The way the pieces fly: level, out to the viewer's LEFT and toward the
+// lens (after lukebaffait.fr, whose fragments stream past the viewer).
+// Turned back through the stage's yaw so the builder can plan it in the
+// figure's own space, where it comes to about (-1.00, -0.02, -0.03):
+// straight out of the figure's own RIGHT side, which is the side the
+// camera is on and the side that reads as SCREEN LEFT.
 //
-// The direction settles the ORDER of the break, not just the look. A
-// piece may not start before one its own flight would drive through
-// (planReleaseOrder in thinkerFragments), so the break always begins at
-// the end of the figure the flight points AT and travels back against it.
-// It used to point along the figure's -x, out to the viewer's left and at
-// the lens (drift -0.95, sum 60 degrees off the camera axis), and so the
-// break began at the head and the propping arm — the figure's right, up
-// on the SCREEN LEFT — and swept right and down (first 15 pieces mean
-// x -1.09, last 15 x +1.09). Asked for the opposite: begin at the body's
-// LEFT shoulder and sweep left and down. That is only possible with the
-// flight pointing the other way across the figure, so the drift is
-// mirrored: the pieces now leave to the viewer's right (0.90 of the
-// flight across the frame, 0.42 toward the lens) and the break front
-// travels left against them. The far side of the figure is the side the
-// camera is NOT on, so this also costs some of the "coming at you" — the
-// flight is 65 degrees off the camera axis rather than 60 on the other
-// side. Measured: at figure +z alone (drift x +0.235) the break came
-// apart front-to-back and hardly moved sideways at all; the +x part of
-// the flight has to outweigh the +z part over the figure's width before
-// the order reads as a sideways wipe.
+// Asked for the pieces to break off to the statue's own right, for the
+// break front to travel from its left shoulder to its right, and for both
+// to read as movement toward the left of the frame. Those three are the
+// same thing: with the base yaw at 60 degrees, figure -x maps to view
+// (-0.5, 0, +0.87) — screen left AND toward the lens.
+//
+// This is the drift plus CAMERA_OFFSET, so the sum is what the pieces
+// actually follow: (-0.553, -0.018, +0.889) in view space, 32 degrees off
+// the camera axis to the viewer's left. It used to be 20 degrees (drift
+// x -0.95) and the stream did not read as leftward at all against the
+// camera's own push; 32 puts the figure-space flight on -x almost
+// exactly. Straight, from the first frame — no spiral, no late curve.
+//
+// The direction no longer settles the ORDER of the break. It did: the
+// constraint graph in planReleaseOrder made the break start at the end
+// the flight points AT and travel back against it, which is why an
+// earlier pass had to mirror this drift to the viewer's right (0.336,
+// -0.241, -0.995) to force a leftward front. That graph is graded now
+// (RELEASE_ORDER_TOLERANCE_* in thinkerFragments), so the sweep and the
+// flight can run the same way and this is free to be what it should be.
 //
 // (A version that sent the pieces climbing at ~30 degrees, y +0.3, was
 // tried and put back to level; the drift's y takes out the lift the
 // camera's own direction carries, leaving the small fall of -0.018 that
-// the "30% less lift" pass settled on. The old note that the flight was
-// held unchanged when the camera moved right (0.42 -> 0.85) no longer
-// applies: this pass changed it on purpose.)
-const FLIGHT_DRIFT_VIEW = new THREE.Vector3(0.336, -0.241, -0.995);
+// the "30% less lift" pass settled on.)
+const FLIGHT_DRIFT_VIEW = new THREE.Vector3(-1.184, -0.241, 0.146);
 
 function inFigureSpace(view: THREE.Vector3, yaw: number): [number, number, number] {
   const direction = view
@@ -145,48 +162,77 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // Cut ahead of time by `npm run bake:chunks`; re-run it after changing
   // anything below (the loader checks, and cuts live if the bake is stale).
   bakedPath: "/model/thinker/chunks",
-  // Where the figure struck: the HAND itself, hanging over the knee. It is
-  // the part of the figure nearest the lens, so it is both what a forward
-  // topple lands on (it was also, when the pieces flew at the lens, the
-  // one place the break could start with nothing in front of it; the
-  // break now starts at the far shoulder instead, see releaseFrom).
-  // Measured on the model surface (it was the first point of
-  // the arm path this fracture replaced). The CELLS are graded around this
-  // point — finest here, coarsening away — so put it up the forearm instead
-  // and the arm's cuts move with it. Which pieces come apart first is
-  // releaseFrom's business, not this one's.
+  // Where the figure struck, and the point the CELLS are graded around:
+  // finest here, coarsening away. It is the figure's LEFT SHOULDER, the
+  // same point the break starts from (releaseFrom), because the pieces
+  // coming off first are the ones the eye is on and they read as too big
+  // when the fine grading sat at the hand instead. Which pieces come
+  // apart first is releaseFrom's business, not this one's.
   impact: fraction(IMPACT_POINT.x, IMPACT_POINT.y, IMPACT_POINT.z),
   // The order of the break: it starts at the figure's LEFT SHOULDER — the
-  // far side from the camera, on the SCREEN RIGHT — and spreads across
-  // the body to its right side, a little downward. The origin is the
-  // shoulder itself, measured off the bake (the +x extreme of the chunk
-  // centres at shoulder height, (0.08, 1.01, 0.29); the figure's right is
-  // -x, its front +z), and distance from it counts a step up double and a
-  // step down 1.3x — so the head, which sits above and across, comes
-  // after the chest that is level with the shoulder rather than before
-  // it, and the knee below the shoulder later still (at 0.8 it went as
-  // early as the head).
+  // far side from the camera, on the SCREEN RIGHT — and travels across
+  // the shoulders to the figure's RIGHT side, which is the SCREEN LEFT,
+  // and then down. The origin is the shoulder itself, measured off the
+  // bake (the +x extreme of the chunk centres at shoulder height).
   //
-  // This only decides the order among the pieces the constraint graph has
-  // already freed; that graph, not this point, is what settles the
-  // direction the break travels (see FLIGHT_DRIFT_VIEW). Moving this
-  // point alone, with the old flight, moved the first 20 pieces' mean x
-  // by 0.02 and nothing else. A plane sweep (releaseSweep) was tried
-  // first and always started at the head, the top being the extreme of
-  // any downward-tilted axis; a spread from the camera's opening eye
-  // (OPENING_EYE) before that; and the shoulder it used to start from was
-  // the RIGHT one, (-0.9, 0.78, 0.4), back when the flight pointed that
-  // way.
-  releaseFrom: [0.06, 0.95, 0.4],
-  releaseWeights: { across: 1, down: 1.3, up: 2 },
+  // This point now really does set the direction: the flight's constraint
+  // graph used to override it (moving this point right across the body
+  // shifted the first fifteen pieces by 0.02 in x), and is graded now.
+  //
+  // The origin sits FORWARD of the shoulder, at z 0.8 against the
+  // shoulder mass's own 0.4, so the front of the figure is nearer than
+  // its back and the front comes apart first: the break has to read as
+  // one front crossing the body left to right AND front to back, not as
+  // pieces popping in scattered places. Measured over the shoulder band
+  // (y 0.5..1.2), Spearman of the rank against -x and against -z:
+  // z 0.6/across 1.0 gave +0.73/-0.01 (sideways only, no depth), z 1.1/
+  // across 2.0 gave -0.14/+0.93 (depth swallowed the sideways sweep);
+  // z 0.8/across 1.35 is +0.56/+0.27 in the bake, sideways leading and
+  // depth second. (The whole figure reads the other way, -0.64 against
+  // -x, and that is right: half the pieces are the plinth and the legs,
+  // which sit at +x under a body that sits at -x, so a figure-wide x
+  // correlation measures the pose, not the break.)
+  //
+  // The weights are what keep a spread from a point reading as a sideways
+  // sweep. A step down counts 2.5x: at 1.3 the low chest tied with the
+  // far shoulder — both 0.96 from here — so the break spread as a ball
+  // and the first fifteen pieces averaged x -0.51 instead of the
+  // shoulder's +0.06. At 2.5 the front runs along the shoulder line
+  // first, then works down the body, and the plinth — the +x mass at the
+  // very bottom, which a naive -x plane sweep starts AT — is the farthest
+  // thing of all and goes last (mean release percentile 0.76).
+  //
+  // A step up counts 4.5x, to hold the HEAD back: it is high and across
+  // at x -1.18..-0.26, the other thing a tilted plane sweep starts at. It
+  // now averages the 31st percentile of the order and the head proper
+  // (x below -0.6) starts at the 24th; the pieces above y 1.2 that go
+  // earlier than that are the neck and the trapezius, which stand
+  // directly over the shoulder the break starts at.
+  //
+  // The front holds together: release time fits a plane through position
+  // at R2 0.64 (a sphere spreading from a point cannot do better against
+  // a linear fit), and a piece releases on average 0.035 of the break
+  // away from its six nearest neighbours — 4% of the span, against the
+  // 0.2% that separates consecutive pieces. Before the constraint graph
+  // was graded that figure was 6%.
+  //
+  // (A plane sweep, releaseSweep, was tried repeatedly and cannot do
+  // this: no single plane puts both the figure's right side and the +x
+  // plinth at the far end. A spread from the camera's opening eye,
+  // OPENING_EYE, came before that; and the shoulder it once started from
+  // was the RIGHT one, (-0.9, 0.78, 0.4), back when the flight pointed
+  // that way.)
+  releaseFrom: [0.06, 0.95, 0.8],
+  releaseWeights: { across: 1.35, down: 2.5, up: 4.5 },
   // The cells, after lukebaffait.fr's own break (frames of its hero
   // sequence, a Blender cell fracture of The Creation of Adam): blocky,
   // convex, nearly all the same size — about a tenth of the figure's
   // height across — with no slivers, no rings and no radial grain, coming
   // apart in a front that sweeps from the nearest point to the farthest.
   // Cell width at the blow and far from it, in figure units (height 3.1):
-  // near-uniform, only a little finer at the hand so the first pieces off
-  // are the smaller ones, as the reference's fingertips are.
+  // finer at the blow, which is the shoulder the break starts at, so the
+  // first pieces off are the smaller ones, as the reference's fingertips
+  // are.
   //
   // This replaces a long run of shard tuning (0.055 / 0.275 with a 3x
   // radial stretch and size variation 3.0: ~290 slivers and slabs, a
@@ -198,11 +244,22 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // 62 s — the sampler packs finer cells less than proportionally), so
   // this is the spacing that lands the mean radius at ~0.2. A cut this
   // fine is what made baking it necessary (bakedPath).
-  spacingNear: 0.09,
-  spacingFar: 0.122,
-  // Cells reach full size within about a third of the figure's height of
-  // the blow; with near and far this close it hardly shows.
-  spacingFalloff: 0.9,
+  //
+  // The near/far spread then widened, because the pieces at the shoulder
+  // read as too big. Most of that was the impact moving there — with the
+  // grading at the hand, the sphere of 0.4 figure units around the
+  // shoulder held FOUR pieces of mean radius 0.541; it now holds 29 of
+  // mean radius 0.242. 0.09/0.122 was the old pair; 0.075/0.135 came to
+  // 574 pieces and a 58 s cut, past the budget, and 0.07/0.19 fell to 326
+  // and made everything coarser. 0.075/0.155 is 476 pieces, mean radius
+  // 0.230, 33-38 s.
+  spacingNear: 0.075,
+  spacingFar: 0.155,
+  // Cells reach full size within about 1.4 figure units of the blow. It
+  // was 0.9 when near and far were close enough that it hardly showed;
+  // with the spread widened, a falloff that long put fine cells over the
+  // whole torso and cost 100 pieces of build time for no visible gain.
+  spacingFalloff: 0.45,
   // No rings: the reference's cells show no concentric structure.
   shellBias: 0,
   // No radial grain: the reference's cells are as wide as they are long
@@ -231,7 +288,10 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // was already most of a figure-unit away. These five sit across the palm
   // and knuckles (measured on the model; they are the hand seeds the
   // original arm-path fracture used), they are the closest seeds to the
-  // blow, so they are the first things to release.
+  // blow. (They were also the first things to release, back when the
+  // break started at the hand; the order starts at the shoulder now and
+  // these only decide that the hand comes apart rather than leaving as
+  // one lump.)
   guardSeeds: [
     fraction(-1.22, -0.38, 0.58),
     fraction(-1.1, -0.2, 0.68),
