@@ -444,14 +444,16 @@ export type BuildSolidChunkOptions = {
   /**
    * Where the figure struck the floor, as fractions of its bounding box
    * (0..1 on each axis). Everything about the break is measured from here:
-   * cells are finest at this point and coarsen away from it, and pieces
-   * come loose in order of their distance from it.
+   * cells are finest at this point and coarsen away from it. It is also
+   * the order's origin when `releaseFrom` is left out.
    */
   impact: [number, number, number];
   /**
-   * Where the break is watched from, in figure units: pieces come loose in
-   * order of their distance from HERE rather than from the impact, so the
-   * ones nearest the lens go first and the far side of the figure last.
+   * Where the break starts, in figure units: pieces are ranked by their
+   * distance from HERE rather than from the impact. The rank only orders
+   * the pieces that the flight's own constraint graph has already freed
+   * (planReleaseOrder), so it decides where the break starts among the
+   * free pieces, not which way it travels — that is the flight's.
    * Left out, the impact itself is the origin.
    */
   releaseFrom?: [number, number, number];
@@ -1994,9 +1996,9 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
     kept.push(point);
   }
 
-  // The break travels away from the viewer, so a piece's place in the
-  // order is how far its seed sits from where the break is watched from
-  // (the camera's opening eye; the blow itself when none is given).
+  // A piece's rank in the order is how far its seed sits from where the
+  // break starts (the blow itself when none is given). It is a tie-break
+  // inside the flight's constraint graph, not the order itself.
   const releaseFrom = options.releaseFrom ? new THREE.Vector3(...options.releaseFrom) : impact;
   const weights = options.releaseWeights ?? { across: 1, down: 1, up: 1 };
   const spreadFrom = (point: THREE.Vector3) => {
@@ -2359,13 +2361,15 @@ function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
 }
 
 // When each piece starts moving, 0..1 of the breakup, one piece at a time:
-// up the arm from the hand, then the rest along the sweep — the head and
-// the right knee together first, the tail last. A piece may never start
-// before a touching neighbour that its own flight points at, or it would
-// drive into it while the neighbour still sits; where that cuts across
-// the order, the neighbour goes just before it instead. Touching means
-// sharing cut points, so this follows the real cuts, not a guess. The
-// islands of one seed count as one piece throughout.
+// the pieces whose flight has nothing in front of it first, in rank order
+// (see `releaseFrom`), then the ones they unblock — so the break begins at
+// the end of the figure the flight points at and travels back against
+// it. A piece may never start before a touching neighbour that its own
+// flight points at, or it would drive into it while the neighbour still
+// sits; where that cuts across the order, the neighbour goes just before
+// it instead. Touching means sharing cut points, so this follows the real
+// cuts, not a guess. The islands of one seed count as one piece
+// throughout.
 function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   const count = cells.length;
 
