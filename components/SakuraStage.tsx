@@ -131,6 +131,8 @@ const drawArbiter = {
   contendersLast: 0,
   contenders: 0,
   lastDrawer: null as object | null,
+  /** The stage that stood down last frame; it is owed this one. */
+  yieldedLast: null as object | null,
 };
 function claimDraw(stage: object, timestamp: number): boolean {
   const arbiter = drawArbiter;
@@ -142,7 +144,21 @@ function claimDraw(stage: object, timestamp: number): boolean {
   }
   arbiter.contenders += 1;
   if (arbiter.drawn) return false;
-  if (arbiter.contendersLast > 1 && arbiter.lastDrawer === stage) return false;
+  // A stage that stood down in the previous frame takes this one, whatever
+  // else is true. Without it the arbiter could stand a stage down forever:
+  // the only evidence that anyone else wants the frame is the PREVIOUS
+  // frame's count, so on the frame after the other stage stops (it scrolled
+  // off, or its holder hid, so it no longer calls this) the survivor yielded
+  // to nobody and no canvas was drawn at all. This bounds that to a single
+  // frame — nobody yields twice running — and still alternates while both
+  // stages are live.
+  if (arbiter.yieldedLast !== stage) {
+    if (arbiter.contendersLast > 1 && arbiter.lastDrawer === stage) {
+      arbiter.yieldedLast = stage;
+      return false;
+    }
+  }
+  arbiter.yieldedLast = null;
   arbiter.drawn = true;
   arbiter.lastDrawer = stage;
   return true;
@@ -528,7 +544,13 @@ export default function SakuraStage({
       renderer.render(halftoneScene, halftoneCamera);
       stats.framesDrawn += 1;
 
-      if (!revealed) revealCanvas(renderer.domElement);
+      // Never start the fade behind a hidden ancestor: it would run to
+      // opacity 1 unseen and the canopy would be there, whole, the moment
+      // the holder is shown — the pop this fade exists to remove. The loop
+      // already refuses to draw while hidden; the settle path (boot off
+      // screen, and every scroll for a reduced-motion visitor) does draw,
+      // so the guard belongs on the reveal rather than on the draw.
+      if (!revealed && !hiddenByAncestor()) revealCanvas(renderer.domElement);
     };
 
     /**
@@ -565,7 +587,14 @@ export default function SakuraStage({
      */
     // One options object for the life of the stage: the loop must not
     // allocate per frame, and this is read 60 times a second.
+    // Both spellings on purpose: Chromium 105-120 and Firefox 106-121 ship
+    // checkVisibility but honour only the legacy checkOpacity /
+    // checkVisibilityCSS names, so the spec-named options alone read a
+    // visibility:hidden holder as VISIBLE — and the getComputedStyle
+    // fallback below never runs, because the method does exist.
     const visibilityOptions: CheckVisibilityOptions = {
+      checkOpacity: true,
+      checkVisibilityCSS: true,
       opacityProperty: true,
       visibilityProperty: true,
     };

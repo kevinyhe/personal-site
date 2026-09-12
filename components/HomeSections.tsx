@@ -130,15 +130,6 @@ function Aside({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Keyboard focus, drawn as the page's hairline: 1px, offset, no fill. The
- * default UA ring is a 2px blue box, which is the one colour the page does
- * not have. `outline-none` first so the UA ring never flashes under ours.
- */
-const FOCUS_RING_LIGHT =
-  "outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#f0f0f0]/40";
-const FOCUS_RING_INK =
-  "outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-[#0a0a0a]/40";
 
 function WorkRow({
   entry,
@@ -213,7 +204,7 @@ function WorkRow({
         // ribbon around a block child. The ring is a 1px line at 40%: the
         // page's hairline, offset far enough to clear the twig.
         <a
-          className={FOCUS_RING_LIGHT + " block"}
+          className="block"
           href={entry.href}
           rel="noreferrer"
           target="_blank"
@@ -274,8 +265,7 @@ function CopyEmail() {
       <button
         aria-label="Copy the email address"
         className={
-          FOCUS_RING_INK +
-          " inline-grid font-serif-display text-[1.05rem] italic opacity-50 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:opacity-100 motion-reduce:transition-none"
+          "inline-grid font-serif-display text-[1.05rem] italic opacity-50 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:opacity-100 motion-reduce:transition-none"
         }
         data-copy-email
         onClick={copy}
@@ -431,8 +421,7 @@ export default function HomeSections() {
         <p className="mt-12" data-reveal>
           <a
             className={
-              FOCUS_RING_LIGHT +
-              " font-serif-display text-[1.05rem] italic opacity-60 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
+              "font-serif-display text-[1.05rem] italic opacity-60 transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
             }
             href={GITHUB}
             rel="noreferrer"
@@ -480,8 +469,7 @@ export default function HomeSections() {
             <a
               aria-label={`Email ${EMAIL}`}
               className={
-                FOCUS_RING_INK +
-                " inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none"
+                "inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none"
               }
               href={`mailto:${EMAIL}`}
             >
@@ -500,8 +488,7 @@ export default function HomeSections() {
               <li data-reveal key={social.label}>
                 <a
                   className={
-                    FOCUS_RING_INK +
-                    " group font-serif-display text-[1.2rem] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none"
+                    "group font-serif-display text-[1.2rem] transition-opacity duration-200 hover:opacity-60 motion-reduce:transition-none"
                   }
                   href={social.href}
                   rel="noreferrer"
@@ -542,8 +529,7 @@ export default function HomeSections() {
           </p>
           <button
             className={
-              FOCUS_RING_INK +
-              " transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
+              "transition-opacity duration-200 hover:opacity-100 motion-reduce:transition-none"
             }
             onClick={toTop}
             type="button"

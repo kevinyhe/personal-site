@@ -7759,6 +7759,17 @@ void main() {
         );
         halftoneUniforms.uCellSize.value =
           halftoneCellCssPx * getRenderPixelRatio();
+        // setSize cleared the drawing buffer. While the loop is parked
+        // nothing would refill it, so the stage would come back on screen
+        // showing an empty canvas for the frame or two it takes the
+        // IntersectionObserver to wake the loop — a phone rotating, or the
+        // address bar collapsing, at the work sections. Draw exactly one
+        // frame; it parks itself again immediately after.
+        if (parked && !document.hidden) {
+          forceOneFrame = true;
+          parked = false;
+          frame = requestAnimationFrame(animate);
+        }
       };
       const removeViewportResize = addViewportChangeListener(onResize);
 
@@ -7777,6 +7788,8 @@ void main() {
       // gates are checked after reportedReady), so onReady fires as it did.
       let mountOnScreen = true;
       let parked = false;
+      /** One frame owed off screen, to refill a buffer a resize cleared. */
+      let forceOneFrame = false;
       const wakeLoop = () => {
         if (!parked || disposed || !mountOnScreen || document.hidden) return;
         parked = false;
@@ -7804,11 +7817,16 @@ void main() {
       const animate = () => {
         if (disposed) return;
         const now = performance.now();
-        if (reportedReady && (!mountOnScreen || document.hidden)) {
+        if (
+          reportedReady &&
+          !forceOneFrame &&
+          (!mountOnScreen || document.hidden)
+        ) {
           parked = true;
           frame = 0;
           return;
         }
+        forceOneFrame = false;
         frame = requestAnimationFrame(animate);
         const parallaxMoving =
           !prefersReducedMotion &&
