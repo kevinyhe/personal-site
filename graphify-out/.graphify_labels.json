@@ -162,5 +162,6 @@
   "160": "postcss",
   "161": "Narration.tsx",
   "162": "package.json",
-  "163": "@types/node"
+  "163": "@types/node",
+  "164": "@dimforge/rapier3d-compat"
 }
