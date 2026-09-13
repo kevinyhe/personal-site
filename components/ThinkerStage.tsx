@@ -1408,6 +1408,9 @@ function ChunkedFigure({
   const stageRef = useRef<THREE.Group>(null);
   const warmedRef = useRef(0);
   const chunkRefs = useRef<Array<THREE.Group | null>>([]);
+  // Each chunk's cut-face mesh, held imperatively so the per-frame loop
+  // below can drop draws nobody can see without a React render.
+  const interiorRefs = useRef<Array<THREE.Mesh | null>>([]);
   // Per chunk, how long it has been adrift (seconds of wall time).
   const adriftRef = useRef<Float32Array>(new Float32Array(0));
   // The opacity last written into the chunks' materials (1 = untouched).
@@ -1536,6 +1539,24 @@ function ChunkedFigure({
       }
 
       chunkProgressRef.current[index] = localProgress;
+      // A seated piece's interior mesh is its freshly-cut faces, and those
+      // sit inside solid marble until the piece moves: nobody can see them,
+      // so do not draw them. That is one of the three draw calls a chunk
+      // costs, and the stage is draw-call bound, not fragment-bound (4.6x
+      // the pixels cost it only +1.9 ms on an RTX 5060, while 234 more
+      // chunk meshes cost +1.7 ms). Counted in the browser: 1431 calls a
+      // frame before this, 966 with the figure whole and still 1011 at the
+      // last frame the stage is drawn — about 3.5 ms of the stage's p50
+      // 10.3-11.0 ms at 1280x800, against a 120 Hz display's 8.3 ms.
+      //
+      // The test is localProgress — the same number the position below is
+      // built from, read in the same frame — and travelAt(0) is
+      // exactly 0, so the faces are back the very first frame the piece has
+      // any displacement at all. Driven off a timer or a React state change
+      // instead it would be a frame late and the piece would part hollow.
+      // It reads the same scrolling back up, which re-seats the pieces.
+      const interior = interiorRefs.current[index];
+      if (interior) interior.visible = localProgress > 0;
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
@@ -1605,6 +1626,15 @@ function ChunkedFigure({
           }}
           position={chunk.center}
         >
+          {/* The third draw call is this mesh's shadow, and it is not
+              culled: the only thing that receives a shadow is the floor
+              plane, whose ShadowMaterial fades as 0.82 * (1 - travelAt) and
+              would be gone at full spread — but the stage stops being drawn
+              at a spread of about 0.33 (panel progress 0.35 of BREAK_END's
+              0.96, just past hero fraction 1.0 at 1280x800), where that
+              shadow is still at 0.55 opacity and every piece is still part
+              of the figure's silhouette. No frame where dropping it is
+              free. */}
           <mesh
             castShadow
             frustumCulled={false}
@@ -1615,6 +1645,9 @@ function ChunkedFigure({
             frustumCulled={false}
             geometry={chunk.interiorGeometry}
             material={marble.interior}
+            ref={(node) => {
+              interiorRefs.current[index] = node;
+            }}
           />
         </group>
       ))}
