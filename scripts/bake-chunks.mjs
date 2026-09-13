@@ -87,6 +87,7 @@ async function bake(name, options) {
     int8s.push(sn, inn);
     return {
       center: chunk.center,
+      exposedAt: chunk.exposedAt,
       offset: chunk.offset,
       phase: chunk.phase,
       radius: chunk.radius,
