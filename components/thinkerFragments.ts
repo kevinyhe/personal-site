@@ -2367,6 +2367,437 @@ type CellBuild = {
   seed: Seed;
 };
 
+// ---------------------------------------------------------------------------
+// Roughening: stone that was dropped, not a polyhedron that was cut
+// ---------------------------------------------------------------------------
+//
+// The cut clips each cell to half-spaces, so every cut face is a flat plane
+// and every cut edge is a straight line. That is the reference's own look
+// (a Blender cell fracture; see the cell notes in thinkerChunks) and it is
+// what makes the pieces read as faceted solids rather than as broken stone.
+//
+// This bends them. Every vertex is moved by ONE field W(p) that depends on
+// nothing but where the point is, so two pieces that shared a face before
+// still share it after: a shared face is the same set of positions seen from
+// both sides, and the same function of position moves both copies the same
+// way. That is the whole of why this is safe, and it is why the field may
+// not depend on the piece, the plane, the cell or the triangulation — a
+// displacement that knew which side it was on would pull the two apart.
+//
+// The two sides' triangulations are not identical (each cell trims the
+// shared cap by its OWN other planes, so the boundary strip is subdivided
+// differently), so where one side carries a vertex the other interpolates
+// across, the two surfaces sag apart by the field's departure from a chord.
+// That grows as the wavelength falls, and at the wavelength this needs it is
+// 2 to 5 thousandths of a figure unit over about a fifth of the seam. What
+// pays for it is `sealPiece`, which fills those ribbons; without that pass
+// this could not be turned up far enough to see.
+//
+// The skin is held still. `RELIEF_SKIN_RAMP` fades the field to nothing
+// within that distance of the source mesh, so the statue's own surface, its
+// silhouette and the crack lines drawn across it are exactly what they were,
+// and only the INSIDE of the break moves. The ramp is a function of position
+// too, so it keeps the matching property. (Letting the field move the skin as
+// well was the alternative: at anything strong enough to bend a cut face the
+// statue picks up a swell every wavelength, which reads as weathering rather
+// than as marble.)
+const RELIEF_AMPLITUDE = 0.018;
+// How far under the skin the relief reaches full strength, in figure units.
+//
+// Short on purpose, and this is the thing that took three passes to see. The
+// cut faces you actually LOOK at are the shallow ones — the wall of a cavity
+// a neighbour just left, the face of a piece still near the surface — and
+// they run from the skin inward. A ramp of 0.09 pins all of that flat, and
+// the capture at hero fraction 0.78 came back indistinguishable from no
+// relief at all. Raising the amplitude from 0.02 to 0.055 against the same
+// ramp changed nothing, for the same reason: there was nothing left to move.
+const RELIEF_SKIN_RAMP = 0.045;
+// Wavenumbers, in radians per figure unit: the low octave turns over about
+// every 0.28 units and the high one about every 0.14.
+//
+// Near the size of a piece, which is what it takes. A face 0.2 across only
+// BENDS if the field turns over at that scale; at the 0.9 this started on,
+// the field barely varies across a face, so the face translates and tilts and
+// stays dead flat. Shorter than a piece and it would be crinkle rather than
+// fracture, which is why the low octave sits at about one bend per face.
+const RELIEF_LOW = [22.1, 24.3, 19.7];
+const RELIEF_HIGH = [45.3, 40.1, 48.7];
+const RELIEF_HIGH_WEIGHT = 0.35;
+// Step for the field's derivative, when the normals are turned to follow the
+// bent surface. Small against the wavelengths, large against float noise.
+const RELIEF_DERIVATIVE_STEP = 0.002;
+
+/**
+ * Fills whatever is still open in a piece: every edge that only one polygon
+ * uses is chained into a loop and the loop is fanned shut.
+ *
+ * Two different things end up here, and it closes both.
+ *
+ * The real holes. A handful of pieces come out of the cut with a cap region
+ * simply missing — on the bake before this, four of them, the worst 0.055
+ * figure units across a piece of radius 0.32. Two guesses at the cause were
+ * measured and both were wrong. `traceCapLoops` rejected no loop on any of
+ * the four. Refanning the cap regions earcut returns a short triangulation
+ * for — it does that on a contour that touches itself, and it does it 134
+ * times on this figure — moved the worst gap by nothing. Nor did deciding
+ * `groupCapRegions`' containment by a vote over a loop's corners and
+ * midpoints instead of by its first corner alone, which lies ON the other
+ * loop wherever two regions touch, so the ray cast answers however the
+ * rounding falls. So this closes the hole rather than the cause, and the
+ * cause is still open.
+ *
+ * The seams the relief opens. A cut face and its neighbour are subdivided
+ * differently along the line where they meet — each cell trims the shared cap
+ * by its OWN other planes — and while the faces were flat that cost nothing,
+ * because both subdivisions of a straight line ARE the same line. Bent, one
+ * side carries a vertex the other interpolates across, and the two sag apart
+ * by the field's departure from a chord: measured, 2 to 5 thousandths over
+ * about 270 of the figure's 1430 units of seam, worst 0.014. Those are the
+ * ribbons this fills.
+ *
+ * Fanned from the loop's own centroid and marked as cut face, so a filled
+ * hole reads as the fresh stone around it. A chain that will not close is
+ * left alone.
+ */
+const SEAL_KEY_SCALE = 1e5;
+
+function sealPiece(piece: FragmentPiece) {
+  const keyOf = (point: THREE.Vector3) =>
+    `${Math.round(point.x * SEAL_KEY_SCALE)},${Math.round(point.y * SEAL_KEY_SCALE)},${Math.round(point.z * SEAL_KEY_SCALE)}`;
+  const uses = new Map<string, number>();
+  const ends = new Map<string, [THREE.Vector3, THREE.Vector3]>();
+
+  piece.polygons.forEach((polygon) => {
+    const { vertices } = polygon;
+
+    for (let index = 0; index < vertices.length; index++) {
+      const from = vertices[index].point;
+      const to = vertices[(index + 1) % vertices.length].point;
+      const a = keyOf(from);
+      const b = keyOf(to);
+
+      if (a === b) continue;
+
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+
+      uses.set(key, (uses.get(key) ?? 0) + 1);
+      ends.set(key, a < b ? [from, to] : [to, from]);
+    }
+  });
+
+  // The free edges, as an adjacency by position.
+  const at = new Map<string, Array<{ key: string; other: THREE.Vector3; point: THREE.Vector3 }>>();
+  const link = (point: THREE.Vector3, other: THREE.Vector3, key: string) => {
+    const list = at.get(keyOf(point));
+
+    if (list) list.push({ key, other, point });
+    else at.set(keyOf(point), [{ key, other, point }]);
+  };
+
+  uses.forEach((count, key) => {
+    if (count !== 1) return;
+
+    const [from, to] = ends.get(key) as [THREE.Vector3, THREE.Vector3];
+
+    link(from, to, key);
+    link(to, from, key);
+  });
+
+  if (at.size === 0) return;
+
+  const walked = new Set<string>();
+  const sealed: FragmentPolygon[] = [];
+  const step = new THREE.Vector3();
+  const candidate = new THREE.Vector3();
+
+  uses.forEach((count, startKey) => {
+    if (count !== 1 || walked.has(startKey)) return;
+
+    const [first, second] = ends.get(startKey) as [THREE.Vector3, THREE.Vector3];
+    const loop: THREE.Vector3[] = [first];
+    // Marked as this walk goes and given back if it does not close, so a walk
+    // that fails costs the edges it touched nothing: taking them out of play
+    // left the loops that shared them unsealable, and measured WORSE than not
+    // sealing at all (34 pieces past 0.01 against 2).
+    const taken: string[] = [startKey];
+    let current = second;
+    let currentKey = startKey;
+    let previous = first;
+    let closed = false;
+
+    for (let guard = 0; guard < at.size + 2; guard++) {
+      if (keyOf(current) === keyOf(first)) {
+        closed = true;
+        break;
+      }
+
+      loop.push(current);
+
+      const options = (at.get(keyOf(current)) ?? []).filter(
+        (edge) => edge.key !== currentKey && !walked.has(edge.key) && !taken.includes(edge.key),
+      );
+
+      if (options.length === 0) break;
+
+      // Where more than two free edges meet — the seams do that, a ribbon's
+      // two sides ending on the same point — take the sharpest turn back.
+      // That traces the small loop around the gap rather than a long way
+      // round the piece.
+      step.subVectors(current, previous).normalize();
+
+      let best = options[0];
+      let bestTurn = Infinity;
+
+      for (const option of options) {
+        const turn = candidate.subVectors(option.other, current).normalize().dot(step);
+
+        if (turn < bestTurn) {
+          bestTurn = turn;
+          best = option;
+        }
+      }
+
+      taken.push(best.key);
+      previous = current;
+      currentKey = best.key;
+      current = best.other;
+    }
+
+    if (!closed || loop.length < 3) return;
+
+    taken.forEach((key) => walked.add(key));
+
+    // Newell's normal: zero on a ribbon that folded back on itself, which is
+    // exactly the seam case, and there the fan is degenerate and drops out in
+    // makeFlatArrays anyway.
+    const normal = new THREE.Vector3();
+    const centroid = new THREE.Vector3();
+
+    loop.forEach((point, index) => {
+      const next = loop[(index + 1) % loop.length];
+
+      normal.x += (point.y - next.y) * (point.z + next.z);
+      normal.y += (point.z - next.z) * (point.x + next.x);
+      normal.z += (point.x - next.x) * (point.y + next.y);
+      centroid.add(point);
+    });
+    centroid.multiplyScalar(1 / loop.length);
+
+    if (normal.lengthSq() > 1e-18) normal.normalize();
+    else normal.set(0, 1, 0);
+
+    loop.forEach((point, index) => {
+      sealed.push({
+        kind: "cap",
+        vertices: [point, loop[(index + 1) % loop.length], centroid].map((corner) => ({
+          normal: normal.clone(),
+          point: corner,
+        })),
+      });
+    });
+  });
+
+  piece.polygons.push(...sealed);
+}
+
+/**
+ * A spatial hash of the source mesh's own TRIANGLES, for "how far under the
+ * skin is this?". Only distances up to `reach` matter — past it the ramp is
+ * saturated — so one cell of that size and its 26 neighbours is the whole
+ * search.
+ *
+ * Triangles, not their corners: the cut's own points sit anywhere on a
+ * source triangle, not at its corners, and against corners alone a point
+ * lying flat on a large triangle measures as deep as half that triangle is
+ * wide. That leak put full relief on points of the SKIN, and since a cap's
+ * boundary and the surface's boundary are the same seam sampled at different
+ * spacings, it opened the seam: the widest crack in the figure went from
+ * 0.0002 to 0.046 figure units, 330 of 480 pieces past 0.002.
+ */
+function makeSkinDistance(source: FragmentPiece, reach: number) {
+  type Triangle = [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+  const grid = new Map<string, Triangle[]>();
+  const cell = (value: number) => Math.floor(value / reach);
+  const add = (triangle: Triangle) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+
+    for (const point of triangle) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      minZ = Math.min(minZ, point.z);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+      maxZ = Math.max(maxZ, point.z);
+    }
+
+    for (let x = cell(minX); x <= cell(maxX); x++) {
+      for (let y = cell(minY); y <= cell(maxY); y++) {
+        for (let z = cell(minZ); z <= cell(maxZ); z++) {
+          const key = `${x},${y},${z}`;
+          const bucket = grid.get(key);
+
+          if (bucket) bucket.push(triangle);
+          else grid.set(key, [triangle]);
+        }
+      }
+    }
+  };
+
+  source.polygons.forEach((polygon) => {
+    for (let index = 1; index < polygon.vertices.length - 1; index++) {
+      add([
+        polygon.vertices[0].point,
+        polygon.vertices[index].point,
+        polygon.vertices[index + 1].point,
+      ]);
+    }
+  });
+
+  const closest = new THREE.Vector3();
+  const triangle = new THREE.Triangle();
+
+  return (point: THREE.Vector3) => {
+    const cx = cell(point.x);
+    const cy = cell(point.y);
+    const cz = cell(point.z);
+    let best = reach * reach;
+
+    for (let x = cx - 1; x <= cx + 1; x++) {
+      for (let y = cy - 1; y <= cy + 1; y++) {
+        for (let z = cz - 1; z <= cz + 1; z++) {
+          const bucket = grid.get(`${x},${y},${z}`);
+
+          if (!bucket) continue;
+
+          for (const [a, b, c] of bucket) {
+            triangle.set(a, b, c);
+            triangle.closestPointToPoint(point, closest);
+            const distance = point.distanceToSquared(closest);
+
+            if (distance < best) best = distance;
+          }
+        }
+      }
+    }
+
+    return Math.sqrt(best);
+  };
+}
+
+/** The relief field at a point, before the skin ramp: each component in -1..1. */
+function reliefFieldAt(point: THREE.Vector3, seed: number, out: THREE.Vector3) {
+  const component = (axis: number) => {
+    const salt = 101 + axis * 7;
+    const low =
+      Math.sin(point.x * RELIEF_LOW[axis] + hash01(salt, seed) * TAU) *
+      Math.sin(point.y * RELIEF_LOW[(axis + 1) % 3] + hash01(salt + 1, seed) * TAU) *
+      Math.sin(point.z * RELIEF_LOW[(axis + 2) % 3] + hash01(salt + 2, seed) * TAU);
+    const high =
+      Math.sin(point.x * RELIEF_HIGH[axis] + hash01(salt + 3, seed) * TAU) *
+      Math.sin(point.y * RELIEF_HIGH[(axis + 1) % 3] + hash01(salt + 4, seed) * TAU) *
+      Math.sin(point.z * RELIEF_HIGH[(axis + 2) % 3] + hash01(salt + 5, seed) * TAU);
+
+    return (low + RELIEF_HIGH_WEIGHT * high) / (1 + RELIEF_HIGH_WEIGHT);
+  };
+
+  return out.set(component(0), component(1), component(2));
+}
+
+/**
+ * Bends every cut face and every cut edge, so the pieces read as stone that
+ * was dropped rather than as a solid that was sliced. See the note above for
+ * why a field of position alone is the only kind that is safe here.
+ *
+ * The normals are turned with the surface: the displacement's derivative is
+ * taken by differences and the normal carried through it (n - J^T n, the
+ * first order of the inverse transpose). Without that a bowed face still
+ * shades dead flat, which is half the faceted look.
+ */
+function roughenCells(cells: CellBuild[], source: FragmentPiece, options: BuildSolidChunkOptions) {
+  const seed = options.seed;
+  const skinDistance = makeSkinDistance(source, RELIEF_SKIN_RAMP);
+  const probe = new THREE.Vector3();
+  const shifted = new THREE.Vector3();
+
+  // How strong the relief is here: nothing on the skin, full a ramp under it.
+  // One query per distinct point — the derivative below differences the FIELD
+  // alone and scales by this, rather than differencing the whole displacement,
+  // which would cost seven of these per vertex. What it drops is the ramp's
+  // own gradient, and that only matters in the shell where the ramp is still
+  // climbing, where the displacement is near zero anyway.
+  const reliefAt = (point: THREE.Vector3) =>
+    RELIEF_AMPLITUDE * smoothstep01(skinDistance(point) / RELIEF_SKIN_RAMP);
+
+  // Two passes, and in this order: the normals are turned from the field's
+  // derivative at each point's ORIGINAL place, so nothing may have moved yet.
+  // Each distinct POINT object and each distinct NORMAL object is touched
+  // once — the cut shares points across polygons and across pieces (that
+  // sharing is what `planReleaseOrder` reads as pieces touching), and the
+  // same point carries a different normal on a cap than on the skin.
+  const jacobian = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const forward = new THREE.Vector3();
+  const backward = new THREE.Vector3();
+  const turnedNormals = new Set<THREE.Vector3>();
+
+  cells.forEach(({ piece }) => {
+    piece.polygons.forEach((polygon) => {
+      polygon.vertices.forEach(({ normal, point }) => {
+        if (turnedNormals.has(normal)) return;
+
+        turnedNormals.add(normal);
+
+        const relief = reliefAt(point);
+
+        if (relief <= 0) return;
+
+        for (let axis = 0; axis < 3; axis++) {
+          probe.copy(point).setComponent(axis, point.getComponent(axis) + RELIEF_DERIVATIVE_STEP);
+          reliefFieldAt(probe, seed, forward);
+          probe.copy(point).setComponent(axis, point.getComponent(axis) - RELIEF_DERIVATIVE_STEP);
+          reliefFieldAt(probe, seed, backward);
+          jacobian[axis]
+            .subVectors(forward, backward)
+            .multiplyScalar(relief / (2 * RELIEF_DERIVATIVE_STEP));
+        }
+
+        // n - J^T n, renormalised: column `axis` of J is d(displacement)/d(axis),
+        // so (J^T n)[axis] is that column dotted with n.
+        shifted.set(
+          normal.x - jacobian[0].dot(normal),
+          normal.y - jacobian[1].dot(normal),
+          normal.z - jacobian[2].dot(normal),
+        );
+
+        if (shifted.lengthSq() > 1e-12) normal.copy(shifted).normalize();
+      });
+    });
+  });
+
+  const movedPoints = new Set<THREE.Vector3>();
+  const displaced = new THREE.Vector3();
+
+  cells.forEach(({ piece }) => {
+    piece.polygons.forEach((polygon) => {
+      polygon.vertices.forEach(({ point }) => {
+        if (movedPoints.has(point)) return;
+
+        movedPoints.add(point);
+        const relief = reliefAt(point);
+
+        if (relief <= 0) return;
+
+        point.add(reliefFieldAt(point, seed, displaced).multiplyScalar(relief));
+      });
+    });
+  });
+
+}
+
 function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: BuildSolidChunkOptions) {
   const source = makeSourcePiece(sourceGeometry);
   const { impact, seeds } = planSeeds(source, options);
@@ -2439,6 +2870,20 @@ function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: Build
       }
       island.id = seedIndex * 8 + islandIndex;
       cells.push({ piece: island, seed });
+    });
+  });
+
+  roughenCells(cells, source, options);
+
+  // The relief moved points, so the boxes, centres and areas every piece was
+  // measured with are stale; sealing adds polygons too.
+  cells.forEach((cell) => {
+    sealPiece(cell.piece);
+    cell.piece = makePiece({
+      capStats: cell.piece.capStats,
+      depth: cell.piece.depth,
+      id: cell.piece.id,
+      polygons: cell.piece.polygons,
     });
   });
 
