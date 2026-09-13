@@ -491,6 +491,29 @@ export type BuildSolidChunkOptions = {
    */
   lateFrom?: number;
   /**
+   * The head's corner of the figure: above `above` of the height and past
+   * `toward` of the width from the figure's RIGHT (its -x edge), a piece is
+   * ranked EARLY whatever the sweep says. The mirror of `lateFrom`, and
+   * needed for the same reason.
+   *
+   * The head sits ABOUT 0.66 above the mid torso and 0.9 further toward the
+   * figure's right, which is the LATE end of the sweep, so the plane
+   * reaches it near the end of the body. Measured on the chunk centres,
+   * buying head-before-torso out of the plane's own tilt needs the vertical
+   * term above 0.58 of the sideways one — steeper than the 13 degrees that
+   * was already being called too steep — and even at a depth term of 2.2
+   * (with the sideways read down to -0.58) the head still came out level
+   * with the torso, not before it. So the band does it and the plane stays
+   * flat: on the bake the head is at percentile 0.20 against the torso's
+   * 0.31, and the plane's own rank correlation against the sweep axis over
+   * the pieces it still owns is 0.968, against 0.972 before. A piece
+   * releases 0.046 of the break from its six nearest neighbours, against
+   * 0.043 — the band's edge costs 0.003 of that.
+   *
+   * Left out, nothing is brought forward.
+   */
+  earlyBand?: { above: number; toward: number };
+  /**
    * Grade the CELLS along `releaseSweep` instead of by distance from the
    * impact: a piece's target size follows its place in the break's order,
    * so the pieces the break opens with are the fine ones and the rest of
@@ -2100,12 +2123,25 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   const lateFloor =
     options.lateFrom === undefined ? -Infinity : modelBox.min.y + size.y * options.lateFrom;
   const isLate = (point: THREE.Vector3) => point.y < lateFloor;
-  // The body's own span along the sweep, in figure units: what the cell
-  // grading measures its falloff in.
+  // The head's corner of the figure, the mirror of `lateFrom`: above a
+  // height and past a point across, it is ranked EARLY whatever the plane
+  // says. See the option's own note for why the plane cannot do this.
+  const earlyFloor = options.earlyBand
+    ? modelBox.min.y + size.y * options.earlyBand.above
+    : Infinity;
+  const earlyEdge = options.earlyBand
+    ? modelBox.min.x + size.x * options.earlyBand.toward
+    : -Infinity;
+  const isEarly = (point: THREE.Vector3) =>
+    point.y > earlyFloor && point.x < earlyEdge && !isLate(point);
+  // Each band's own span along the sweep, in figure units. The body's is
+  // also what the cell grading measures its falloff in.
   let bodyMin = Infinity;
   let bodyMax = -Infinity;
   let lateMin = Infinity;
   let lateMax = -Infinity;
+  let earlyMin = Infinity;
+  let earlyMax = -Infinity;
 
   if (sweep) {
     for (const point of candidates.concat(guardPoints)) {
@@ -2114,6 +2150,9 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
       if (isLate(point)) {
         lateMin = Math.min(lateMin, along);
         lateMax = Math.max(lateMax, along);
+      } else if (isEarly(point)) {
+        earlyMin = Math.min(earlyMin, along);
+        earlyMax = Math.max(earlyMax, along);
       } else {
         bodyMin = Math.min(bodyMin, along);
         bodyMax = Math.max(bodyMax, along);
@@ -2128,6 +2167,18 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   // has had its say.
   const BODY_SHARE = 0.7;
   const LATE_START = 0.72;
+  // The head's window. It deliberately OVERLAPS the body's — the head is
+  // meant to come apart while the plane is still crossing the shoulder and
+  // the upper chest, one continuing break rather than a separate event, so
+  // there is no gap here of the kind the base gets. The window has to sit
+  // this early because the flight's constraint graph moves both ends
+  // toward each other: at 0.10-0.26 the BAKE came out with the head at
+  // percentile 0.271 and the mid torso at 0.264, a dead heat, against the
+  // 0.25 / 0.30 the chunk centres alone predicted. Measured on the bake at
+  // 0.05-0.19: head (y > 1.05, x < -0.6) 0.21, mid torso (0.2 < y < 0.85,
+  // x > -0.6) 0.26.
+  const EARLY_START = 0.05;
+  const EARLY_END = 0.19;
   const rank01 = (point: THREE.Vector3) => {
     if (!sweep) return spreadFrom(point) / farthest;
 
@@ -2135,6 +2186,12 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
 
     if (isLate(point) && lateMax > lateMin) {
       return LATE_START + (1 - LATE_START) * ((along - lateMin) / (lateMax - lateMin));
+    }
+
+    if (isEarly(point) && earlyMax > earlyMin) {
+      return (
+        EARLY_START + (EARLY_END - EARLY_START) * ((along - earlyMin) / (earlyMax - earlyMin))
+      );
     }
 
     return BODY_SHARE * THREE.MathUtils.clamp((along - bodyMin) / bodySpan, 0, 1);
