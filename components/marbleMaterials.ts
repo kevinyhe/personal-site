@@ -271,7 +271,7 @@ function makeSurfaceMaterial(grain: THREE.Texture) {
   const material = new THREE.MeshStandardMaterial({
     color: "#f1f1eb",
     emissive: "#ffffff",
-    emissiveIntensity: 0.02,
+    emissiveIntensity: 0.012,
     metalness: 0,
     // 0.88 before. That much roughness under these lights gave no specular
     // shape at all, so the big smooth areas read as one flat tone; 0.68 with
@@ -309,8 +309,19 @@ function makeInteriorMaterial() {
   return new THREE.MeshStandardMaterial({
     color: "#d8d8d0",
     emissive: "#ffffff",
-    emissiveIntensity: 0.018,
+    emissiveIntensity: 0.012,
     metalness: 0,
+    // A seated piece's cut faces are drawn as soon as a NEIGHBOUR leaves
+    // (see exposedAt in ThinkerStage), and along every seam it still shares
+    // with a seated piece its cut face is coincident with that piece's own.
+    // Without this they z-fight where the seam meets the skin and draw a
+    // dotted hairline across the intact shoulder — visible in the capture at
+    // hero fraction 0.78. The offset pushes the cut faces away from the eye,
+    // so the skin wins the seam and the real cavity walls, which are a whole
+    // piece deeper, are untouched.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 2,
     roughness: 0.94,
     side: THREE.DoubleSide,
   });

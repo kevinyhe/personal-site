@@ -1280,27 +1280,43 @@ function StageLights({
       ? 0
       : Math.sin(clock.elapsedTime * 0.28 + breakup * 2.1) * 0.6;
     if (ambientRef.current) ambientRef.current.intensity = 0.01 * statueLight;
-    if (skyRef.current) skyRef.current.intensity = 0.55 * statueLight;
+    if (skyRef.current) skyRef.current.intensity = 0.13 * statueLight;
     if (keyLightRef.current) {
       keyLightRef.current.position.x = -3.4 + breakup * 1.4;
-      keyLightRef.current.intensity = (17.5 + breakup * 5.5 + pulse) * statueLight;
+      keyLightRef.current.intensity = (20.5 + breakup * 5.5 + pulse) * statueLight;
       // The cone opens as the pieces spread, so none fly out of the light.
       keyLightRef.current.angle = 0.36 + breakup * 0.3;
     }
-    if (fillLightRef.current) fillLightRef.current.intensity = 1.8 * statueLight;
+    if (fillLightRef.current) fillLightRef.current.intensity = 1.0 * statueLight;
     if (rimLightRef.current) {
       rimLightRef.current.intensity = (4.2 + breakup * 2.8) * statueLight;
     }
-    if (bounceLightRef.current) bounceLightRef.current.intensity = 0.6 * statueLight;
+    if (bounceLightRef.current) bounceLightRef.current.intensity = 0.25 * statueLight;
   });
 
   return (
     <group ref={groupRef}>
       <ambientLight ref={ambientRef} intensity={0.01} />
       {/* What keeps the side facing away from the key off true black. With
-          only the four punctual lights, 34.3% of the panel at hero fraction
-          0.62 sat below luminance 26 and the brow, eye socket and nose were
-          one solid black wedge; this brings that to 29.0%.
+          only the four punctual lights, the brow, eye socket and nose were
+          one solid black wedge.
+
+          0.55 at first, and now 0.13: asked for the figure much darker and
+          with much more contrast, which is this light's job to give back
+          along with the exposure below. Measured over the panel at 1280x800
+          (swiftshader), before -> after: at hero fraction 0.62 the mean
+          stone luminance goes 118.9 -> 106.9 and the median 108 -> 91 while
+          the 90th percentile only falls 215 -> 204, so the midtones drop
+          three times as far as the highlights; at 0.70, 136.5 -> 126.9 with
+          the panel below luminance 26 going 62.8% -> 66.9%; at 0.85 the
+          break's own lit pieces hold the mean at 155.6. Nothing clips:
+          0.00% of the panel at or above 250 before and after.
+
+          Not lower than 0.13. At 0.08 the face went back towards the wedge
+          this light exists to prevent — at 0.13 the brow reads as a lit
+          ridge and the nose and cheekbone stay separate forms in the
+          capture, which is the thing the grain and the roughness bought and
+          must not be spent.
 
           A hemisphere light and not an environment map: a PMREM'd dome did
           the same job visually but sampled per fragment, and this page is
@@ -1314,11 +1330,10 @@ function StageLights({
           ambientLight would give — which is why the ambient stays at 0.01
           rather than simply being raised. Near-neutral sky on purpose: the
           palette is white marble on #0a0a0a and a tint would show on every
-          lit pixel. 0.55 leaves the background black and the highlights
-          unclipped at all three sampled hero fractions. */}
+          lit pixel. */}
       <hemisphereLight
         ref={skyRef}
-        args={["#eef1f6", STAGE_BLACK, 0.55]}
+        args={["#eef1f6", STAGE_BLACK, 0.13]}
         position={[0, 1, 0]}
       />
       <spotLight
@@ -1328,7 +1343,7 @@ function StageLights({
         color="#ffffff"
         decay={1.05}
         distance={12}
-        intensity={17.5}
+        intensity={20.5}
         penumbra={0.06}
         position={[-3.4, 3.2, 2.8]}
         shadow-bias={-0.0005}
@@ -1346,7 +1361,7 @@ function StageLights({
         color="#f4f5ff"
         decay={1.2}
         distance={10}
-        intensity={1.8}
+        intensity={1.0}
         penumbra={0.05}
         position={[3.2, 2.1, -1.5]}
       />
@@ -1359,7 +1374,7 @@ function StageLights({
       <pointLight
         ref={bounceLightRef}
         color="#ffffff"
-        intensity={0.6}
+        intensity={0.25}
         position={[-1.45, -1.05, 2.4]}
       />
     </group>
@@ -1451,6 +1466,7 @@ function ChunkedFigure({
         return {
           ...geometries,
           center: new THREE.Vector3(...chunk.center),
+          exposedAt: chunk.exposedAt,
           offset: new THREE.Vector3(...chunk.offset),
           releaseAt: chunk.releaseAt,
           scale: chunk.scale,
@@ -1539,24 +1555,30 @@ function ChunkedFigure({
       }
 
       chunkProgressRef.current[index] = localProgress;
-      // A seated piece's interior mesh is its freshly-cut faces, and those
-      // sit inside solid marble until the piece moves: nobody can see them,
-      // so do not draw them. That is one of the three draw calls a chunk
-      // costs, and the stage is draw-call bound, not fragment-bound (4.6x
-      // the pixels cost it only +1.9 ms on an RTX 5060, while 234 more
-      // chunk meshes cost +1.7 ms). Counted in the browser: 1431 calls a
-      // frame before this, 966 with the figure whole and still 1011 at the
-      // last frame the stage is drawn — about 3.5 ms of the stage's p50
-      // 10.3-11.0 ms at 1280x800, against a 120 Hz display's 8.3 ms.
+      // A piece's interior mesh is its freshly-cut faces, and while the
+      // piece is buried in solid marble nobody can see them: that is one of
+      // the three draw calls a chunk costs, and the stage is draw-call
+      // bound, not fragment-bound (4.6x the pixels cost it only +1.9 ms on
+      // an RTX 5060, while 234 more chunk meshes cost +1.7 ms). Counted in
+      // the browser: 1431 calls a frame with every face drawn.
       //
-      // The test is localProgress — the same number the position below is
-      // built from, read in the same frame — and travelAt(0) is
-      // exactly 0, so the faces are back the very first frame the piece has
-      // any displacement at all. Driven off a timer or a React state change
-      // instead it would be a frame late and the piece would part hollow.
-      // It reads the same scrolling back up, which re-seats the pieces.
+      // Buried is NOT the same as seated, which is what this first tested.
+      // A seated piece's cut faces are inside solid marble only while the
+      // pieces AROUND it are seated too — the moment a neighbour flies off,
+      // the wall of the cavity it leaves IS this piece's cut face, and
+      // hiding it shows a hole straight through a hollow figure. (The
+      // capture ladder that passed the first version only followed pieces
+      // that were leaving, never the holes behind them.) So the test is
+      // `exposedAt`, baked per chunk: the first release among the piece
+      // itself and every piece it shares cut points with.
+      //
+      // It is `shown` — the same number the position below is built from,
+      // read in the same frame — against a moment, so a face is there on
+      // the frame its neighbour first has any displacement at all, and it
+      // reads the same scrolling back up, which re-seats the pieces. Driven
+      // off a timer or a React state change it would be a frame late.
       const interior = interiorRefs.current[index];
-      if (interior) interior.visible = localProgress > 0;
+      if (interior) interior.visible = shown > chunk.exposedAt;
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
@@ -1830,7 +1852,14 @@ function ThinkerCanvas({
       gl={{ antialias: true, powerPreference: "low-power" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.18;
+        // 1.18 before: the cleanest control there is for "darker", because
+        // ACES rolls the highlights off rather than clipping them, so the
+        // whole figure comes down without the lit side flattening. The fill
+        // and bounce lights came down with it (1.8 -> 1.0, 0.6 -> 0.25) and
+        // the key went UP (17.5 -> 20.5): that is what makes it more
+        // contrast rather than only less light. See the hemisphere light
+        // above for the measurements.
+        gl.toneMappingExposure = 0.82;
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
         stageProbe.renderer = gl;
