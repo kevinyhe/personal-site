@@ -179,14 +179,17 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // lopsided sphere, which reads as a hole opening and growing rather
   // than as one motion.
   //
-  // It is 15 degrees off horizontal, and the LEFT-TO-RIGHT travel is meant
+  // It is 13 degrees off horizontal, and the LEFT-TO-RIGHT travel is meant
   // to dominate the downward travel. Measured on the bake, over the
-  // shoulder band (0.55 < y < 1.2): the release correlates +0.90 with -x
-  // here against +0.86 at the 34 degrees this used to be, and -0.02 with
-  // -z. The front is still one plane — the release correlates 0.963 with
-  // the sweep axis over the body, against the 0.960 the 34-degree version
-  // reached — and a piece releases 0.038 of the break from its six nearest
-  // neighbours, against 0.056 before.
+  // shoulder band (0.55 < y < 1.2): the release correlates +0.80 with -x
+  // and +0.22 with -z, against +0.90 and -0.02 at the 15 degrees and z
+  // -0.385 this used to be, and +0.86 with -x at the 34 degrees before
+  // that. The front is still one plane — the release correlates 0.966 with
+  // the sweep axis over the body, against 0.963 — and a piece releases
+  // 0.043 of the break from its six nearest neighbours, against 0.038.
+  // The first 45 pieces off now average z 0.380 against the figure's own
+  // 0.246, and 20 of them sit forward of z 0.4 with 8 behind z 0.15; it was
+  // 12 forward and 14 behind.
   //
   // What used to stop it being flat was the plinth. The plinth is the +x
   // mass at the bottom, so a flat -x sweep reaches it at once; only the
@@ -197,21 +200,36 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // 0.70 / 0.17. One plane could not do both. `lateFrom` below takes the
   // plinth out of the plane's hands, and the plane is then free to flatten
   // until the START drifts off the shoulder: with the base held back the
-  // first twelve pieces sit at the shoulder (0.14, 0.90, 0.29) at 15
-  // degrees and at mid-torso (0.22, 0.64) by 5. 15 is this.
+  // first twelve pieces sit at the shoulder at 13 degrees and at mid-torso
+  // by 5.
   //
-  // The z leans the front forward so the front of the body goes
-  // a beat before the back. It is small on purpose: at -0.45 and beyond
-  // the depth starts eating the sideways read (Spearman over the shoulder
-  // band against -x fell from +0.87 to below +0.7), and the diagonal is
-  // what matters.
+  // The z leans the plane forward so the FRONT of the figure goes before the
+  // back. It was -0.385 and measured, over the shoulder band, +0.90 against
+  // -x and -0.02 against -z: no depth order at all. The -0.02 is not the z
+  // term doing nothing, it is the z term being cancelled. Over that band the
+  // figure's own -x and -z run against each other at -0.37 (the statue leans,
+  // so travelling toward its right also travels toward its front), and the x
+  // term alone measures -0.33 against -z. -0.385 of z bought exactly enough
+  // depth to climb from -0.33 back to zero.
+  //
+  // So the depth has to be paid for twice over, and it is bought against the
+  // sideways read: the two cannot both be strong, and the exchange rate is
+  // the band's own -0.37. The ceiling, at the +0.80 against -x that the last
+  // round asked to keep, is about +0.20 against -z; this is measured over the
+  // whole (y, z) plane at 0.025 steps with the plinth on `lateFrom`, so it is
+  // the whole frontier and not one probe. The old note that z past -0.45 cost
+  // the sideways read was measured on the 34-degree tilt with the plinth
+  // still in the plane's hands, and it no longer binds: -0.570 holds +0.80.
+  // What the tilt buys is WHERE the break starts — at 5 degrees the first 45
+  // pieces average y 0.69, mid-torso; at 13 they average 0.84, the shoulder —
+  // so the tilt stays where it was and the depth takes what is left.
   //
   // (An earlier plane sweep was tried and always started at the head.
   // That was a level axis, and it was also before the flight's constraint
   // graph was graded — ungraded, the graph overrode any sweep outright.
   // A spread from the camera's opening eye, OPENING_EYE, came before
   // that.)
-  releaseSweep: [-0.887, -0.257, -0.385],
+  releaseSweep: [-0.887, -0.244, -0.570],
   // The base and the legs are ordered after the whole body, whatever the
   // plane says: 0.4 of the figure's height is the same floor `legsFrom`
   // uses, y = -0.31. That is what lets the plane above be flat. Measured
@@ -399,7 +417,7 @@ function buildInWorker(options: BuildSolidChunkOptions) {
  * lives) and a version of the cut itself, bumped by hand when the fracture
  * code changes what it makes from the same options.
  */
-export const FRACTURE_VERSION = 5;
+export const FRACTURE_VERSION = 6;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
