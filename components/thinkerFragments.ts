@@ -514,6 +514,49 @@ export type BuildSolidChunkOptions = {
    */
   earlyBand?: { above: number; toward: number };
   /**
+   * Unevenness in WHEN pieces go, on top of the plane's order: each seed's
+   * rank is moved by `amount` (in rank units, 0..1 across the order) times
+   * a mix of a smooth field over the figure, whose values at two points a
+   * distance d apart correlate as exp(-d² / 2·grain²), and a per-seed
+   * jitter that shares nothing with its neighbours. `shared` is the field's
+   * share of the variance. Nearby pieces move together, so the front comes
+   * through in patches rather than as a clean line; the first `taper` of the
+   * order gets less of it, so the break still opens in one place. The base
+   * (`lateFrom`) gets none. Left out, the order is the plane's own.
+   *
+   * `clusters` then lets up to that many touching pieces that sit close in
+   * the order leave on one beat: see planReleaseOrder.
+   */
+  releaseTexture?: {
+    amount: number;
+    grain: number;
+    shared: number;
+    taper: number;
+    clusters: number;
+  };
+  /**
+   * Unevenness in which WAY pieces fly: each flight is tilted up or down by
+   * `tilt` radians and swung about the vertical by `yaw` radians, times a
+   * unit-variance mix of a smooth field over the figure (correlation length
+   * `grain`, figure units), a fan (pieces above the cloud's middle tilt up,
+   * pieces below it down) and a per-piece part. `shares` are the three
+   * parts' shares of the variance, in that order. Paths stay straight; only
+   * their directions differ. Left out, every piece flies the one direction
+   * plus the cloud's small expansion.
+   */
+  flightScatter?: {
+    tilt: number;
+    yaw: number;
+    grain: number;
+    shares: [number, number, number];
+  };
+  /**
+   * Spread of the pieces' spin rates: each piece's spin is scaled by
+   * low + (high - low)·h² for a per-piece h uniform in 0..1, so most pieces
+   * turn a little less and a few turn clearly more. Left out, 1 for all.
+   */
+  spinSpread?: [number, number];
+  /**
    * Grade the CELLS along `releaseSweep` instead of by distance from the
    * impact: a piece's target size follows its place in the break's order,
    * so the pieces the break opens with are the fine ones and the rest of
@@ -661,6 +704,20 @@ const RELEASE_ACCELERATION = 6;
 // the break is twice as long, so this keeps each piece's own pace and
 // then halves it again.
 const TRAVEL_WINDOW = 0.55;
+// How far through the gap to the next beat the last member of a cluster
+// goes (see planReleaseOrder): the members of a beat peel off over this
+// share of it instead of leaving on the same frame.
+const CLUSTER_STAGGER = 0.5;
+// The most a piece's texture may bring it EARLIER, in units of
+// `releaseTexture.amount` (the noise itself has unit spread): see planSeeds.
+const RELEASE_TEXTURE_LEAD = -0.3;
+// How far into the order (rank, 0..1) the texture's local lean is taken out:
+// past the ~91 pieces released while the stage is drawn, which reach about
+// 0.2 of the body's rank. See planSeeds.
+const RELEASE_TEXTURE_SEEN = 0.3;
+// How much later than the plane put it a piece in a mover's path may be
+// made by the texture (see planReleaseOrder), in rank.
+const STRIKE_SLACK = 0.01;
 // Islands smaller than this are dropped as dust. The real correctness
 // filter is the third condition at the call site (an island with no surface
 // polygon at all is a cap-only solid, which the carve should never have
@@ -734,6 +791,83 @@ function hash01(index: number, seed: number) {
 
 function signedHash(index: number, seed: number) {
   return hash01(index, seed) * 2 - 1;
+}
+
+/** A standard normal sample from two hashes (Box-Muller). */
+function gaussianHash(index: number, seed: number) {
+  const u = Math.max(hash01(index, seed), 1e-9);
+  const v = hash01(index, seed + 17);
+
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+}
+
+/**
+ * A smooth random field over figure space with mean 0 and variance about 1,
+ * whose values at two points d apart correlate as exp(-d² / 2·grain²):
+ * random Fourier features, cosines whose frequencies are drawn from a
+ * normal distribution of spread 1/grain. Deterministic per seed. Used where
+ * NEIGHBOURING pieces should agree (what the reference's break does with
+ * both its timing and its flight directions) and far ones need not.
+ */
+function makeSmoothField(seed: number, grain: number, waves = 32) {
+  const frequencies = Array.from({ length: waves }, (_, wave) =>
+    new THREE.Vector3(
+      gaussianHash(wave * 3 + 1, seed),
+      gaussianHash(wave * 3 + 2, seed),
+      gaussianHash(wave * 3 + 3, seed),
+    ).multiplyScalar(1 / Math.max(grain, 1e-6)),
+  );
+  const phases = frequencies.map((_, wave) => hash01(wave, seed + 29) * Math.PI * 2);
+  const norm = Math.sqrt(2 / waves);
+
+  return (point: THREE.Vector3) => {
+    let sum = 0;
+
+    for (let wave = 0; wave < waves; wave++) {
+      sum += Math.cos(frequencies[wave].dot(point) + phases[wave]);
+    }
+
+    return sum * norm;
+  };
+}
+
+/**
+ * Least-squares fit of values as a + b·x + c·y + d·z over points; returns
+ * the fitted function. Solved by Gaussian elimination on the 4x4 normal
+ * equations, which is all a handful of hundred points needs.
+ */
+function fitLinear(points: THREE.Vector3[], values: number[]) {
+  const matrix = Array.from({ length: 4 }, () => new Array<number>(5).fill(0));
+
+  points.forEach((point, index) => {
+    const row = [1, point.x, point.y, point.z];
+
+    for (let a = 0; a < 4; a++) {
+      matrix[a][4] += row[a] * values[index];
+      for (let b = 0; b < 4; b++) matrix[a][b] += row[a] * row[b];
+    }
+  });
+
+  for (let column = 0; column < 4; column++) {
+    let pivot = column;
+
+    for (let row = column + 1; row < 4; row++) {
+      if (Math.abs(matrix[row][column]) > Math.abs(matrix[pivot][column])) pivot = row;
+    }
+
+    [matrix[column], matrix[pivot]] = [matrix[pivot], matrix[column]];
+    if (Math.abs(matrix[column][column]) < 1e-12) return () => 0;
+
+    for (let row = 0; row < 4; row++) {
+      if (row === column) continue;
+      const factor = matrix[row][column] / matrix[column][column];
+      for (let k = column; k < 5; k++) matrix[row][k] -= factor * matrix[column][k];
+    }
+  }
+
+  const [a, b, c, d] = matrix.map((row, index) => row[4] / row[index]);
+
+  return (point: THREE.Vector3) => a + b * point.x + c * point.y + d * point.z;
 }
 
 function randomUnitVector(seed: number, salt: number) {
@@ -1727,6 +1861,11 @@ type Seed = {
   /** 0..1 along the break: how far the seed sits from the impact, so the
    * cascade travels outward from where the figure struck. */
   position: number;
+  /**
+   * The same before `releaseTexture` moved it: the plane's own rank. The
+   * order's guard reads both (see planReleaseOrder).
+   */
+  planePosition: number;
 };
 
 // Ray parity along +x against the whole mesh: is the point inside the
@@ -2242,10 +2381,124 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
     kept.push(point);
   }
 
-  const seeds: Seed[] = kept.map((point) => ({
+  // The order's texture (`releaseTexture`). Only the ORDER is moved, after
+  // the cells are graded, so the grading still follows the plane and the
+  // fine pieces stay where the break opens.
+  const texture = sweep ? options.releaseTexture : undefined;
+  const noise = kept.map(() => 0);
+
+  if (texture) {
+    const patches = makeSmoothField(options.seed + 401, texture.grain);
+    const textured = kept.map((point, index) => index).filter((index) => !isLate(kept[index]));
+
+    textured.forEach((index) => {
+      noise[index] =
+        Math.sqrt(texture.shared) * patches(kept[index]) +
+        Math.sqrt(1 - texture.shared) * gaussianHash(index, options.seed + 409);
+    });
+
+    // Take out any straight-line trend the field happens to have across the
+    // figure, keeping its spread. Over a figure only a few patches wide a
+    // smooth field often leans one way, and a lean in the noise is a tilt
+    // of the front: simulated over the bake's chunk centres, three field
+    // seeds turned the front's path on screen by 9, 10 and 17 degrees;
+    // detrended, all four seeds tried stayed within 6 of the plane's own.
+    const spreadBefore = Math.sqrt(
+      textured.reduce((sum, index) => sum + noise[index] ** 2, 0) / Math.max(textured.length, 1),
+    );
+    const trend = fitLinear(
+      textured.map((index) => kept[index]),
+      textured.map((index) => noise[index]),
+    );
+
+    textured.forEach((index) => {
+      noise[index] -= trend(kept[index]);
+    });
+
+    const spreadAfter = Math.sqrt(
+      textured.reduce((sum, index) => sum + noise[index] ** 2, 0) / Math.max(textured.length, 1),
+    );
+
+    textured.forEach((index) => {
+      // Mostly LATE: a patch can hang back by a lot but come early by
+      // little (RELEASE_TEXTURE_LEAD). Unbounded both ways, patches from
+      // the back of the shoulder jumped into the first pieces off and the
+      // break stopped opening on the front of the figure: the first 45
+      // pieces' mean depth (0.61 with no texture) fell to 0.48 on the bake
+      // with the taper at 0.1, and to 0.54-0.56 over three field seeds with
+      // it at 0.15; with this floor those seeds gave 0.59-0.61. The front
+      // edge stays ragged by pieces lagging behind it rather than by pieces
+      // running ahead of it.
+      noise[index] = Math.max(
+        (noise[index] * spreadBefore) / Math.max(spreadAfter, 1e-9),
+        RELEASE_TEXTURE_LEAD,
+      );
+    });
+  }
+
+  // How far each seed's texture moves it, with the taper that spares the
+  // opening. Then the straight-line trend of THAT is taken out again over
+  // the part of the body that is seen to break (RELEASE_TEXTURE_SEEN): the
+  // lead floor and the taper are not symmetric, so noise detrended over the
+  // whole figure still leans once they are applied. On the bake while
+  // tuning (grain 0.28), the front's path on screen (release fitted against
+  // screen x and y over the body) was 52 degrees below horizontal without
+  // this and 49 with it, against the plane's own 44; the first 45 pieces'
+  // mean depth went from 0.589 to 0.603. (Over the first quarter of the body alone the path is
+  // not measurable: its 40 pieces give a bootstrap 10-90% range of 30
+  // degrees on the plane's own order.)
+  const shift = kept.map((point, index) =>
+    texture && !isLate(point)
+      ? texture.amount * smoothstep01(rank01(point) / Math.max(texture.taper, 1e-6)) * noise[index]
+      : 0,
+  );
+
+  if (texture) {
+    const seen = kept
+      .map((point, index) => index)
+      .filter(
+        (index) =>
+          !isLate(kept[index]) &&
+          !isEarly(kept[index]) &&
+          rank01(kept[index]) <= RELEASE_TEXTURE_SEEN,
+      );
+    const lean = fitLinear(
+      seen.map((index) => kept[index]),
+      seen.map((index) => shift[index]),
+    );
+    const mean = seen.reduce((sum, index) => sum + shift[index], 0) / Math.max(seen.length, 1);
+
+    kept.forEach((point, index) => {
+      if (isLate(point) || isEarly(point)) return;
+      const rank = rank01(point);
+      // Full inside the seen part, eased out over the next 0.15 of the
+      // order, and tapered like the shift so the first pieces off stay put.
+      const reach =
+        (1 - smoothstep01((rank - RELEASE_TEXTURE_SEEN) / 0.15)) *
+        smoothstep01(rank / Math.max(texture.taper, 1e-6));
+
+      shift[index] -= (lean(point) - mean) * reach;
+    });
+  }
+
+  const positionOf = (point: THREE.Vector3, index: number) => {
+    const rank = rank01(point);
+
+    if (!texture || isLate(point)) return rank;
+
+    const moved = rank + shift[index];
+
+    // The head keeps its window's floor and the body its ceiling, so neither
+    // band's texture can carry a piece across into the base's.
+    return isEarly(point)
+      ? THREE.MathUtils.clamp(moved, EARLY_START, BODY_SHARE)
+      : THREE.MathUtils.clamp(moved, 0, BODY_SHARE);
+  };
+  const seeds: Seed[] = kept.map((point, index) => ({
     phase: point.y >= headFloor ? "head" : point.y < legsCeiling ? "lower" : "upper",
     point,
-    position: rank01(point),
+    position: positionOf(point, index),
+    planePosition: rank01(point),
   }));
 
   return { impact, seeds };
@@ -3034,7 +3287,13 @@ function makeFlatArrays(polygons: FragmentPolygon[], center: THREE.Vector3) {
 // against it, which is the opposite of a break asked to sweep the same
 // way its pieces fly. Only a blocker that sits much later in the rank
 // keeps its edge now, so the rank, not the flight, sets the direction.
-function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
+function planReleaseOrder(
+  cells: CellBuild[],
+  offsets: THREE.Vector3[],
+  options: BuildSolidChunkOptions,
+  /** The flights before `flightScatter` turned them; `offsets` is repaired in place. */
+  straight: THREE.Vector3[] | null,
+) {
   const count = cells.length;
 
   if (count <= 1) {
@@ -3045,6 +3304,7 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   // else follows in sweep order.
   const unitOf = new Map<Seed, number>();
   const unitRank: number[] = [];
+  const unitPlaneRank: number[] = [];
   const unitCells: number[][] = [];
 
   cells.forEach(({ seed }, index) => {
@@ -3056,6 +3316,7 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
       unitRank.push(
         THREE.MathUtils.clamp(seed.position, 0, 0.999),
       );
+      unitPlaneRank.push(THREE.MathUtils.clamp(seed.planePosition, 0, 0.999));
       unitCells.push([]);
     }
 
@@ -3170,29 +3431,138 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   // leaving opens a cavity whose wall is c's own cut face. Collected here
   // because the loop below already runs the touching test on every pair.
   const neighbours: number[][] = Array.from({ length: count }, () => []);
+  const touches: Array<Set<number>> = Array.from({ length: count }, () => new Set());
 
   for (let a = 0; a < count; a++) {
     for (let b = a + 1; b < count; b++) {
+      if (cellUnit[a] === cellUnit[b] || !touching(a, b)) continue;
+      neighbours[a].push(b);
+      neighbours[b].push(a);
+      touches[a].add(b);
+      touches[b].add(a);
+    }
+  }
+
+  // Does a's flight run into b: the face probe for touching pieces, the
+  // corridor probe for the rest.
+  const hits = (a: number, b: number) => (touches[a].has(b) ? pointsAt(a, b) : fliesThrough(a, b));
+  // The pairs worth asking about: b still standing when a goes, give or
+  // take what the texture can move a rank by.
+  const TEXTURE_REACH = options.releaseTexture ? options.releaseTexture.amount * 1.5 : 0;
+  const later = (a: number, b: number) =>
+    cellUnit[a] !== cellUnit[b] && unitRank[cellUnit[b]] > unitRank[cellUnit[a]] - TEXTURE_REACH;
+
+  // The scatter's repair (`flightScatter`, with the unturned flights in
+  // `straight`). A turned flight that runs into a piece still standing when
+  // it goes, where the straight flight did not, is turned back half way,
+  // three times, then straightened. Measured with a sampled-point
+  // interpenetration audit over the visible break (pairs where a flying
+  // piece has a quarter or more of its sampled points inside standing
+  // marble at some moment): 3 on the plane's own break, 10 with the scatter
+  // unrepaired, 3 repaired (scatter alone; 7 with the texture as shipped). The
+  // turns that survive are the ones with room: of the first 120 pieces off, 61
+  // turned up and 55 down before the repair, and 60 up and 13 down after it —
+  // tilted down, a piece from the shoulder flies into the body under it.
+  if (straight) {
+    for (let round = 0; round <= 3; round++) {
+      const offenders: number[] = [];
+
+      for (let a = 0; a < count; a++) {
+        if (offsets[a].distanceToSquared(straight[a]) < 1e-12) continue;
+
+        for (let b = 0; b < count; b++) {
+          if (!later(a, b) || !hits(a, b)) continue;
+          const turned = offsets[a];
+          offsets[a] = straight[a];
+          const straightHits = hits(a, b);
+          offsets[a] = turned;
+
+          if (!straightHits) {
+            offenders.push(a);
+            break;
+          }
+        }
+      }
+
+      if (offenders.length === 0) break;
+
+      offenders.forEach((a) => {
+        if (round === 3) {
+          offsets[a] = straight[a].clone();
+          return;
+        }
+        const length = offsets[a].length();
+        offsets[a] = offsets[a].clone().lerp(straight[a], 0.5).setLength(length);
+      });
+    }
+  }
+
+  const struck = new Map<number, Set<number>>();
+
+  for (let a = 0; a < count; a++) {
+    for (let b = 0; b < count; b++) {
+      if (!later(a, b) || !hits(a, b)) continue;
+      if (!struck.has(a)) struck.set(a, new Set());
+      (struck.get(a) as Set<number>).add(b);
+    }
+  }
+
+  // The texture's guard. The tolerances below were set against the plane's
+  // own order, where a piece in a mover's path that is "a little later" is
+  // a few hundredths later and the mover is inside it for a moment. The
+  // texture can hold a patch back a tenth of the order, still inside the
+  // tolerance, and the mover then sat inside a standing neighbour for a
+  // real stretch: on the audit above, pairs a quarter or more inside
+  // standing marble went from 3 to 17 with the texture while tuning, and
+  // back to 3 with this. So a piece in a mover's path may be no later
+  // than the mover plus what the plane itself put between them
+  // (plus STRIKE_SLACK): the texture's delays run DOWNSTREAM along the
+  // flight, never across a piece's path. Holding the mover back instead
+  // (an edge in `before`) cascaded through the order and turned the front's
+  // path on screen by 20 degrees.
+  if (options.releaseTexture) {
+    for (let pass = 0; pass < 12; pass++) {
+      let moved = false;
+
+      struck.forEach((targets, a) => {
+        const ua = cellUnit[a];
+
+        targets.forEach((b) => {
+          const ub = cellUnit[b];
+          const planeGap = unitPlaneRank[ub] - unitPlaneRank[ua];
+          const tolerance = touches[a].has(b)
+            ? RELEASE_ORDER_TOLERANCE_TOUCHING
+            : RELEASE_ORDER_TOLERANCE_DISTANT;
+
+          if (planeGap > tolerance) return;
+          const latest = unitRank[ua] + Math.max(planeGap, 0) + STRIKE_SLACK;
+
+          if (unitRank[ub] > latest) {
+            unitRank[ub] = latest;
+            moved = true;
+          }
+        });
+      });
+
+      if (!moved) break;
+    }
+  }
+
+  for (let a = 0; a < count; a++) {
+    for (let b = 0; b < count; b++) {
       const ua = cellUnit[a];
       const ub = cellUnit[b];
 
-      if (ua === ub) continue;
+      if (ua === ub || !struck.get(a)?.has(b)) continue;
 
       // Graded: an edge only counts when the blocker is far enough behind
       // the mover in the wanted order that the mover would sit inside it
       // for a real stretch of the break.
-      const holds = (mover: number, blocker: number, tolerance: number) =>
-        unitRank[blocker] - unitRank[mover] > tolerance;
+      const tolerance = touches[a].has(b)
+        ? RELEASE_ORDER_TOLERANCE_TOUCHING
+        : RELEASE_ORDER_TOLERANCE_DISTANT;
 
-      if (touching(a, b)) {
-        neighbours[a].push(b);
-        neighbours[b].push(a);
-        if (holds(ua, ub, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(a, b)) before[ua].add(ub);
-        if (holds(ub, ua, RELEASE_ORDER_TOLERANCE_TOUCHING) && pointsAt(b, a)) before[ub].add(ua);
-      } else {
-        if (holds(ua, ub, RELEASE_ORDER_TOLERANCE_DISTANT) && fliesThrough(a, b)) before[ua].add(ub);
-        if (holds(ub, ua, RELEASE_ORDER_TOLERANCE_DISTANT) && fliesThrough(b, a)) before[ub].add(ua);
-      }
+      if (unitRank[ub] - unitRank[ua] > tolerance) before[ua].add(ub);
     }
   }
 
@@ -3230,11 +3600,84 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
     order.push([pick]);
   }
 
+  // Small clusters (`releaseTexture.clusters`): a unit takes the beat of the
+  // one before it when the two touch and the beat is not yet full, looking a
+  // few places ahead in the order for such a neighbour, and only once
+  // everything it waits on (`before`) has gone or is going on the same beat,
+  // so the flight's guard is kept. Measured on lukebaffait.fr's break: the
+  // lateness left over after fitting a front correlates 0.53 between blocks
+  // a piece apart, 0.34 at one and a half, 0.13 at two to three and 0 past
+  // that — neighbours go together, a few at a time — and its released area
+  // per frame swings 17% about its running mean where the same area released
+  // evenly swings 5%. On the bake the spread of the gaps between releases
+  // over the visible break (their coefficient of variation) goes from 0.12
+  // to 0.26.
+  const clusterLimit = Math.max(1, Math.floor(options.releaseTexture?.clusters ?? 1));
+  const shaped = clusterLimit > 1;
+  const beats: number[][] = shaped ? [] : order;
+
+  if (shaped) {
+    const unitTouches: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
+
+    neighbours.forEach((others, cell) => {
+      others.forEach((other) => {
+        if (cellUnit[other] !== cellUnit[cell]) unitTouches[cellUnit[cell]].add(cellUnit[other]);
+      });
+    });
+
+    const LOOK_AHEAD = 4;
+    const queue = order.map((group) => group.slice());
+    const queued = new Map<number, number>();
+    queue.forEach((group, index) => {
+      if (group.length === 1) queued.set(group[0], index);
+    });
+    const gone = new Set<number>();
+    const ready = (unit: number) => Array.from(before[unit]).every((other) => gone.has(other));
+    const take = (beat: number[], unit: number) => {
+      const index = queued.get(unit) as number;
+      beat.push(unit);
+      gone.add(unit);
+      queue[index] = [];
+      queued.delete(unit);
+    };
+    let cursor = 0;
+
+    while (cursor < queue.length) {
+      const beat = queue[cursor];
+      queue[cursor] = [];
+      cursor += 1;
+      if (beat.length === 0) continue;
+      beat.forEach((unit) => {
+        gone.add(unit);
+        queued.delete(unit);
+      });
+
+      // How many this beat may hold: 1 to clusterLimit, per beat, skewed
+      // toward the small end so pairs are common and fuller beats are not.
+      const room =
+        1 + Math.floor(Math.pow(hash01(beats.length, options.seed + 419), 1.6) * clusterLimit);
+
+      for (
+        let ahead = cursor;
+        ahead < Math.min(queue.length, cursor + LOOK_AHEAD) && beat.length < room;
+        ahead++
+      ) {
+        const candidate = queue[ahead];
+        if (candidate.length !== 1) continue;
+        const unit = candidate[0];
+
+        if (beat.some((member) => unitTouches[member].has(unit)) && ready(unit)) take(beat, unit);
+      }
+
+      beats.push(beat);
+    }
+  }
+
   const releaseAt = new Array<number>(count).fill(0);
   // Gaps between releases shrink geometrically: slot k sits at the sum of
   // gaps g^0..g^(k-1), scaled so the last slot lands on RELEASE_END. That
   // is what makes the number of pieces coming off grow exponentially.
-  const slots = order.length;
+  const slots = beats.length;
   const decay = slots > 2 ? Math.pow(RELEASE_ACCELERATION, -1 / (slots - 2)) : 1;
   const total = decay === 1 ? Math.max(slots - 1, 1) : (1 - Math.pow(decay, slots - 1)) / (1 - decay);
   const momentAt = (slot: number) =>
@@ -3242,12 +3685,18 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
       ? 0
       : (RELEASE_END * (decay === 1 ? slot : (1 - Math.pow(decay, slot)) / (1 - decay))) / total;
 
-  order.forEach((group, slot) => {
+  beats.forEach((beat, slot) => {
     const moment = momentAt(slot);
+    const gap = slot + 1 < slots ? momentAt(slot + 1) - moment : 0;
 
-    group.forEach((unit) => {
+    beat.forEach((unit, member) => {
+      // Inside a beat the members go a fraction of the gap apart, in the
+      // order they joined, so a cluster peels off rather than jumping as
+      // one block; a member's blockers joined before it, so they still lead.
+      const stagger = beat.length > 1 ? (member / beat.length) * CLUSTER_STAGGER * gap : 0;
+
       unitCells[unit].forEach((cell) => {
-        releaseAt[cell] = moment;
+        releaseAt[cell] = moment + stagger;
       });
     });
   });
@@ -3263,6 +3712,244 @@ function planReleaseOrder(cells: CellBuild[], offsets: THREE.Vector3[]) {
   );
 
   return { exposedAt, releaseAt };
+}
+
+/**
+ * Turns each planned flight by `options.flightScatter`, in place: a tilt up
+ * or down about the horizontal across the flight, then a swing about the
+ * vertical. Exported so the spread can be measured against a bake's own
+ * centres without re-cutting the figure.
+ *
+ * The mix is what lukebaffait.fr's pieces measured (optical flow over its
+ * frames 180-330, 170 pieces moving over 3 px a frame pair, camera taken
+ * out): directions off the cloud's mean by 13 degrees median, 20 at p75, 38
+ * at p90 on screen, where ours were 4 / 10 / 12. And the deviations are NOT
+ * per piece: two pieces 120-250 px apart (of a 1920 px frame) deviate
+ * together, correlation 0.84 and 5 degrees apart on average; 250-450 px,
+ * 0.43; 450-900 px, 0.19. Lower pieces fall away more and upper pieces rise
+ * (deviation against screen height, 0.43). So nearly all of it is a smooth
+ * field over the figure and a little is each piece's own, which also keeps
+ * touching neighbours flying nearly parallel. The fan is left at 0 for the
+ * statue: the cloud's own expansion already gives 0.25 against height, and
+ * over the pieces that are seen, all high on the figure, a fan is one tilt
+ * up for all of them.
+ *
+ * Before any repair this lands the first 120 pieces off at 13 / 21 / 33
+ * degrees on screen (projected through the stage's camera at the break).
+ * The repairs in planReleaseOrder and straightenCrossingFlights take back
+ * the turns that fly pieces through standing marble or through each other,
+ * and leave 6 / 11 / 22: see those for what that buys.
+ */
+export function scatterFlights(
+  offsets: THREE.Vector3[],
+  centers: THREE.Vector3[],
+  ids: number[],
+  options: BuildSolidChunkOptions,
+  /**
+   * Each piece's place in the order, 0..1. The turns are centred over the
+   * first quarter of the order — the pieces seen to fly — so the scatter
+   * spreads their directions without swinging the stream's mean: over so
+   * small a patch of the figure a smooth field is close to one value, and
+   * uncentred it turned the whole seen stream by 15 to 22 degrees.
+   */
+  ranks: number[],
+) {
+  const scatter = options.flightScatter;
+
+  if (!scatter || offsets.length === 0) return;
+
+  const [fieldShare, fanShare, ownShare] = scatter.shares;
+  const total = Math.max(fieldShare + fanShare + ownShare, 1e-6);
+  const tiltField = makeSmoothField(options.seed + 501, scatter.grain);
+  const yawField = makeSmoothField(options.seed + 503, scatter.grain);
+  let low = Infinity;
+  let high = -Infinity;
+
+  centers.forEach((center) => {
+    low = Math.min(low, center.y);
+    high = Math.max(high, center.y);
+  });
+
+  const middle = (low + high) / 2;
+  const half = Math.max((high - low) / 2, 1e-6);
+  // A height uniform over -1..1 has variance 1/3; this brings the fan to
+  // unit variance like the other two parts.
+  const fanScale = Math.sqrt(3);
+  const up = new THREE.Vector3(0, 1, 0);
+  const across = new THREE.Vector3();
+
+  const turns = offsets.map((_, index) => {
+    const center = centers[index];
+    const id = ids[index];
+    const fan = ((center.y - middle) / half) * fanScale;
+
+    return {
+      tilt:
+        scatter.tilt *
+        (Math.sqrt(fieldShare / total) * tiltField(center) +
+          Math.sqrt(fanShare / total) * fan +
+          Math.sqrt(ownShare / total) * gaussianHash(id, options.seed + 509)),
+      yaw:
+        scatter.yaw *
+        (Math.sqrt((fieldShare + fanShare) / total) * yawField(center) +
+          Math.sqrt(ownShare / total) * gaussianHash(id, options.seed + 521)),
+    };
+  });
+  const seenBy = [...ranks].sort((a, b) => a - b)[Math.floor((ranks.length - 1) * 0.25)];
+  const seen = turns.filter((_, index) => ranks[index] <= seenBy);
+  const meanTilt = seen.reduce((sum, turn) => sum + turn.tilt, 0) / Math.max(seen.length, 1);
+  const meanYaw = seen.reduce((sum, turn) => sum + turn.yaw, 0) / Math.max(seen.length, 1);
+
+  offsets.forEach((offset, index) => {
+    const tilt = turns[index].tilt - meanTilt;
+    const yaw = turns[index].yaw - meanYaw;
+
+    offset.applyAxisAngle(up, yaw);
+    across.crossVectors(offset, up);
+    if (across.lengthSq() < 1e-12) return;
+    // Positive tilt turns the flight toward +y: (offset x up) x offset
+    // points up.
+    offset.applyAxisAngle(across.normalize(), tilt);
+  });
+}
+
+// The stage's travel curve (travelAt in ThinkerStage), for the crossing
+// check below: quick off the mark, slowing through the piece's window.
+function stageTravelAt(x: number) {
+  if (x <= 0) return 0;
+  if (x <= 1) return x * (2 - x);
+  return 1 + (x - 1) * 0.3;
+}
+
+// How far into the break the crossing check looks, and how often: past the
+// ~0.34 at which the stage stops drawing the statue.
+const CROSSING_CHECK_END = 0.4;
+const CROSSING_CHECK_STEP = 0.02;
+// The share of a piece's sampled surface points inside another flying piece
+// that counts as the two passing through each other.
+const CROSSING_FRACTION = 0.25;
+// Rounds of turning crossing flights back toward straight (see below).
+const CROSSING_ROUNDS = 4;
+
+/**
+ * Flying pieces that pass through each other, straightened. The scatter
+ * turns neighbouring flights by nearly the same amount, but pieces that
+ * leave at different moments from different places can still cross, and
+ * the plane's straight flights are the ones the expansion (FLIGHT_STRETCH,
+ * FLIGHT_SPREAD) was built to keep apart. Measured with a sampled-point
+ * audit over the visible break (pairs of flying pieces with a quarter or
+ * more of one's sampled points inside the other at some moment): while
+ * tuning, 4 on the plane's own break, 10 with the scatter and the texture,
+ * 7 with this; pairs that stay overlapped for 0.06 of the break or more,
+ * 10, 15 and 10. As shipped: 9, and 11.
+ * Each pair found turns its more-turned piece half way back to straight,
+ * for up to CROSSING_ROUNDS rounds, the last of which straightens it.
+ * Poses are the stage's own: travel on its curve, spin times travel, the
+ * shrink to `scale` (the roll with time in the air is left out).
+ */
+function straightenCrossingFlights(
+  chunks: ThinkerChunkData[],
+  pieces: FragmentPiece[],
+  offsets: THREE.Vector3[],
+  straight: THREE.Vector3[],
+) {
+  const insideTests = pieces.map((piece) => makeInsideTest(piece));
+  const samples = pieces.map((piece) => {
+    const points: THREE.Vector3[] = [];
+    const stride = Math.max(1, Math.floor(piece.polygons.length / 40));
+
+    for (let index = 0; index < piece.polygons.length; index += stride) {
+      const polygon = piece.polygons[index];
+      const centroid = new THREE.Vector3();
+      polygon.vertices.forEach((vertex) => centroid.add(vertex.point));
+      // Pulled a little toward the piece's centre, so two faces that were
+      // cut from one plane do not count as overlapping where they touch.
+      points.push(
+        centroid.multiplyScalar(1 / polygon.vertices.length).lerp(piece.center, 0.07),
+      );
+    }
+
+    return points;
+  });
+  const turnOf = (index: number) => offsets[index].angleTo(straight[index]);
+  const euler = new THREE.Euler();
+  const point = new THREE.Vector3();
+
+  const poseAt = (index: number, moment: number) => {
+    const chunk = chunks[index];
+    const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+    const turn = Math.min(travel, 1.5);
+
+    return {
+      position: pieces[index].center.clone().addScaledVector(offsets[index], travel),
+      rotation: new THREE.Quaternion().setFromEuler(
+        euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
+      ),
+      scale: THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)),
+    };
+  };
+
+  for (let round = 0; round < CROSSING_ROUNDS; round++) {
+    const straighten = new Set<number>();
+
+    for (
+      let moment = CROSSING_CHECK_STEP;
+      moment <= CROSSING_CHECK_END + 1e-9;
+      moment += CROSSING_CHECK_STEP
+    ) {
+      const flying = chunks
+        .map((chunk, index) => index)
+        .filter((index) => chunks[index].releaseAt < moment);
+      const poses = new Map(flying.map((index) => [index, poseAt(index, moment)]));
+
+      for (let i = 0; i < flying.length; i++) {
+        for (let j = i + 1; j < flying.length; j++) {
+          const a = flying[i];
+          const b = flying[j];
+          if (turnOf(a) < 1e-6 && turnOf(b) < 1e-6) continue;
+          const poseA = poses.get(a)!;
+          const poseB = poses.get(b)!;
+          const reach = chunks[a].radius * poseA.scale + chunks[b].radius * poseB.scale;
+          if (poseA.position.distanceTo(poseB.position) > reach) continue;
+
+          // a's points, posed, carried into b's resting frame.
+          const inverseB = poseB.rotation.clone().invert();
+          let inside = 0;
+
+          for (const sample of samples[a]) {
+            point
+              .copy(sample)
+              .sub(pieces[a].center)
+              .multiplyScalar(poseA.scale)
+              .applyQuaternion(poseA.rotation)
+              .add(poseA.position)
+              .sub(poseB.position)
+              .applyQuaternion(inverseB)
+              .multiplyScalar(1 / poseB.scale)
+              .add(pieces[b].center);
+            if (pieces[b].box.containsPoint(point) && insideTests[b](point)) inside += 1;
+          }
+
+          if (inside >= samples[a].length * CROSSING_FRACTION) {
+            straighten.add(turnOf(a) >= turnOf(b) ? a : b);
+          }
+        }
+      }
+    }
+
+    if (straighten.size === 0) break;
+
+    straighten.forEach((index) => {
+      // Half way back each round, straight on the last: most crossings
+      // clear with part of the turn kept.
+      const length = offsets[index].length();
+      offsets[index] =
+        round === CROSSING_ROUNDS - 1
+          ? straight[index].clone()
+          : offsets[index].clone().lerp(straight[index], 0.5).setLength(length);
+      chunks[index].offset = [offsets[index].x, offsets[index].y, offsets[index].z];
+    });
+  }
 }
 
 /**
@@ -3312,13 +3999,33 @@ export function buildSolidThinkerChunks(
       .addScaledVector(sideways, FLIGHT_SPREAD)
       .add(jitter);
   });
-  const { exposedAt, releaseAt } = planReleaseOrder(cells, offsets);
+
+  const straight = options.flightScatter ? offsets.map((offset) => offset.clone()) : null;
+
+  if (options.flightScatter) {
+    scatterFlights(
+      offsets,
+      pieces.map((piece) => piece.center),
+      pieces.map((piece) => piece.id),
+      options,
+      cells.map((cell) => cell.seed.position),
+    );
+  }
+  const { exposedAt, releaseAt } = planReleaseOrder(cells, offsets, options, straight);
 
   const chunks = pieces.map((piece, index): ThinkerChunkData => {
     const offset = offsets[index];
     const extent = piece.box.getSize(new THREE.Vector3());
     const radius = extent.length() * 0.5;
     const spinLimit = THREE.MathUtils.clamp(0.11 / Math.max(radius, 0.05), 0.05, 0.3);
+    // `spinSpread`: most pieces a little slower, a few clearly faster.
+    const spinScale = options.spinSpread
+      ? THREE.MathUtils.lerp(
+          options.spinSpread[0],
+          options.spinSpread[1],
+          hash01(piece.id, options.seed + 83) ** 2,
+        )
+      : 1;
     const surface = makeFlatArrays(
       piece.polygons.filter((polygon) => polygon.kind === "surface"),
       piece.center,
@@ -3347,15 +4054,21 @@ export function buildSolidThinkerChunks(
       // a second ask for more space between the pieces.
       scale: 0.84,
       spin: [
-        signedHash(piece.id, options.seed + 71) * spinLimit,
-        signedHash(piece.id, options.seed + 73) * spinLimit,
-        signedHash(piece.id, options.seed + 79) * spinLimit * 0.7,
+        signedHash(piece.id, options.seed + 71) * spinLimit * spinScale,
+        signedHash(piece.id, options.seed + 73) * spinLimit * spinScale,
+        signedHash(piece.id, options.seed + 79) * spinLimit * 0.7 * spinScale,
       ],
       surfaceNormals: surface.normals,
       surfacePositions: surface.positions,
       travel: Math.min(TRAVEL_WINDOW, 1 - releaseAt[index]),
     };
   });
+
+  if (straight) {
+    straightenCrossingFlights(chunks, pieces, offsets, straight);
+    driftCenter.set(0, 0, 0);
+    offsets.forEach((offset) => driftCenter.add(offset));
+  }
 
   driftCenter.multiplyScalar(1 / Math.max(chunks.length, 1));
 
