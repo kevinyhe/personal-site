@@ -209,7 +209,19 @@ const PANEL_OPEN_AT = 0.22;
 const SCRIM_SHUT_AT = 0.99;
 // How far into the panel's growth the statue waits before it starts coming
 // apart, in viewport heights of scroll.
-const CHUNK_DELAY_VIEWPORTS = 0.3;
+//
+// 0.1, from 0.3. This is the constant that gates the FIRST release: it
+// becomes ThinkerStage's `breakStart`, and the stage's own break measure is
+// (value - breakStart) / (BREAK_END - breakStart), so nothing moves until
+// the scroll passes it. The break's stretch runs about 5.44 viewports at
+// 1280x800, so 0.3 put breakStart at 0.055 and 0.1 puts it at 0.018.
+//
+// It is worth so little on its own — the statue stops being drawn at a
+// panel value of about 0.35, where this moves the break measure from 0.326
+// to 0.352 — because the pacing, not the start, is what kept most of the
+// fracture off screen. RELEASE_ACCELERATION in thinkerFragments is the
+// other half of the same fix; see the counts there.
+const CHUNK_DELAY_VIEWPORTS = 0.1;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
