@@ -624,6 +624,11 @@ const DRIFT_ON = 0.3;
 // they never hang still in the air when the scroll rests. Halved with the
 // flight (TRAVEL_WINDOW): the pieces go at half the pace they did.
 const DRIFT_PER_SECOND = 0.008;
+// A released piece keeps rolling with time in the air: this much `turn` per
+// second on top of the turn its travel buys, up to ROLL_LIMIT. See the
+// tumble note in the chunk loop for the measurement that set them.
+const ROLL_PER_SECOND = 0.3;
+const ROLL_LIMIT = 2;
 
 function travelAt(x: number) {
   if (x <= 0) return 0;
@@ -1347,11 +1352,26 @@ function StageLights({
         penumbra={0.06}
         position={[-3.4, 3.2, 2.8]}
         shadow-bias={-0.0005}
-        // 1024, from 2048: the only thing that receives the shadow is the
-        // floor (the chunks cast and do not receive), a soft blob under
-        // the figure that fades as the pieces spread. A quarter of the
-        // texels per shadow pass, every frame the stage is live; no
-        // visible change on the 1280x800 capture.
+        // Held back from full, because the figure receives now and this is
+        // the dominant light (intensity 20.5 against a 0.13 hemisphere and a
+        // 1.0 fill). At full strength the cloud overhead put the whole chest
+        // into near-black — measured against the same build with the figure
+        // not receiving, at 1280x800, hero fraction 0.85: 66,600 pixels
+        // darkened by a mean of 97 levels of 255 — which reads as the body
+        // being unlit rather than as pieces passing over it. At 0.55 the
+        // same frame is 63,666 pixels at a mean of 31, so the shadow covers
+        // the same ground at a third of the depth and the marble under it
+        // keeps its own modelling. 0.7 is between the two.
+        shadow-intensity={0.7}
+        // 1024, from 2048. It was a quarter of the texels for no visible
+        // change on the 1280x800 capture back when the only receiver was
+        // the floor — a soft blob under the figure, and the floor is not
+        // even in frame at the break's camera. The chunks receive now (see
+        // ChunkedFigure), so this map is what a piece's shadow on the body
+        // is drawn from. Left at 1024: on the 1280x800 capture the edges
+        // are soft but the shape of a passing piece is legible, and the
+        // shadow is deliberately not hard-edged. The bias below is what
+        // keeps the figure off its own shadow.
         shadow-mapSize-height={1024}
         shadow-mapSize-width={1024}
       />
@@ -1582,7 +1602,28 @@ function ChunkedFigure({
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
-      const turn = Math.min(travel, 1.5);
+      // The tumble. `turn` used to be `Math.min(travel, 1.5)` alone, and the
+      // cap was not what held it back: with travelWindow at 0.55 and `shown`
+      // never past about 0.34 while the stage is drawn, travel reaches 0.84
+      // at the very most on screen and 1.25 at the end of the whole run, so
+      // 1.5 never binds. What held it back is that travelAt decelerates
+      // (x(2-x), slope 0 at x=1): a piece turns while it is leaving and then
+      // sets into a pose. Measured on the bake, the spin magnitudes are
+      // 0.263 rad median (p25 0.202, p75 0.318, max 0.424), so at travel
+      // 0.84 the median piece turns 12.7 degrees over its whole visible
+      // flight — a tilt, not a roll.
+      //
+      // So the fix is time in the air, not the cap and not the baked spin.
+      // `adriftRef` is already seconds since release, and already resets
+      // when a piece is scrolled home, so the roll retraces the same way the
+      // flight does. 0.3 per second on top of travel is 4.5 degrees a second
+      // for the median piece: a slow roll a piece is seen to be in the
+      // middle of, not debris. The limit stops a parked scroll winding it
+      // round — 2.0 is about seven seconds of roll and 30 more degrees,
+      // after which a piece holds its pose.
+      const turn =
+        Math.min(travel, 1.5) +
+        Math.min(adriftRef.current[index] * ROLL_PER_SECOND, ROLL_LIMIT);
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
       group.position.copy(chunk.center).addScaledVector(chunk.offset, travel);
@@ -1649,19 +1690,43 @@ function ChunkedFigure({
           position={chunk.center}
         >
           {/* The third draw call is this mesh's shadow, and it is not
-              culled: the only thing that receives a shadow is the floor
-              plane, whose ShadowMaterial fades as 0.82 * (1 - travelAt) and
-              would be gone at full spread — but the stage stops being drawn
-              at a spread of about 0.33 (panel progress 0.35 of BREAK_END's
-              0.96, just past hero fraction 1.0 at 1280x800), where that
-              shadow is still at 0.55 opacity and every piece is still part
-              of the figure's silhouette. No frame where dropping it is
-              free. */}
+              culled: the stage stops being drawn at a spread of about 0.33
+              (panel progress 0.35 of BREAK_END's 0.96, just past hero
+              fraction 1.0 at 1280x800), where every piece is still part of
+              the figure's silhouette. No frame where dropping it is free.
+
+              `receiveShadow` is new, and it is the whole reason any shadow
+              is visible. It used to be that the ONLY receiver was the floor
+              plane below, whose ShadowMaterial fades as 0.82 * (1 -
+              travelAt) — and the floor is not in the frame at the camera
+              the break plays on, so the shadow pass ran ~490 draws a frame
+              and nothing on screen changed. What reads is the loose pieces
+              casting onto the FIGURE: a piece crossing in front of the body
+              darkens it as it passes, which is what puts the flight in
+              front of the statue rather than beside it. The key light sits
+              front-left-above ([-3.4, 3.2, 2.8]) and the pieces fly out
+              screen-left and toward the lens, so they cross the light's
+              path on their way out.
+
+              It is nearly free, which is the point. Measured on the RTX
+              5060 at 1280x800, two runs of the same build with and without
+              this one prop, at hero fraction 0.85: p50 7.6 / 7.1 ms
+              receiving against 7.4 / 7.0 not, p95 10.1 / 9.0 against
+              9.8 / 8.9. Call it 0.1-0.3 ms. The draw calls are identical to
+              the decimal (935.4 a frame either way) because the shadow PASS
+              was ALREADY being paid for the floor nobody could see; all
+              this adds is a map lookup in the marble's fragment shader over
+              the third of the frame the figure covers.
+
+              The cut faces do not receive. They are the inside of the
+              stone, lit by their own darker material, and a shadow on them
+              is not a thing anyone reads. */}
           <mesh
             castShadow
             frustumCulled={false}
             geometry={chunk.surfaceGeometry}
             material={marble.surface}
+            receiveShadow
           />
           <mesh
             frustumCulled={false}
