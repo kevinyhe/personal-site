@@ -176,9 +176,33 @@ const LOOK_AT_END = new THREE.Vector3(0, LOOK_AT_Y_BROKEN, 0);
 // about the vertical, negative = around to the left), aim staying put.
 // The swing rides the RAW breakup while the zoom rides its smoothstep, so
 // the orbit keeps drifting after the pull-out has settled. Four fifths of
-// the -1.0 / -0.7 they were, with the rest of the camera's move.
-const ORBIT_LEFT = -0.8;
-const ORBIT_LEFT_COMPACT = -0.56;
+// the -1.0 / -0.7 they were, with the rest of the camera's move; then 15%
+// back up (-0.8 / -0.56 before) when asked for slightly more camera
+// movement, see CAMERA_ROLL.
+const ORBIT_LEFT = -0.92;
+const ORBIT_LEFT_COMPACT = -0.64;
+// A slow roll of the lens over the break, peaking at CAMERA_ROLL radians at
+// ROLL_PEAK_AT of the breakup and easing back out by twice that.
+//
+// After lukebaffait.fr, measured off its 341 frames. Its camera never shakes
+// (frame-to-frame jitter about a 9-frame mean of 0.06 px at 1920 wide) and
+// never holds still either. Its first shot, close on the arm (frames 1-102),
+// pulls back about 26% and turns the picture about 5 degrees (tracking is
+// poor on bare marble, so those two are rough); its long shot (frames
+// 104-341) pushes in 6.6%, drifts 13% of the frame's width and rolls up to
+// 1.4 degrees by frame 248, easing in (0.1 degrees a third of the way there,
+// 0.6 halfway), then eases back. Ours over the visible break, measured the
+// same way (a similarity fit to the tracked frame, v 0 to 0.35): a 30%
+// pull-out, the centre drifting 14% of the width and the figure turning 6.9
+// degrees in frame, all of it from the orbit; the lens itself never rolled.
+// With this and ORBIT_LEFT 15% wider, over two captures: a 27-29% pull-out,
+// 15-16% drift, 10.5-12 degrees of turn. The same shot, moving a little more. The peak sits where
+// the statue stops being drawn (breakup ~0.34), so the visible break is the
+// reference's ease-in; sin² gives that shape and returns to level by 0.7.
+// This way round (content turning counter-clockwise) adds to the turn the
+// orbit already gives the figure rather than undoing it.
+const CAMERA_ROLL = -1.5 * (Math.PI / 180);
+const ROLL_PEAK_AT = 0.35;
 
 // ---------------------------------------------------------------------------
 // The cut.
@@ -949,9 +973,19 @@ function CameraRig({
   const cutRef = useRef(false);
   const figureRef = useRef<Figure>("statue");
 
+  // `?thinkerCamAt=<breakup>` holds the camera where it would be at that
+  // point of the break while the pieces carry on with the scroll: a still
+  // lens for headless captures that measure the release order off the
+  // pixels, which a moving camera smears into every frame.
+  const holdAt = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("thinkerCamAt");
+    return raw === null || !Number.isFinite(Number(raw)) ? null : Number(raw);
+  }, []);
+
   useFrame(({ clock }) => {
     // Linear in the scroll: a slow, even zoom-out and pan.
-    const breakup = reducedMotion ? 0 : breakupAt(progressRef.current);
+    const breakup = reducedMotion ? 0 : (holdAt ?? breakupAt(progressRef.current));
     const compact = size.width < 720;
     // The pull-out is LINEAR on the scroll, like the swing: it used to
     // ride a smoothstep of the breakup (a held beat on the hand, then an
@@ -1046,7 +1080,7 @@ function CameraRig({
       // Handheld drift, scaled by how far out the camera is: the same
       // angular wander reads as much bigger movement on the tight hand
       // shot than on the wide one.
-      if (!reducedMotion) {
+      if (!reducedMotion && holdAt === null) {
         const sway = shotDistance * 0.016;
         target.x += Math.sin(clock.elapsedTime * 0.18) * sway;
         target.y += Math.sin(clock.elapsedTime * 0.13 + 1.1) * sway * 0.6;
@@ -1083,6 +1117,10 @@ function CameraRig({
         }
       }
       camera.lookAt(lookAt);
+      if (!reducedMotion && holdAt === null) {
+        const rollPhase = THREE.MathUtils.clamp(breakup / (2 * ROLL_PEAK_AT), 0, 1);
+        camera.rotateZ(CAMERA_ROLL * Math.sin(Math.PI * rollPhase) ** 2);
+      }
       // Same probe the chase used to fill in, so a headless capture can read
       // the statue's framing too — `azimuth` in degrees, on the convention
       // the cut is written in (0 = +z, and the figure's front is +z).
