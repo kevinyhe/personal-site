@@ -717,11 +717,31 @@ const RELEASE_ACCELERATION = 10;
 // Where the rate reaches RELEASE_ACCELERATION, as breakup: where the stage
 // stops being drawn at 1280x800 (panel value 0.49).
 const RELEASE_RAMP_END = 0.51;
-// How much of the breakup a piece's flight takes once released. Doubled
-// from 0.275 with the run: a piece's flight is a share of the break, and
-// the break is twice as long, so this keeps each piece's own pace and
-// then halves it again.
-const TRAVEL_WINDOW = 0.55;
+// How much of the breakup a piece's flight takes once released: the stage's
+// travel curve is quick off the mark and slows to a crawl at the end of it.
+//
+// 0.35, from 0.55, because the pieces read as one packed layer. Measured
+// with a software ID render of the bake through the stage's own camera
+// (1280x800, panel value 0.317, the last frame before the black starts to
+// rise), 0.55 -> this with the pass below: the share of flying-piece pixels
+// that two or more flying pieces cover 0.473 -> 0.388, the median distance
+// from a flying piece's centre to the nearest other one 0.39 -> 0.53 piece
+// sizes, the share of a flying piece's visible outline that borders black
+// 0.15 -> 0.25, and black inside the flying cloud's hull (where it is not
+// over the standing figure) 0.34 -> 0.54. A piece in frame there has moved
+// 2.3 of its own diameters since it left (median), from 1.7.
+//
+// Speed is what separates them, not direction. Turning the flights from 3 /
+// 6 / 9 degrees off the stream's mean on screen (median / p75 / p90) to 10 /
+// 19 / 32 with the smooth field in `flightScatter` moved the overlap share
+// at that frame by nothing (0.557 -> 0.555): a smooth field turns
+// neighbours together, so pieces that start touching stay stacked on the
+// screen. What pulls them apart is how far a piece gets before the next one
+// along leaves, which is this.
+//
+// What it costs: the pieces reach the top-left of the frame sooner, so 48
+// flying pieces are in frame at 0.317 where there were 63.
+const TRAVEL_WINDOW = 0.35;
 // How far through the gap to the next beat the last member of a cluster
 // goes (see planReleaseOrder): the members of a beat peel off over this
 // share of it instead of leaving on the same frame.
@@ -3399,7 +3419,11 @@ function planReleaseOrder(
   const count = cells.length;
 
   if (count <= 1) {
-    return { exposedAt: cells.map(() => 0), releaseAt: cells.map(() => 0) };
+    return {
+      exposedAt: cells.map(() => 0),
+      neighbours: cells.map((): number[] => []),
+      releaseAt: cells.map(() => 0),
+    };
   }
 
   // Units: one per seed. The arm goes first in path order; everything
@@ -3452,6 +3476,17 @@ function planReleaseOrder(
   // face it shares with B ends up inside B's solid. The shared face is
   // A's cap on the bisector of their seeds; its vertices are where A would
   // first enter B.
+  //
+  // Since the relief (roughenCells) bent the cut faces, the only vertices
+  // still within 1e-6 of the bisector are the ones the relief does not move:
+  // the rim of the face, where it meets the skin. So this probes the rim.
+  // Measured on the bake, it fires on 2,065 of 7,296 touching pairs; taking
+  // in every vertex of a cap polygon lying within the relief's reach of the
+  // plane (mean offset under 0.02, none past 0.035) fires on 4,312 of 8,197.
+  // That wider probe was tried and not kept: the extra edges reshuffle the
+  // order, and pairs a quarter or more inside standing marble over the drawn
+  // break went 11 -> 13 on the old flight and 12 -> 14 on this one.
+  // `clearStandingBlockers` deals with what gets through instead.
   const insideTests = cells.map(({ piece }) => makeInsideTest(piece));
   const probe = new THREE.Vector3();
   const pointsAt = (a: number, b: number) => {
@@ -3827,7 +3862,7 @@ function planReleaseOrder(
     neighbours[cell].reduce((first, other) => Math.min(first, releaseAt[other]), moment),
   );
 
-  return { exposedAt, releaseAt };
+  return { exposedAt, neighbours, releaseAt };
 }
 
 /**
@@ -3854,7 +3889,19 @@ function planReleaseOrder(
  * degrees on screen (projected through the stage's camera at the break).
  * The repairs in planReleaseOrder and straightenCrossingFlights take back
  * the turns that fly pieces through standing marble or through each other,
- * and leave 6 / 11 / 22: see those for what that buys.
+ * and leave 5 / 8 / 18: see those for what that buys.
+ *
+ * Do not spend pass-through budget buying the spread back. Measured through
+ * the stage's camera with a software ID render, the unrepaired scatter (10 /
+ * 19 / 32 degrees against the straight flights' 3 / 6 / 9) moves the share of
+ * the flying cloud's pixels that two or more pieces cover by nothing at all:
+ * 0.555 against 0.557, at panel value 0.317. A smooth field turns
+ * neighbouring pieces together by design, so it does not open them up; what
+ * does is how far a piece gets before the next one leaves (TRAVEL_WINDOW).
+ * Damping the repairs smoothly over the field's own grain instead of piece by
+ * piece was tried, to keep what the repairs take back coherent: it held the
+ * neighbour correlation (0.36 -> 0.62 over pieces a piece apart) but damped
+ * nearly every turn, leaving 3 / 6 / 9 — the straight flights.
  */
 export function scatterFlights(
   offsets: THREE.Vector3[],
@@ -3929,6 +3976,23 @@ export function scatterFlights(
   });
 }
 
+// About 40 points on a piece, one per polygon stride, for the flight checks.
+function samplePiece(piece: FragmentPiece) {
+  const points: THREE.Vector3[] = [];
+  const stride = Math.max(1, Math.floor(piece.polygons.length / 40));
+
+  for (let index = 0; index < piece.polygons.length; index += stride) {
+    const polygon = piece.polygons[index];
+    const centroid = new THREE.Vector3();
+    polygon.vertices.forEach((vertex) => centroid.add(vertex.point));
+    // Pulled a little toward the piece's centre, so two faces that were
+    // cut from one plane do not count as overlapping where they touch.
+    points.push(centroid.multiplyScalar(1 / polygon.vertices.length).lerp(piece.center, 0.07));
+  }
+
+  return points;
+}
+
 // The stage's travel curve (travelAt in ThinkerStage), for the crossing
 // check below: quick off the mark, slowing through the piece's window.
 function stageTravelAt(x: number) {
@@ -3937,9 +4001,12 @@ function stageTravelAt(x: number) {
   return 1 + (x - 1) * 0.3;
 }
 
-// How far into the break the crossing check looks, and how often: past the
-// ~0.34 at which the stage stops drawing the statue.
-const CROSSING_CHECK_END = 0.4;
+// How far into the break the crossing checks look, and how often: just past
+// the 0.51 at which the stage stops drawing the statue (panel value 0.49 at
+// 1280x800). It was 0.4, set when the stage stopped at ~0.34; the audit over
+// the whole drawn stretch counts pairs of flying pieces overlapping for 0.06
+// of the break or more, and looking this far takes that 11 -> 10.
+const CROSSING_CHECK_END = 0.52;
 const CROSSING_CHECK_STEP = 0.02;
 // The share of a piece's sampled surface points inside another flying piece
 // that counts as the two passing through each other.
@@ -3970,23 +4037,7 @@ function straightenCrossingFlights(
   straight: THREE.Vector3[],
 ) {
   const insideTests = pieces.map((piece) => makeInsideTest(piece));
-  const samples = pieces.map((piece) => {
-    const points: THREE.Vector3[] = [];
-    const stride = Math.max(1, Math.floor(piece.polygons.length / 40));
-
-    for (let index = 0; index < piece.polygons.length; index += stride) {
-      const polygon = piece.polygons[index];
-      const centroid = new THREE.Vector3();
-      polygon.vertices.forEach((vertex) => centroid.add(vertex.point));
-      // Pulled a little toward the piece's centre, so two faces that were
-      // cut from one plane do not count as overlapping where they touch.
-      points.push(
-        centroid.multiplyScalar(1 / polygon.vertices.length).lerp(piece.center, 0.07),
-      );
-    }
-
-    return points;
-  });
+  const samples = pieces.map(samplePiece);
   const turnOf = (index: number) => offsets[index].angleTo(straight[index]);
   const euler = new THREE.Euler();
   const point = new THREE.Vector3();
@@ -4068,6 +4119,99 @@ function straightenCrossingFlights(
   }
 }
 
+// `clearStandingBlockers`: the most a standing piece's release may be brought
+// forward, in breakup, and the earliest it may be brought forward to.
+const CLEAR_MAX_SHIFT = 0.03;
+const CLEAR_FROM = 0.22;
+
+/**
+ * Flying pieces that pass through marble still standing, cleared by letting
+ * the standing piece go a moment sooner: on the last check step before the
+ * mover reaches it, if that is no more than CLEAR_MAX_SHIFT earlier and not
+ * before CLEAR_FROM. Rounds until nothing moves. Poses and the test are
+ * `straightenCrossingFlights`' own; the standing piece is at rest.
+ *
+ * Measured with the sampled-point audit over the drawn break (pairs where a
+ * flying piece has a quarter or more of its points inside standing marble at
+ * some moment): 11 as shipped before, 12 with the faster flight
+ * (TRAVEL_WINDOW), 7 with this. Unlimited, the same pass took it to 8 but
+ * pulled pieces from the back of the figure into the opening (42 of the
+ * first 45 off forward of z 0.4 fell to 40) and flattened the build (the
+ * drawn stretch's share released by 75% of it went 58.1 -> 63.0%); at this
+ * limit those are 42 and 58.6.
+ */
+function clearStandingBlockers(
+  chunks: ThinkerChunkData[],
+  pieces: FragmentPiece[],
+  neighbours: number[][],
+) {
+  const insideTests = pieces.map((piece) => makeInsideTest(piece));
+  const samples = pieces.map(samplePiece);
+  const euler = new THREE.Euler();
+  const rotation = new THREE.Quaternion();
+  const position = new THREE.Vector3();
+  const point = new THREE.Vector3();
+
+  for (let round = 0; round < 6; round++) {
+    const earliest = new Map<number, number>();
+
+    for (
+      let moment = CROSSING_CHECK_STEP;
+      moment <= CROSSING_CHECK_END + 1e-9;
+      moment += CROSSING_CHECK_STEP
+    ) {
+      chunks.forEach((chunk, mover) => {
+        if (chunk.releaseAt >= moment) return;
+        const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+        const turn = Math.min(travel, 1.5);
+        const scale = THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1));
+
+        position.set(...chunk.offset).multiplyScalar(travel).add(pieces[mover].center);
+        rotation.setFromEuler(euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn));
+
+        chunks.forEach((other, standing) => {
+          if (standing === mover || other.releaseAt < moment) return;
+          if (position.distanceTo(pieces[standing].center) > chunk.radius * scale + other.radius) return;
+          const sooner = Math.max(chunk.releaseAt, moment - CROSSING_CHECK_STEP);
+          if (other.releaseAt - sooner > CLEAR_MAX_SHIFT || sooner < CLEAR_FROM) return;
+
+          let inside = 0;
+
+          for (const sample of samples[mover]) {
+            point
+              .copy(sample)
+              .sub(pieces[mover].center)
+              .multiplyScalar(scale)
+              .applyQuaternion(rotation)
+              .add(position);
+            if (pieces[standing].box.containsPoint(point) && insideTests[standing](point)) inside += 1;
+          }
+
+          if (inside >= samples[mover].length * CROSSING_FRACTION) {
+            earliest.set(standing, Math.min(earliest.get(standing) ?? Infinity, sooner));
+          }
+        });
+      });
+    }
+
+    if (earliest.size === 0) break;
+
+    earliest.forEach((moment, index) => {
+      chunks[index].releaseAt = Math.min(chunks[index].releaseAt, moment);
+      chunks[index].travel = Math.min(TRAVEL_WINDOW, 1 - chunks[index].releaseAt);
+    });
+  }
+
+  // A piece's cut faces show from its first neighbour's release (see
+  // planReleaseOrder), and some of those just moved.
+  chunks.forEach((chunk, index) => {
+    chunk.exposedAt = neighbours[index].reduce(
+      (first, other) => Math.min(first, chunks[other].releaseAt),
+      chunk.releaseAt,
+    );
+  });
+}
+
 /**
  * Cuts the figure into solid chunks and plans each one's flight.
  *
@@ -4127,7 +4271,7 @@ export function buildSolidThinkerChunks(
       cells.map((cell) => cell.seed.position),
     );
   }
-  const { exposedAt, releaseAt } = planReleaseOrder(cells, offsets, options, straight);
+  const { exposedAt, neighbours, releaseAt } = planReleaseOrder(cells, offsets, options, straight);
 
   const chunks = pieces.map((piece, index): ThinkerChunkData => {
     const offset = offsets[index];
@@ -4182,6 +4326,7 @@ export function buildSolidThinkerChunks(
 
   if (straight) {
     straightenCrossingFlights(chunks, pieces, offsets, straight);
+    clearStandingBlockers(chunks, pieces, neighbours);
     driftCenter.set(0, 0, 0);
     offsets.forEach((offset) => driftCenter.add(offset));
   }

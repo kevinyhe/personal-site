@@ -411,8 +411,10 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // cloud's mean, median / p75 / p90, where ours were 4 / 10 / 12), and the
   // repairs in planReleaseOrder and straightenCrossingFlights for why only
   // part of it survives: before them the first 120 pieces off measured
-  // 13 / 21 / 33 degrees on screen, after them 6 / 11 / 22 against the old
-  // 3.5 / 5 / 7 (computed from the bake through the stage's camera). The
+  // 13 / 21 / 33 degrees on screen, after them 5 / 8 / 18 against the old
+  // 3.5 / 5 / 7 (computed from the bake through the stage's camera). Left
+  // where it is: a wider field buys no separation on screen and costs
+  // pass-through — see scatterFlights for the measurement. The
   // turns taken back are the ones that flew pieces from the shoulder down
   // through the body or through each other, so what survives leans up: the
   // seen stream's mean direction lifts by 5 degrees. Still straight paths.
@@ -424,7 +426,14 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // the baked spin itself tight (p75 over p25 1.57). This takes the baked
   // spin to p10 0.119, median 0.216, p90 0.394 radians, from 0.149 / 0.267
   // / 0.356: a lower middle and a longer top, the reference's shape.
-  spinSpread: [0.6, 1.5],
+  //
+  // [0.4, 2.0], from [0.6, 1.5], when Kevin asked for more variation in the
+  // pieces: the middle holds and the tail lengthens, so the tumble stays
+  // subtle for most pieces and a few turn clearly. Baked spin over the pieces
+  // released while the stage is drawn, p10 / median / p90: 0.119 / 0.216 /
+  // 0.394 -> 0.094 / 0.200 / 0.506 radians. The reference's own spread is
+  // wide at the top (p90 six times its median, per frame pair).
+  spinSpread: [0.4, 2.0],
   // The cells are graded along the order rather than around a point: see
   // the spacing notes below.
   gradeAlongSweep: true,
@@ -613,7 +622,10 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // 11: RELEASE_ACCELERATION 6 -> 1.5 (same order, even gaps).
 // 12: the release rate ramps 1 -> 10 over breakup 0 to 0.51, then holds;
 // releaseTexture.amount 0.1 -> 0.05 (same pieces, new order and times).
-export const FRACTURE_VERSION = 12;
+// 13: TRAVEL_WINDOW 0.55 -> 0.35, crossing checks run to 0.52, standing
+// blockers are released a moment sooner (clearStandingBlockers), spinSpread
+// [0.6, 1.5] -> [0.4, 2.0] (same pieces; new flights, spins and times).
+export const FRACTURE_VERSION = 13;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };

@@ -309,7 +309,16 @@ function makeInteriorMaterial() {
   return new THREE.MeshStandardMaterial({
     color: "#d8d8d0",
     emissive: "#ffffff",
-    emissiveIntensity: 0.012,
+    // 0.05, from 0.012. A cut face turned away from the key had nothing
+    // lighting it — the hemisphere's ground is the stage's own black — so it
+    // sat at the background's luminance and the piece lost its edge against
+    // the black and against the next piece. That is most of why the cloud
+    // read as one mass. Measured on the RTX 5060 at 1280x800, panel value
+    // 0.317: the share of flying-piece pixels under luminance 30 goes 19% ->
+    // 10% and their p10 25 -> 50, against the reference's own 4% and 96.
+    // A flat lift on the faces themselves, so the lit stone and the standing
+    // figure are untouched: the body's own numbers move by a level or two.
+    emissiveIntensity: 0.05,
     metalness: 0,
     // A seated piece's cut faces are drawn as soon as a NEIGHBOUR leaves
     // (see exposedAt in ThinkerStage), and along every seam it still shares
