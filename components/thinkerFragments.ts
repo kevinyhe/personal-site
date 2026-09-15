@@ -693,9 +693,9 @@ const RELEASE_END = 0.86;
 //              1.5 -> 43 / 82 / 141 / 234 (estimated from the slots; see
 //                     the bake's own counts in the commit)
 //                1 -> 51 / 95 / 160 / 254
-// Not 1: the last half of a schedule is the plinth and the legs, which the
-// close camera never frames, and 1.5 keeps the upper figure, which it does,
-// a little quicker at its end than at its start.
+// Not 1: the last half of a schedule is the plinth and the legs, which go
+// under the narration's black, and 1.5 keeps the upper figure a little
+// quicker at its end than at its start.
 //
 // It does NOT change when the break finishes: RELEASE_END still holds the
 // last slot.
