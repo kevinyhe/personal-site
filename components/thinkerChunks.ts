@@ -34,19 +34,34 @@ export const CAMERA_OFFSET = new THREE.Vector3(0.85, 0.3, 1).normalize();
  * the whole move reads right-to-left). The eye was raised twice, by a
  * fifth and then a quarter of the offset's length (y 0.18 -> 0.46 ->
  * 0.82 per unit, before normalising) to get the face into the frame,
- * then brought back down to 0.55 with the aim left where it was (a lift
- * over the hand, since removed): the shot looked too steeply down on the head, and
+ * then brought back down to 0.55 with the aim left where it was
+ * (IMPACT_AIM_LIFT): the shot looked too steeply down on the head, and
  * lowering the eye against a fixed aim levels it without losing the face.
  */
 export const CAMERA_OFFSET_CLOSE = new THREE.Vector3(0.95, 0.55, 1).normalize();
 /**
- * How far the lens opens from its aim: 1.55, from 2.2, so the break fills
- * the frame and the pieces come off large (see CAMERA_SEEN_PULL_BACK in
- * ThinkerStage, where the move is measured against lukebaffait.fr's).
- * Before that, 2.2 rather than the 2.6 that framed the hand with the base
- * and legs around it.
+ * Close on the head: 2.2 rather than the 2.6 that framed the hand with
+ * the base and legs around it, since the shot now opens on the face.
+ *
+ * Do not bring it closer. 8516a66 opened at 1.55 on an aim between the
+ * head and the shoulder, pulled back 26% by breakup 0.34 and climbed the
+ * aim towards the cloud, after lukebaffait.fr's close-up (pieces on screen
+ * at breakup 0.34 went 47 -> 74, their median size 14.5% -> 23% of the
+ * frame's width). Kevin rejected it and asked for this camera back, so the
+ * whole of that move, the narrow screen's 2.7 and IMPACT_AIM_LIFT's
+ * removal were reverted.
  */
-export const CAMERA_DISTANCE_CLOSE = 1.55;
+export const CAMERA_DISTANCE_CLOSE = 2.2;
+/**
+ * The opening aim sits well above the blow rather than straight at it, so
+ * the face — the hand is under the chin — is in the frame rather than
+ * above it. It was 0.2, which gave the arms headroom but not the head,
+ * and 0.42 once the eye was raised, which still cropped the frame at the
+ * neck from the higher viewpoint (measured on the 1280x800 capture); 0.45
+ * when the blow was on the floor and half the frame would otherwise have
+ * been bare ground.
+ */
+export const IMPACT_AIM_LIFT = 0.78;
 
 /**
  * The blow, in the figure's own units: the figure's LEFT SHOULDER, which
@@ -58,29 +73,14 @@ export const CAMERA_DISTANCE_CLOSE = 1.55;
  * too big.
  */
 const IMPACT_POINT = new THREE.Vector3(0.06, 0.95, 0.4);
-
 /**
- * The opening aim, in the figure's own units: between the head and the
- * LEFT SHOULDER, which is where the first pieces come off (the first 10 to
- * release sit about (0.49, 1.20, 0.42) in the world, the first 90 about
- * (0.16, 1.29, 0.80)), a little below them so the head, the hand under the
- * chin and the shoulder share the frame. World (0.12, 1.10, 0.92) through
- * the stage's rotation.
- *
- * It was the HAND (-1.157, -0.229, 0.628) lifted 0.78, from when the shot
- * opened on the whole upper figure at 2.2; from 1.55 that aim puts the
- * break above the top of the frame.
+ * The hand, the nearest point of the figure to the lens, and where the
+ * opening shot still aims: the camera used to follow the build's own
+ * `breakOrigin`, which was the same point, but the grading has moved up
+ * to the shoulder and the shot should not follow it there — lifted by
+ * IMPACT_AIM_LIFT the aim would sit above the head.
  */
-export const OPENING_AIM_POINT = new THREE.Vector3(-0.798, 1.033, 0.606);
-
-/**
- * Where the aim has climbed to as the narration's black starts to rise
- * (BREAK_SEEN_AT in ThinkerStage): up and to the screen left, towards
- * where the cloud is going, so the frame fills with the pieces rather than
- * watching them leave through its top. World (-0.12, 1.50, 1.30); the
- * released pieces' centre at that moment is about (-0.13, 1.73, 1.51).
- */
-export const SEEN_AIM_POINT = new THREE.Vector3(-1.269, 1.407, 0.604);
+export const OPENING_AIM_POINT = new THREE.Vector3(-1.157, -0.229, 0.628);
 
 /**
  * The camera's opening eye in the figure's own space: the aim plus the
@@ -95,6 +95,7 @@ const OPENING_EYE = (() => {
     .multiplyScalar(CAMERA_DISTANCE_CLOSE)
     .applyAxisAngle(new THREE.Vector3(0, 1, 0), -THINKER_BASE_YAW)
     .add(OPENING_AIM_POINT);
+  eye.y += IMPACT_AIM_LIFT;
   return [eye.x, eye.y, eye.z] as [number, number, number];
 })();
 
