@@ -673,33 +673,50 @@ const SEED_MIN_SEPARATION = 0.02;
 const SHELL_START = 0.75;
 // The last piece releases this far into the breakup.
 const RELEASE_END = 0.86;
-// The first gap between releases is this many times the last, so the gaps
-// shrink and the break gathers pace.
+// How the releases are paced: the RATE of pieces coming off climbs in a
+// straight line from 1 to RELEASE_ACCELERATION times itself between the
+// first release and RELEASE_RAMP_END of the breakup, then holds there to
+// RELEASE_END. A few pieces, then more, then many, and the build lasts as
+// long as the stage is drawn.
 //
-// History: 3, then 10, then 50 (a piece now and then for a long while, then
-// the figure going at once), then 6, because at 50 almost none of the break
-// was ever seen. Every value was judged against the end of a run nobody
-// watches: the stage is drawn clear to a breakup of about 0.34 and under
-// the narration's rising black to 0.51 (1280x800), and RELEASE_END puts the
-// last slot at 0.86, so an accelerating schedule spends its pace where the
-// room is already dark.
+// Kevin rejected the even release (1.5, 8516a66): the pieces "sort of just
+// uniformly break off all at once". Do not bring it back, even though
+// lukebaffait.fr's own release does not accelerate (measured off its
+// frames: 5-25% of the figure's area goes in 41 frames, 25-50% in 24,
+// 50-75% in 24, 75-95% in 49). His ask overrides the reference.
 //
-// 1.5, from 6. lukebaffait.fr's release does not accelerate — measured off
-// its frames, 5-25% of the figure's area goes in 41 frames, 25-50% in 24,
-// 50-75% in 24, 75-95% in 49 — and Kevin asked for the break to start
-// earlier. Counted over this bake's release slots, pieces released by
-// breakup 0.1 / 0.2 / 0.34 / 0.51:
-//   acceleration 6 -> 27 / 52 / 91 / 154
-//              1.5 -> 43 / 82 / 141 / 234 (estimated from the slots; see
-//                     the bake's own counts in the commit)
-//                1 -> 51 / 95 / 160 / 254
-// Not 1: the last half of a schedule is the plinth and the legs, which go
-// under the narration's black, and 1.5 keeps the upper figure a little
-// quicker at its end than at its start.
+// Earlier values of the old geometric schedule, for the record: 3 and 10
+// (spread too evenly), 50 (a piece now and then for a long while, then the
+// figure at once, almost none of it while the stage was drawn), 6
+// (ad5861e), 1.5 (8516a66).
+//
+// Measured over the stretch the stage is drawn in (panel value 0 to 0.49,
+// 1280x800; the narration's black starts rising at 0.317): the share of
+// that stretch's released pieces gone by 25% / 50% / 75% of it. Even is
+// 25 / 50 / 75.
+//   even, 1.5 geometric (8516a66)            23.1 / 44.4 / 68.4, 234 pieces
+//   6 geometric, 0.1 vh delay (ad5861e)      19.5 / 41.6 / 67.8, 149
+//   12 and 25 geometric, no delay            21.1 / 43.0 / 67.2 and
+//                                            21.7 / 43.4 / 67.0
+//   10, linear ramp to 0.51 (this)           11.7 / 30.7 / 58.1, 179
+// A geometric schedule (each gap a fixed fraction of the one before, which
+// is what this was) cannot do it at any strength: its pace climbs slowly
+// for most of the run and runs away at the end, where the room is dark, so
+// the drawn stretch always comes out near even. Ramping the rate and then
+// holding it puts the build where it is seen. Per quarter of the drawn
+// stretch the new schedule releases 11.7 / 19.0 / 27.4 / 41.9% of it.
+// Pieces off by panel value 0.05 / 0.1 / 0.2 / 0.317 / 0.49: 8 / 17 / 40 /
+// 82 / 179 (8516a66: 24 / 44 / 85 / 138 / 234). 16 instead of 10 moved the
+// quarters by a point (10.9 / 29.7 / 57.1) and thinned the opening to 7
+// pieces by 0.05; ramping to 0.34 instead of 0.51 held the rate flat for
+// the whole of the black's rise and put 211 pieces off.
 //
 // It does NOT change when the break finishes: RELEASE_END still holds the
 // last slot.
-const RELEASE_ACCELERATION = 1.5;
+const RELEASE_ACCELERATION = 10;
+// Where the rate reaches RELEASE_ACCELERATION, as breakup: where the stage
+// stops being drawn at 1280x800 (panel value 0.49).
+const RELEASE_RAMP_END = 0.51;
 // How much of the breakup a piece's flight takes once released. Doubled
 // from 0.275 with the run: a piece's flight is a share of the break, and
 // the break is twice as long, so this keeps each piece's own pace and
@@ -3759,16 +3776,30 @@ function planReleaseOrder(
   }
 
   const releaseAt = new Array<number>(count).fill(0);
-  // Gaps between releases shrink geometrically: slot k sits at the sum of
-  // gaps g^0..g^(k-1), scaled so the last slot lands on RELEASE_END. That
-  // is what makes the number of pieces coming off grow exponentially.
+  // The slots are spread so the release rate ramps (see
+  // RELEASE_ACCELERATION). With u the share of the run to RELEASE_END, A
+  // the acceleration and w the ramp's share of the run, the rate is
+  // 1 + (A - 1)·u/w up to w and A after it, so the slots released by u are
+  // u + (A - 1)·u²/2w up to w and w(A + 1)/2 + A(u - w) after; each slot's
+  // moment is that count solved for u.
   const slots = beats.length;
-  const decay = slots > 2 ? Math.pow(RELEASE_ACCELERATION, -1 / (slots - 2)) : 1;
-  const total = decay === 1 ? Math.max(slots - 1, 1) : (1 - Math.pow(decay, slots - 1)) / (1 - decay);
-  const momentAt = (slot: number) =>
-    slots <= 1
-      ? 0
-      : (RELEASE_END * (decay === 1 ? slot : (1 - Math.pow(decay, slot)) / (1 - decay))) / total;
+  const acceleration: number = RELEASE_ACCELERATION;
+  const rampShare = Math.min(RELEASE_RAMP_END / RELEASE_END, 1);
+  const rampSlots = (rampShare * (acceleration + 1)) / 2;
+  const totalSlots = rampSlots + acceleration * (1 - rampShare);
+  const momentAt = (slot: number) => {
+    if (slots <= 1) return 0;
+    const n = (slot / (slots - 1)) * totalSlots;
+    const u =
+      acceleration === 1
+        ? n
+        : n <= rampSlots
+          ? (rampShare * (Math.sqrt(1 + (2 * (acceleration - 1) * n) / rampShare) - 1)) /
+            (acceleration - 1)
+          : rampShare + (n - rampSlots) / acceleration;
+
+    return RELEASE_END * u;
+  };
 
   beats.forEach((beat, slot) => {
     const moment = momentAt(slot);

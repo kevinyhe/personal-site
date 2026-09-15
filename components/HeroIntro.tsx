@@ -217,12 +217,12 @@ const SCRIM_SHUT_AT = 0.99;
 // the scroll passes it. The break's stretch runs about 5.44 viewports at
 // 1280x800, so 0.1 put breakStart at 0.018 and 0 puts it at 0.
 //
-// Worth little on its own — about 0.02 of the break measure, a handful of
-// pieces at any scroll position. What held the start back was the pacing:
-// RELEASE_ACCELERATION in thinkerFragments packed the releases towards the
-// end nobody sees; see the counts there. Nothing else gates it: the first
-// release slot is at a break measure of 0 and a released piece's travel
-// starts at full speed (travelAt).
+// Kept at 0 when the even release was replaced by a ramping one (see
+// RELEASE_ACCELERATION in thinkerFragments): Kevin asked for an earlier
+// start one round before he asked for a break that builds, and the ramp's
+// slow opening is what a delay used to buy. The first pieces come off
+// early and few, 8 by panel value 0.05 and 17 by 0.1 (ad5861e, with 0.1
+// here and a geometric schedule: 13 and 24), and the pace builds after.
 const CHUNK_DELAY_VIEWPORTS = 0;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
