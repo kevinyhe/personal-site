@@ -210,18 +210,20 @@ const SCRIM_SHUT_AT = 0.99;
 // How far into the panel's growth the statue waits before it starts coming
 // apart, in viewport heights of scroll.
 //
-// 0.1, from 0.3. This is the constant that gates the FIRST release: it
+// 0, from 0.1 (and 0.3 before that): the first piece goes with the panel's
+// first pixel. This is the constant that gates the FIRST release: it
 // becomes ThinkerStage's `breakStart`, and the stage's own break measure is
 // (value - breakStart) / (BREAK_END - breakStart), so nothing moves until
 // the scroll passes it. The break's stretch runs about 5.44 viewports at
-// 1280x800, so 0.3 put breakStart at 0.055 and 0.1 puts it at 0.018.
+// 1280x800, so 0.1 put breakStart at 0.018 and 0 puts it at 0.
 //
-// It is worth so little on its own — the statue stops being drawn at a
-// panel value of about 0.35, where this moves the break measure from 0.326
-// to 0.352 — because the pacing, not the start, is what kept most of the
-// fracture off screen. RELEASE_ACCELERATION in thinkerFragments is the
-// other half of the same fix; see the counts there.
-const CHUNK_DELAY_VIEWPORTS = 0.1;
+// Worth little on its own — about 0.02 of the break measure, a handful of
+// pieces at any scroll position. What held the start back was the pacing:
+// RELEASE_ACCELERATION in thinkerFragments packed the releases towards the
+// end nobody sees; see the counts there. Nothing else gates it: the first
+// release slot is at a break measure of 0 and a released piece's travel
+// starts at full speed (travelAt).
+const CHUNK_DELAY_VIEWPORTS = 0;
 
 // The two poses of the scene. The page LOADS as the television shot: camera
 // pulled all the way back, the tube showing the name, the tree parked below
@@ -1131,8 +1133,8 @@ export default function HeroIntro({ children }: HeroIntroProps) {
       ? documentTop(narrationSpace) + narrationSpace.offsetHeight - viewportHeight
       : end + 1;
     return {
-      // The stage opens with the box; the figure holds together for a beat
-      // of scroll after that before the first piece goes.
+      // The stage opens with the box, and the first piece goes with it
+      // (CHUNK_DELAY_VIEWPORTS is 0).
       breakAt: growStart + viewportHeight * CHUNK_DELAY_VIEWPORTS,
       end,
       start: growStart,
