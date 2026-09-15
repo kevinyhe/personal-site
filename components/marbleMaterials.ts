@@ -323,6 +323,12 @@ function makeInteriorMaterial() {
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 2,
     roughness: 0.94,
+    // DoubleSide would put both sides of every cut face into the shadow map,
+    // and the lit side then shadows itself (acne) — the bias is tuned for
+    // the skin, which is FrontSide and so already casts from its back. The
+    // cut faces are wound outward (sealPiece's lids included), so casting
+    // from the back closes each piece into one solid for the light.
+    shadowSide: THREE.BackSide,
     side: THREE.DoubleSide,
   });
 }

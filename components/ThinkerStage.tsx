@@ -1756,9 +1756,22 @@ function ChunkedFigure({
               this adds is a map lookup in the marble's fragment shader over
               the third of the frame the figure covers.
 
-              The cut faces do not receive. They are the inside of the
-              stone, lit by their own darker material, and a shadow on them
-              is not a thing anyone reads. */}
+              The cut faces cast and receive too, and they have to do both.
+              They used to do neither, on the idea that a shadow on the
+              inside of the stone is not a thing anyone reads — but it is
+              most of what a cavity wall IS. Receiving alone does little: a
+              piece's skin is an open shell without its cut faces, so the
+              shadow map had no depth for the stone between a cavity and the
+              light, and a wall facing the key through solid marble was lit
+              as if the marble were not there. Measured on a held camera at
+              breakup 0.2 (1920x1080, RTX 5060), turning on both darkened
+              47.9% of the visible cut-face pixels by more than 30 levels
+              (median 64) — the pale walls glowing out of a shaded shoulder
+              and the flat white faces on pieces in the cloud's own shadow —
+              where receiving alone moved 6.8%. Cut faces cast from their
+              BACK side, as the skin does (see shadowSide in
+              marbleMaterials), so a piece is one closed solid to the light
+              and its own lit faces do not self-shadow. */}
           <mesh
             castShadow
             frustumCulled={false}
@@ -1767,9 +1780,11 @@ function ChunkedFigure({
             receiveShadow
           />
           <mesh
+            castShadow
             frustumCulled={false}
             geometry={chunk.interiorGeometry}
             material={marble.interior}
+            receiveShadow
             ref={(node) => {
               interiorRefs.current[index] = node;
             }}

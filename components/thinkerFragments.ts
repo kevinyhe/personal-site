@@ -322,6 +322,8 @@ type FragmentVertex = {
 };
 
 type FragmentPolygon = {
+  /** Set on `sealPiece`'s lids only: marks them for `smoothCutNormals`. */
+  group?: number;
   kind: "cap" | "surface";
   vertices: FragmentVertex[];
 };
@@ -2750,9 +2752,11 @@ const RELIEF_SKIN_RAMP = 0.045;
 const RELIEF_LOW = [22.1, 24.3, 19.7];
 const RELIEF_HIGH = [45.3, 40.1, 48.7];
 const RELIEF_HIGH_WEIGHT = 0.35;
-// Step for the field's derivative, when the normals are turned to follow the
-// bent surface. Small against the wavelengths, large against float noise.
-const RELIEF_DERIVATIVE_STEP = 0.002;
+// Cut-face normals are rebuilt from the bent triangles themselves (see
+// `smoothCutNormals`), averaged only across triangles of the SAME cut plane,
+// keyed by that plane's normal at this precision. Two planes this close in
+// direction meeting at a point are one surface for shading.
+const PLANE_KEY_SCALE = 1e4;
 
 /**
  * Fills whatever is still open in a piece: every edge that only one polygon
@@ -2785,14 +2789,29 @@ const RELIEF_DERIVATIVE_STEP = 0.002;
  * Fanned from the loop's own centroid and marked as cut face, so a filled
  * hole reads as the fresh stone around it. A chain that will not close is
  * left alone.
+ *
+ * Wound OUTWARD, and that is not automatic. The walk below starts from
+ * whichever end of an edge sorts first, so on its own it winds about half
+ * the loops inward, and it used to give every fan one Newell normal for
+ * the whole loop — which on a ribbon that folds back on itself points
+ * anywhere. Measured on the v9 bake: these fans were 63% of the cut-face
+ * triangles (78,081 of 123,896, but only 3.2% of the cut area), their
+ * stored normals sat 45 degrees off their own triangles on average, and
+ * 21% of their area had a normal more than 90 degrees off — lit from
+ * behind on the side that shows, which is the dark sawtooth hairline along
+ * the cut edges. So each loop is turned to run AGAINST the edges it closes
+ * (the owning polygon runs each free edge one way; a lid over the hole
+ * runs it the other), and its normals are left to `smoothCutNormals`.
  */
 const SEAL_KEY_SCALE = 1e5;
 
-function sealPiece(piece: FragmentPiece) {
+function sealPiece(piece: FragmentPiece, group: { next: number }) {
   const keyOf = (point: THREE.Vector3) =>
     `${Math.round(point.x * SEAL_KEY_SCALE)},${Math.round(point.y * SEAL_KEY_SCALE)},${Math.round(point.z * SEAL_KEY_SCALE)}`;
   const uses = new Map<string, number>();
   const ends = new Map<string, [THREE.Vector3, THREE.Vector3]>();
+  // Which way the (last) polygon using an edge runs it: the key of its start.
+  const runsFrom = new Map<string, string>();
 
   piece.polygons.forEach((polygon) => {
     const { vertices } = polygon;
@@ -2809,6 +2828,7 @@ function sealPiece(piece: FragmentPiece) {
 
       uses.set(key, (uses.get(key) ?? 0) + 1);
       ends.set(key, a < b ? [from, to] : [to, from]);
+      runsFrom.set(key, a);
     }
   });
 
@@ -2894,30 +2914,35 @@ function sealPiece(piece: FragmentPiece) {
 
     taken.forEach((key) => walked.add(key));
 
-    // Newell's normal: zero on a ribbon that folded back on itself, which is
-    // exactly the seam case, and there the fan is degenerate and drops out in
-    // makeFlatArrays anyway.
-    const normal = new THREE.Vector3();
+    // taken[k] is the edge loop[k] -> loop[k + 1]. A vote rather than the
+    // first edge: along a folded ribbon the two sides can disagree.
+    let against = 0;
+
+    taken.forEach((key, index) => {
+      against += runsFrom.get(key) === keyOf(loop[index]) ? -1 : 1;
+    });
+
     const centroid = new THREE.Vector3();
 
+    loop.forEach((point) => centroid.add(point));
+    centroid.multiplyScalar(1 / loop.length);
+
+    // One smoothing group per lid (see smoothCutNormals); the normal here is
+    // a placeholder that pass replaces.
+    const lid = group.next++;
+
+    // Turned by swapping the last two corners, not by reversing the loop:
+    // the first corner of each lid stays where it was, because
+    // `planReleaseOrder` samples a piece by its polygons' first corners, and
+    // moving them moved the release order (by up to 0.061 of the break).
     loop.forEach((point, index) => {
       const next = loop[(index + 1) % loop.length];
 
-      normal.x += (point.y - next.y) * (point.z + next.z);
-      normal.y += (point.z - next.z) * (point.x + next.x);
-      normal.z += (point.x - next.x) * (point.y + next.y);
-      centroid.add(point);
-    });
-    centroid.multiplyScalar(1 / loop.length);
-
-    if (normal.lengthSq() > 1e-18) normal.normalize();
-    else normal.set(0, 1, 0);
-
-    loop.forEach((point, index) => {
       sealed.push({
+        group: lid,
         kind: "cap",
-        vertices: [point, loop[(index + 1) % loop.length], centroid].map((corner) => ({
-          normal: normal.clone(),
+        vertices: (against < 0 ? [point, centroid, next] : [point, next, centroid]).map((corner) => ({
+          normal: new THREE.Vector3(0, 1, 0),
           point: corner,
         })),
       });
@@ -3040,71 +3065,33 @@ function reliefFieldAt(point: THREE.Vector3, seed: number, out: THREE.Vector3) {
  * was dropped rather than as a solid that was sliced. See the note above for
  * why a field of position alone is the only kind that is safe here.
  *
- * The normals are turned with the surface: the displacement's derivative is
- * taken by differences and the normal carried through it (n - J^T n, the
- * first order of the inverse transpose). Without that a bowed face still
- * shades dead flat, which is half the faceted look.
+ * Points only. This used to turn each normal through the field's derivative
+ * as well (n - J^T n), and those normals described a surface the mesh does
+ * not have: the relief bends a face only at its VERTICES, and the cut's
+ * triangles are large against the bend (longest edge p90 0.16, p99 0.33
+ * figure units, where the low octave turns over every 0.14), so between
+ * vertices the stone stays flat. Measured on the v9 bake, the stored normals
+ * sat 10.0 degrees (area-weighted mean; p90 17) off the triangles they were
+ * drawn on, deep in the figure; in the shell under the skin, where the
+ * derivative also dropped the ramp's own gradient, 4.1 degrees (p99 18) off
+ * even the smooth bent surface they meant to follow. Shaded, that is a
+ * gradient across a face that is visibly flat, with a streak down every
+ * fan triangle. `smoothCutNormals` now builds them from the moved triangles.
+ * (Refining the cut so the mesh itself carries the bend was costed and
+ * dropped: 3.3x the cut-face triangles at a 0.07 edge, 5.5x at 0.05, which
+ * is 7 to 14 MB more bake.)
  */
 function roughenCells(cells: CellBuild[], source: FragmentPiece, options: BuildSolidChunkOptions) {
   const seed = options.seed;
   const skinDistance = makeSkinDistance(source, RELIEF_SKIN_RAMP);
-  const probe = new THREE.Vector3();
-  const shifted = new THREE.Vector3();
 
   // How strong the relief is here: nothing on the skin, full a ramp under it.
-  // One query per distinct point — the derivative below differences the FIELD
-  // alone and scales by this, rather than differencing the whole displacement,
-  // which would cost seven of these per vertex. What it drops is the ramp's
-  // own gradient, and that only matters in the shell where the ramp is still
-  // climbing, where the displacement is near zero anyway.
   const reliefAt = (point: THREE.Vector3) =>
     RELIEF_AMPLITUDE * smoothstep01(skinDistance(point) / RELIEF_SKIN_RAMP);
 
-  // Two passes, and in this order: the normals are turned from the field's
-  // derivative at each point's ORIGINAL place, so nothing may have moved yet.
-  // Each distinct POINT object and each distinct NORMAL object is touched
-  // once — the cut shares points across polygons and across pieces (that
-  // sharing is what `planReleaseOrder` reads as pieces touching), and the
-  // same point carries a different normal on a cap than on the skin.
-  const jacobian = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const forward = new THREE.Vector3();
-  const backward = new THREE.Vector3();
-  const turnedNormals = new Set<THREE.Vector3>();
-
-  cells.forEach(({ piece }) => {
-    piece.polygons.forEach((polygon) => {
-      polygon.vertices.forEach(({ normal, point }) => {
-        if (turnedNormals.has(normal)) return;
-
-        turnedNormals.add(normal);
-
-        const relief = reliefAt(point);
-
-        if (relief <= 0) return;
-
-        for (let axis = 0; axis < 3; axis++) {
-          probe.copy(point).setComponent(axis, point.getComponent(axis) + RELIEF_DERIVATIVE_STEP);
-          reliefFieldAt(probe, seed, forward);
-          probe.copy(point).setComponent(axis, point.getComponent(axis) - RELIEF_DERIVATIVE_STEP);
-          reliefFieldAt(probe, seed, backward);
-          jacobian[axis]
-            .subVectors(forward, backward)
-            .multiplyScalar(relief / (2 * RELIEF_DERIVATIVE_STEP));
-        }
-
-        // n - J^T n, renormalised: column `axis` of J is d(displacement)/d(axis),
-        // so (J^T n)[axis] is that column dotted with n.
-        shifted.set(
-          normal.x - jacobian[0].dot(normal),
-          normal.y - jacobian[1].dot(normal),
-          normal.z - jacobian[2].dot(normal),
-        );
-
-        if (shifted.lengthSq() > 1e-12) normal.copy(shifted).normalize();
-      });
-    });
-  });
-
+  // Each distinct POINT object is moved once — the cut shares points across
+  // polygons and across pieces (that sharing is what `planReleaseOrder` reads
+  // as pieces touching).
   const movedPoints = new Set<THREE.Vector3>();
   const displaced = new THREE.Vector3();
 
@@ -3122,7 +3109,103 @@ function roughenCells(cells: CellBuild[], source: FragmentPiece, options: BuildS
       });
     });
   });
+}
 
+/**
+ * A piece's cut-face normals, from its own bent triangles: at each corner,
+ * the angle-weighted mean of the face normals of every triangle that meets
+ * there AND lies on the same cut plane. The
+ * plane is read off the normal the cut gave the vertex, which is still that
+ * plane's exact normal here, since nothing has turned it. So a bent face
+ * shades smoothly across itself and a crease between two cut planes stays a
+ * crease. Angle-weighted because the cut's triangulations are fans of long
+ * thin triangles, and area or plain averaging lets those lean the result.
+ *
+ * Triangulated exactly as `makeFlatArrays` does (a fan from the polygon's
+ * first vertex), so the triangles averaged are the triangles drawn. Each
+ * polygon gets fresh vertex records, so a normal written here never leaks
+ * into another polygon that shared the old record.
+ */
+function smoothCutNormals(piece: FragmentPiece) {
+  const keyOf = (point: THREE.Vector3) =>
+    `${Math.round(point.x * SEAL_KEY_SCALE)},${Math.round(point.y * SEAL_KEY_SCALE)},${Math.round(point.z * SEAL_KEY_SCALE)}`;
+  const groupOf = (polygon: FragmentPolygon) => {
+    if (polygon.group !== undefined) return `lid${polygon.group}`;
+
+    const { normal } = polygon.vertices[0];
+
+    return `${Math.round(normal.x * PLANE_KEY_SCALE)},${Math.round(normal.y * PLANE_KEY_SCALE)},${Math.round(normal.z * PLANE_KEY_SCALE)}`;
+  };
+  const sums = new Map<string, THREE.Vector3>();
+  const anyGroup = new Map<string, THREE.Vector3>();
+  const edgeA = new THREE.Vector3();
+  const edgeB = new THREE.Vector3();
+  const face = new THREE.Vector3();
+  const caps = piece.polygons.filter((polygon) => polygon.kind === "cap");
+  const groups = caps.map(groupOf);
+  const accumulate = (map: Map<string, THREE.Vector3>, key: string, weight: number) => {
+    const sum = map.get(key);
+
+    if (sum) sum.addScaledVector(face, weight);
+    else map.set(key, face.clone().multiplyScalar(weight));
+  };
+
+  caps.forEach((polygon, polygonIndex) => {
+    const { vertices } = polygon;
+
+    for (let index = 1; index < vertices.length - 1; index++) {
+      const corners = [vertices[0].point, vertices[index].point, vertices[index + 1].point];
+
+      edgeA.subVectors(corners[1], corners[0]);
+      edgeB.subVectors(corners[2], corners[0]);
+      face.crossVectors(edgeA, edgeB);
+
+      const doubleArea = face.length();
+
+      if (doubleArea <= 1e-14) continue;
+
+      face.multiplyScalar(1 / doubleArea);
+
+      for (let corner = 0; corner < 3; corner++) {
+        const here = corners[corner];
+        const toNext = edgeA.subVectors(corners[(corner + 1) % 3], here);
+        const toPrevious = edgeB.subVectors(corners[(corner + 2) % 3], here);
+        const angle = toNext.angleTo(toPrevious);
+
+        if (!Number.isFinite(angle) || angle <= 0) continue;
+
+        const point = keyOf(here);
+
+        accumulate(sums, `${point}|${groups[polygonIndex]}`, angle);
+        accumulate(anyGroup, point, angle);
+      }
+    }
+  });
+
+  caps.forEach((polygon, polygonIndex) => {
+    // A lid is one triangle, and it takes its own face normal. Smoothed like
+    // a cut face, a lid over a ribbon that folds back on itself averages its
+    // two sides into nothing in particular: measured, 34 degrees off its own
+    // triangles by area and 13.8% of lid area past 90, against 0 this way.
+    if (polygon.group !== undefined && polygon.vertices.length === 3) {
+      const [a, b, c] = polygon.vertices;
+
+      face.crossVectors(edgeA.subVectors(b.point, a.point), edgeB.subVectors(c.point, a.point));
+      if (face.lengthSq() > 1e-28) {
+        face.normalize();
+        polygon.vertices = polygon.vertices.map(({ point }) => ({ normal: face.clone(), point }));
+        return;
+      }
+    }
+
+    polygon.vertices = polygon.vertices.map(({ normal, point }) => {
+      const at = keyOf(point);
+      const sum = sums.get(`${at}|${groups[polygonIndex]}`) ?? anyGroup.get(at);
+      const next = sum && sum.lengthSq() > 1e-18 ? sum.clone().normalize() : normal.clone();
+
+      return { normal: next, point };
+    });
+  });
 }
 
 function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: BuildSolidChunkOptions) {
@@ -3204,8 +3287,11 @@ function fractureIntoPieces(sourceGeometry: THREE.BufferGeometry, options: Build
 
   // The relief moved points, so the boxes, centres and areas every piece was
   // measured with are stale; sealing adds polygons too.
+  const lids = { next: 0 };
+
   cells.forEach((cell) => {
-    sealPiece(cell.piece);
+    sealPiece(cell.piece, lids);
+    smoothCutNormals(cell.piece);
     cell.piece = makePiece({
       capStats: cell.piece.capStats,
       depth: cell.piece.depth,
