@@ -384,7 +384,27 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // fitted on screen 46 degrees below horizontal (44), 42-43 on pixels
   // (42-45); pieces released by the time the statue stops being drawn, 91
   // (91).
-  releaseTexture: { amount: 0.1, grain: 0.2, shared: 0.7, taper: 0.15, clusters: 3 },
+  //
+  // `amount` 0.05, from 0.1, when Kevin said the pieces "sort of just
+  // uniformly break off all at once". Two things made that: the even
+  // release (see RELEASE_ACCELERATION in thinkerFragments) and this loose
+  // front. A loose front at an even rate reads as everything going
+  // everywhere. Half the amount keeps the patches and the clusters and puts
+  // the plane's rank correlation over the body at 0.984 (from 0.962).
+  // Measured on screen (chunk centres through the projection above; release
+  // fitted as a straight line in screen x and y, then the rank correlation
+  // of release against position along that line), on the new schedule:
+  // over everything released while the stage is clear (panel value to
+  // 0.317) 0.657 at 0.1 and 0.764 at 0.05; over the body released while it
+  // is drawn at all (to 0.49) 0.794 and 0.822. 0.07 measured 0.738 / 0.816.
+  // Held: the first 45 pieces off average z 0.627 with 42 of 45 forward of
+  // z 0.4 (43 at 0.1: one piece), head percentile 0.172 against mid torso
+  // 0.399, plinth 0.790. A taper of 0.1 kept 43 of 45 but dropped the clear
+  // stretch's front to 0.669. Moving the head band later in the order was
+  // also tried (0.05 and 0.1 of rank): the front over the drawn stretch
+  // rose to 0.746, but the first 45 fell to 40 forward at z 0.593, so the
+  // break stopped opening on the front of the figure.
+  releaseTexture: { amount: 0.05, grain: 0.2, shared: 0.7, taper: 0.15, clusters: 3 },
   // WHICH WAY pieces fly: a smooth field of turns over the figure, so pieces
   // near each other fly nearly parallel and pieces apart differ. See
   // scatterFlights for the reference's numbers (13 / 20 / 38 degrees off its
@@ -591,7 +611,9 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // 10: cut-face normals rebuilt from the bent triangles, seal lids wound
 // outward (same pieces, same release order; only the normals differ).
 // 11: RELEASE_ACCELERATION 6 -> 1.5 (same order, even gaps).
-export const FRACTURE_VERSION = 11;
+// 12: the release rate ramps 1 -> 10 over breakup 0 to 0.51, then holds;
+// releaseTexture.amount 0.1 -> 0.05 (same pieces, new order and times).
+export const FRACTURE_VERSION = 12;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
