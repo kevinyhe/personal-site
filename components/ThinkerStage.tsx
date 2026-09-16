@@ -26,7 +26,6 @@ import { CHERRY_BASE_YAW, CUT_TO_TREE, loadCherryChunks } from "@/components/che
 import {
   makeChunkGeometries,
   STAGE_DRIFT_ON,
-  STAGE_FALL,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
 import { useMarbleMaterials } from "@/components/marbleMaterials";
@@ -421,8 +420,15 @@ const STATUE_FOV = 34;
 
 /** Last frame's camera framing, read by headless captures. */
 const cameraProbe: Record<string, unknown> = {};
-// The stage's renderer, for the frame count `window.__thinkerStage` reports.
-const stageProbe: { renderer: THREE.WebGLRenderer | null } = { renderer: null };
+// The stage's renderer and scene, for the frame count `window.__thinkerStage`
+// reports and for the A/B toggles the capture ladder runs against a frozen
+// frame (culling on and off, a light's shadow bias, a material swapped) —
+// every "measured on the same frame with X switched off" in this file was
+// taken through this handle.
+const stageProbe: { renderer: THREE.WebGLRenderer | null; scene: THREE.Scene | null } = {
+  renderer: null,
+  scene: null,
+};
 
 /**
  * Outro camera keyframes, against seconds along the drift. Each is a list
@@ -650,44 +656,18 @@ const DRIFT_ON = STAGE_DRIFT_ON;
 // they never hang still in the air when the scroll rests. Halved with the
 // flight (TRAVEL_WINDOW): the pieces go at half the pace they did.
 const DRIFT_PER_SECOND = 0.008;
-// How far a piece falls, in figure units, by the end of its travel window,
-// growing as the square of its time in flight — one constant acceleration
-// for every piece, which is what weight is.
-//
-// Asked for pieces that do not "float in midair". Two things made them
-// float and they compound. The curve below decelerates: x(2-x) has slope 0
-// at the window's end, so a piece arrived at its offset and sat there, and
-// the drift past it is 0.3 of the window's mean pace. And the flight has no
-// weight at all — the pieces fly the line they were given, level, for as
-// long as they are on screen. Measured through the stage's camera at panel
-// value 0.49 (1280x800), the end of the drawn break: 9 of the 57 pieces in
-// frame were moving less than 0.02 of their own width per 0.01 of the
-// break, and the pieces that had finished their window had come to rest on
-// a net path 179 degrees on screen — dead level.
-//
-// THE FALL IS VERTICAL AND NOTHING ELSE. Kevin has twice thrown out curved
-// flight ("straight line, no curve, no spiral") and that still holds: the
-// piece's own offset is unchanged, it is still a straight line, and the
-// only thing added is -y against the square of the time. A stone that is
-// thrown does exactly this, and the path it draws is the one thing that
-// reads as weight rather than as drift.
-//
-// 0.16 is where the droop reads and the stream still runs leftward. Over
-// the pieces past their window at the end of the drawn break, the net path
-// on screen at FALL 0 / 0.08 / 0.16 / 0.24 is 179 / 168 / 156 / 168
-// degrees, so 0.16 lands them about 24 degrees below level; the deepest
-// piece has fallen 0.17 / 0.34 / 0.51 figure units (0.34 is 1.4 piece radii
-// and a ninth of the figure's height); and the share of the flight that has
-// turned — the angle between a piece's screen path a fifth of the way in
-// and its path now — stays at 1-3 degrees for the median piece and 20-29 at
-// p90, against 0.2-0.8 and 3-14 with no fall. Past this the p90 turn runs
-// to 56-72 degrees and the late cloud starts to read as debris dropping out
-// of the frame rather than as fragments streaming past the lens.
-//
-// Read from thinkerFragments (with DRIFT_ON) rather than written twice: the
-// bake's crossing checks pose pieces with this fall and this curve, and a
-// bake cut against different ones clears crossings the stage still has.
-const FALL = STAGE_FALL;
+// THE PIECES DO NOT FALL. A fall was shipped for one round and Kevin took
+// it out again: "all of the pieces should continue moving down the line
+// that they break off from". It was 0.16 figure units of -y by the end of a
+// piece's window, growing as the square of the time in the air, and it was
+// bought against "dont make the pieces float in midair" — but floating was
+// never the vertical, it was the STOPPING (see DRIFT_ON), and a piece with
+// weight leaves the line it broke off along. Measured on that round, the
+// oldest piece on screen ended 218 px off the line, and the angle between
+// its screen path a fifth of the way in and its path at the end ran to 20-36
+// degrees at p90 where a straight flight is 2-9. That is the curve Kevin has
+// now thrown out three times. The whole of what is left of the ask is
+// DRIFT_ON, which is the thing that actually stops a piece hanging.
 // A released piece keeps rolling with time in the air: this much `turn` per
 // second on top of the turn its travel buys, up to ROLL_LIMIT. See the
 // tumble note in the chunk loop for the measurement that set them.
@@ -704,6 +684,24 @@ const ROLL_LIMIT = 2;
 // slope, so there is no kink to see.
 const KNEE = 1 - DRIFT_ON / 2;
 const KNEE_AT = KNEE * (2 - KNEE);
+
+// How much of its shrink (`scale`, baked) a piece has taken, for how far
+// along its flight it is. It used to be the travel itself, which starts the
+// shrink on the frame a piece comes loose — and a piece that has come loose
+// has not gone anywhere yet, so all the shrink did for its first tenth of
+// travel was open a hairline gap all the way around a piece still sitting in
+// its socket. Every piece at the break front had one, and the figure read as
+// plates with lines drawn between them: "make sure the lines separating the
+// individual chunks are not visible". Held off until a quarter of the way
+// out and eased in over the rest, the gap opens in the air, where it is for.
+// Measured on the 1280x800 capture at panel value 0.13 — thin dark lines on
+// lit flat stone, which is what the hairlines are: 4517 pixels of them
+// before, 1109 after.
+function shrinkAt(travel: number) {
+  const x = THREE.MathUtils.clamp((travel - 0.25) / 0.75, 0, 1);
+
+  return x * x * (3 - 2 * x);
+}
 
 function travelAt(x: number) {
   if (x <= 0) return 0;
@@ -1613,13 +1611,10 @@ function ChunkedFigure({
       const travel = travelAt(progress);
       const turn = Math.min(travel, 1.5);
       position.set(...chunk.center).addScaledVector(scratchOffset.set(...chunk.offset), travel);
-      // The same weight the chunk loop gives the bough, so a petal lets go
-      // from where the bough actually is.
-      position.y -= FALL * progress * progress;
       quaternion.setFromEuler(
         scratchEuler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
       );
-      scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));
+      scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, shrinkAt(travel)));
     });
   }, [build, figure]);
   const petalGeometry = useMemo(() => (petals ? createPetalGeometry() : null), [petals]);
@@ -1641,6 +1636,7 @@ function ChunkedFigure({
           exposedAt: chunk.exposedAt,
           offset: new THREE.Vector3(...chunk.offset),
           releaseAt: chunk.releaseAt,
+          wall: chunk.wall,
           scale: chunk.scale,
           spin: new THREE.Vector3(...chunk.spin),
           travelWindow: chunk.travel,
@@ -1740,9 +1736,21 @@ function ChunkedFigure({
       // the wall of the cavity it leaves IS this piece's cut face, and
       // hiding it shows a hole straight through a hollow figure. (The
       // capture ladder that passed the first version only followed pieces
-      // that were leaving, never the holes behind them.) So the test is
-      // `exposedAt`, baked per chunk: the first release among the piece
-      // itself and every piece it shares cut points with.
+      // that were leaving, never the holes behind them.)
+      //
+      // And it is per FACE, not per piece (`wall`, baked). A piece has ten
+      // neighbours on average; lighting all of its cut faces the moment ANY
+      // of them went drew nine faces that are still buried, and buried
+      // marble only hides them ALMOST everywhere — at a grazing junction a
+      // face pokes out as a hairline, and the cut pattern then reads as
+      // plates with lines drawn between them. Kevin: "make sure the lines
+      // separating the individual chunks are not visible." Measured on the
+      // 1280x800 capture at panel value 0.13, thin dark lines on lit flat
+      // stone: 4563 pixels of them with the piece test, 1109 with this.
+      //
+      // The faces are baked in the order they come loose, so this is a draw
+      // RANGE — still one draw call, still one geometry, and the shadow pass
+      // walks the same range.
       //
       // It is `shown` — the same number the position below is built from,
       // read in the same frame — against a moment, so a face is there on
@@ -1750,7 +1758,17 @@ function ChunkedFigure({
       // reads the same scrolling back up, which re-seats the pieces. Driven
       // off a timer or a React state change it would be a frame late.
       const interior = interiorRefs.current[index];
-      if (interior) interior.visible = shown > chunk.exposedAt;
+      if (interior) {
+        let triangles = 0;
+
+        for (const [moment, count] of chunk.wall) {
+          if (shown <= moment) break;
+          triangles = count;
+        }
+
+        interior.visible = triangles > 0;
+        interior.geometry.setDrawRange(0, triangles * 3);
+      }
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
       const travel = (pieceTravelAt(localProgress) + adrift) * (1 + settled * 0.06);
@@ -1779,25 +1797,9 @@ function ChunkedFigure({
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
       group.position.copy(chunk.center).addScaledVector(chunk.offset, travel);
-      // The weight (FALL). The clock is the flight's own — how far the piece
-      // is into its window — plus the share a parked scroll buys, so a piece
-      // scrolled back home lands exactly where it was carved and a page left
-      // alone keeps settling instead of hanging. DRIFT_PER_SECOND is travel a
-      // second and travel past the knee runs at DRIFT_ON a window, so a
-      // second of still time is DRIFT_PER_SECOND / DRIFT_ON of a window.
-      //
-      // It is the stage group's own -y, not the world's: the group is tilted
-      // 4.6 degrees off vertical (placement.rotation) and drifts another 2.3
-      // over the break, so at the deepest fall this leans the drop by 0.03
-      // figure units — a tenth of a piece — and it keeps the bake's crossing
-      // checks, which work in this same space, exact.
-      const flown =
-        localProgress +
-        (DRIFT_PER_SECOND / DRIFT_ON) * adriftRef.current[index] * Math.min(localProgress, 1);
-      group.position.y -= FALL * flown * flown;
       group.position.y += breathing;
       group.rotation.set(chunk.spin.x * turn, chunk.spin.y * turn, chunk.spin.z * turn);
-      group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));
+      group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, shrinkAt(travel)));
     });
 
     if (petals && petalRef.current) {
@@ -2109,7 +2111,7 @@ function ThinkerCanvas({
       // discrete GPU for the whole tab while the hero had asked for the
       // opposite; the hint only decides which GPU, not how fast it runs.
       gl={{ antialias: true, powerPreference: "low-power" }}
-      onCreated={({ gl }) => {
+      onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         // 1.18 before, then 0.82: the cleanest control there is for "darker",
         // because ACES rolls the highlights off rather than clipping them, so
@@ -2127,6 +2129,7 @@ function ThinkerCanvas({
         gl.shadowMap.enabled = true;
         gl.shadowMap.type = THREE.PCFShadowMap;
         stageProbe.renderer = gl;
+        stageProbe.scene = scene;
       }}
       // Size from the layout box, not the transformed one: the panel grows
       // from scale(0), and following that would rebuild the drawing buffer
@@ -2214,6 +2217,12 @@ export default function ThinkerStage({
         return stageProbe.renderer?.info.render.frame ?? 0;
       },
       progress: progressRef.current,
+      get renderer() {
+        return stageProbe.renderer;
+      },
+      get scene() {
+        return stageProbe.scene;
+      },
     };
     (window as unknown as Record<string, unknown>).__thinkerStage = debug;
     return () => {

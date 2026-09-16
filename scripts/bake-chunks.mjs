@@ -95,6 +95,9 @@ async function bake(name, options) {
       scale: chunk.scale,
       spin: chunk.spin,
       travel: chunk.travel,
+      // The cut faces' draw-range ladder, rounded: a moment past 1 never
+      // arrives while the stage is drawn, and the counts are whole triangles.
+      wall: chunk.wall.map(([moment, triangles]) => [+moment.toFixed(5), triangles]),
       surfacePositions: sp,
       surfaceNormals: sn,
       interiorPositions: ip,

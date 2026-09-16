@@ -416,6 +416,22 @@ export type ThinkerChunkData = {
   surfacePositions: Float32Array;
   /** How much of the breakup (0..1) the chunk's flight takes. */
   travel: number;
+  /**
+   * The cut faces, as [moment, triangles], in order: once the break has
+   * passed `moment`, the first `triangles` of the interior geometry are
+   * drawn. The faces are sorted by the moment the piece on the other side of
+   * them leaves, so this is a DRAW RANGE and not a per-face visibility — one
+   * draw call, as before.
+   *
+   * Why per face and not per piece: a piece has ten neighbours on average,
+   * and `exposedAt` lit ALL of its cut faces the moment ANY of them went.
+   * The nine faces still buried in marble are hidden by that marble almost
+   * everywhere — but not at a grazing junction, where a face pokes out as a
+   * hairline, and not where a gap opens somewhere else on the figure and the
+   * far side of a cavity is suddenly on view. Kevin: "make sure the lines
+   * separating the individual chunks are not visible."
+   */
+  wall: Array<[number, number]>;
 };
 
 export type ThinkerChunkBuild = {
@@ -3459,6 +3475,7 @@ function planReleaseOrder(
       exposedAt: cells.map(() => 0),
       neighbours: cells.map((): number[] => []),
       releaseAt: cells.map(() => 0),
+      wallAt: cells.map(() => [] as number[]),
     };
   }
 
@@ -3659,6 +3676,9 @@ function planReleaseOrder(
     });
   });
 
+  // Which cell each cut point is shared with, for the per-face wall test
+  // below: a face is uncovered when the piece on the OTHER SIDE OF THAT FACE
+  // leaves, not when any neighbour anywhere on the piece does.
   const neighbourSets: Array<Set<number>> = Array.from({ length: count }, () => new Set());
 
   cellsAtCutPoint.forEach((list) => {
@@ -3672,6 +3692,41 @@ function planReleaseOrder(
   });
 
   neighbourSets.forEach((set, cell) => neighbours[cell].push(...set));
+  // Per cell, per cap polygon: the cell on the other side of it, by the cut
+  // points it is built from — the neighbour that owns the most of them.
+  const facing = cells.map(({ piece }, cell) =>
+    piece.polygons
+      .filter((polygon) => polygon.kind === "cap")
+      .map((polygon) => {
+        const votes = new Map<number, number>();
+
+        polygon.vertices.forEach(({ point }) => {
+          const list = cellsAtCutPoint.get(
+            `${Math.round(point.x / CUT_POINT_GRID)},${Math.round(point.y / CUT_POINT_GRID)},${Math.round(point.z / CUT_POINT_GRID)}`,
+          );
+
+          list?.forEach((other) => {
+            if (other === cell || cellUnit[other] === cellUnit[cell]) return;
+            votes.set(other, (votes.get(other) ?? 0) + 1);
+          });
+        });
+
+        let best = -1;
+        let most = 0;
+
+        votes.forEach((count, other) => {
+          if (count > most) {
+            most = count;
+            best = other;
+          }
+        });
+
+        // A face has to be BUILT from a neighbour's points to be its wall: a
+        // lid from `sealPiece`, or a face whose points the vote does not
+        // carry, belongs to no cavity and waits for the piece itself.
+        return most >= Math.max(2, polygon.vertices.length * 0.5) ? best : -1;
+      }),
+  );
 
   for (let a = 0; a < count; a++) {
     for (let b = a + 1; b < count; b++) {
@@ -3972,7 +4027,14 @@ function planReleaseOrder(
     neighbours[cell].reduce((first, other) => Math.min(first, releaseAt[other]), moment),
   );
 
-  return { exposedAt, neighbours, releaseAt };
+  // Per cell, per cap polygon: the moment that face stops being buried —
+  // the release of the piece on the other side of it, or the piece's own
+  // release if it has no piece on the other side.
+  const wallAt = facing.map((faces, cell) =>
+    faces.map((other) => (other < 0 ? releaseAt[cell] : Math.min(releaseAt[cell], releaseAt[other]))),
+  );
+
+  return { exposedAt, neighbours, releaseAt, wallAt };
 }
 
 /**
@@ -4089,10 +4151,12 @@ export function scatterFlights(
   });
 }
 
-// About 40 points on a piece, one per polygon stride, for the flight checks.
-function samplePiece(piece: FragmentPiece) {
+// About 40 points on a piece, one per polygon stride, for the flight checks —
+// or `want` of them, for the steering pass, which grades itself against a
+// finer sieve.
+function samplePiece(piece: FragmentPiece, want = 40) {
   const points: THREE.Vector3[] = [];
-  const stride = Math.max(1, Math.floor(piece.polygons.length / 40));
+  const stride = Math.max(1, Math.floor(piece.polygons.length / want));
 
   for (let index = 0; index < piece.polygons.length; index += stride) {
     const polygon = piece.polygons[index];
@@ -4112,11 +4176,30 @@ function samplePiece(piece: FragmentPiece) {
 // Keep the two in step — the crossing check poses pieces with this, and a
 // curve that is not the stage's would clear crossings the stage still has.
 const STAGE_UNSTICK = 0.18;
-/** The stage's DRIFT_ON and FALL; keep all three the same numbers. */
-export const STAGE_DRIFT_ON = 0.3;
-export const STAGE_FALL = 0.16;
+/**
+ * The stage's DRIFT_ON, which the crossing checks have to pose pieces with.
+ * 1: past the knee a piece carries ON at the pace its window was planned at
+ * — one offset per window, for as long as it is drawn — so it never slows
+ * to a crawl and never leaves the line it broke off along. It was 0.3, a
+ * drift, and before the knee the curve slowed to a dead stop at the window's
+ * end. Asked for: "all of the pieces should continue moving down the line
+ * that they break off from."
+ */
+export const STAGE_DRIFT_ON = 1;
 const STAGE_KNEE = 1 - STAGE_DRIFT_ON / 2;
 const STAGE_KNEE_AT = STAGE_KNEE * (2 - STAGE_KNEE);
+
+/**
+ * The stage's own shrink curve (shrinkAt in ThinkerStage): a piece keeps its
+ * full size for the first quarter of its travel and takes its shrink over the
+ * rest. The checks below pose pieces with it, so they see the size a piece
+ * really is when it is still next to its neighbours.
+ */
+function stageShrinkAt(travel: number) {
+  const x = THREE.MathUtils.clamp((travel - 0.25) / 0.75, 0, 1);
+
+  return x * x * (3 - 2 * x);
+}
 
 function stageTravelAt(x: number) {
   if (x <= 0) return 0;
@@ -4131,15 +4214,6 @@ function stageTravelAt(x: number) {
   const t = x / STAGE_UNSTICK;
 
   return travel * t * t * t * (t * (t * 6 - 15) + 10);
-}
-
-/**
- * How far a piece has fallen, in figure units, for how far it is into its
- * window: constant acceleration on the flight's own clock. See FALL in
- * ThinkerStage for what it is for and what it measures.
- */
-function stageFallAt(x: number) {
-  return x <= 0 ? 0 : STAGE_FALL * x * x;
 }
 
 // How far into the break the crossing checks look, and how often: just past
@@ -4191,16 +4265,12 @@ function straightenCrossingFlights(
     const flown = (moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01);
     const travel = stageTravelAt(flown);
     const turn = Math.min(travel, 1.5);
-    const position = pieces[index].center.clone().addScaledVector(offsets[index], travel);
-
-    position.y -= stageFallAt(flown);
-
     return {
-      position,
+      position: pieces[index].center.clone().addScaledVector(offsets[index], travel),
       rotation: new THREE.Quaternion().setFromEuler(
         euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
       ),
-      scale: THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)),
+      scale: THREE.MathUtils.lerp(1, chunk.scale, stageShrinkAt(travel)),
     };
   };
 
@@ -4267,6 +4337,249 @@ function straightenCrossingFlights(
   }
 }
 
+/**
+ * Whatever is still inside solid stone after the two repairs above, steered
+ * around it. Asked for: "eliminate any chunks passing through preexisting
+ * material". The repairs each have one move and it is not always available —
+ * `straightenCrossingFlights` can only turn a flight BACK to the one the
+ * plane gave it, and that one may be no better, and `clearStandingBlockers`
+ * can only let the standing piece go sooner, which the order will not always
+ * allow (CLEAR_MAX_SHIFT, CLEAR_FROM). This has the move they are missing:
+ * it turns the MOVER onto a different line.
+ *
+ * A piece still flies a straight line from where it broke off — the line is
+ * just aimed a few degrees to one side of the thing it was going through.
+ * The turn is about the axis that swings the flight in the plane it shares
+ * with what it hits, smallest turn first, and a candidate is only taken if
+ * it is clear of EVERYTHING (standing and flying alike), so the pass cannot
+ * trade one overlap for another. Rounds until nothing moves, because a
+ * turned piece can walk into a piece that was clear of it before.
+ *
+ * Measured with the sampled-point audit over the drawn break, pairs with a
+ * tenth or more of a piece's points inside another: inside standing marble
+ * 14 -> 0, flying through flying 23 -> 5 (and at a quarter or more, 2 -> 0
+ * and 7 -> 0). The flights it moves are few — it turns 11 of 320 pieces, by
+ * 15 degrees median — so the stream's spread on screen is unchanged at
+ * 11.4 / 16.9 / 21.8 degrees about its mean.
+ */
+const STEER_TURNS = [5, -5, 10, -10, 15, -15, 20, -20, 25, -25, 29, -29, 33, -33];
+const STEER_ROUNDS = 12;
+/**
+ * The share of a mover's sampled points inside another piece this pass will
+ * not leave, and how many points it takes. Both are stricter than the audit
+ * that grades the result (a tenth of 70 points): a pass that is graded by a
+ * finer sieve than it uses leaves the difference behind, and on the first
+ * cut it did — 0.1 of 40 points left 7 pairs the audit still called
+ * overlapping.
+ */
+const STEER_FRACTION = 0.05;
+const STEER_SAMPLES = 90;
+/** Shares of its own flight length a piece may lean away from what it hits. */
+const STEER_APART = [0.06, 0.12, 0.2, 0.28, 0.38, 0.5];
+/**
+ * The most a flight may end up turned from the one the plan gave it, over
+ * all the rounds together. Without a cap the pass walks a piece that has
+ * nowhere clear to go a little further every round, and the stream goes with
+ * it: the first 120 pieces off spread 15.7 / 38.6 / 52.8 degrees about their
+ * mean on screen (median / p75 / p90) against the 13 / 20 / 38 of
+ * lukebaffait.fr's own cloud, and the mean direction swung 10 degrees. At 34
+ * they spread 15.3 / 26.2 / 39.7 and the mean sits at 139 against 150; at 30
+ * it is 14.5 / 24.9 / 36.9 and 142, but one pair of flying pieces is left a
+ * third inside each other for a tenth of the break, which is seen. Three
+ * degrees of the stream's mean buys that pair.
+ */
+const STEER_MAX_TURN = (34 * Math.PI) / 180;
+
+function steerClearOfSolids(
+  chunks: ThinkerChunkData[],
+  pieces: FragmentPiece[],
+  offsets: THREE.Vector3[],
+) {
+  const insideTests = pieces.map((piece) => makeInsideTest(piece));
+  // The SKIN and the CUT FACES sampled separately, so both are covered at
+  // this density however lopsided a piece is. A plain stride over all the
+  // polygons put nearly every point on the cut faces of a piece that is
+  // mostly cut face, and the pass then passed pairs that an audit sampling
+  // the skin called half inside each other (261/284 measured 0.50).
+  const samples = pieces.map((piece) => {
+    const points: THREE.Vector3[] = [];
+
+    for (const kind of ["surface", "cap"] as const) {
+      const polygons = piece.polygons.filter((polygon) => polygon.kind === kind);
+      const stride = Math.max(1, Math.floor(polygons.length / STEER_SAMPLES));
+
+      for (let index = 0; index < polygons.length; index += stride) {
+        const centroid = new THREE.Vector3();
+        polygons[index].vertices.forEach((vertex) => centroid.add(vertex.point));
+        points.push(
+          centroid.multiplyScalar(1 / polygons[index].vertices.length).lerp(piece.center, 0.07),
+        );
+      }
+    }
+
+    return points;
+  });
+  const euler = new THREE.Euler();
+  const rotation = new THREE.Quaternion();
+  const position = new THREE.Vector3();
+  const point = new THREE.Vector3();
+  const radii = chunks.map((chunk) => chunk.radius);
+  // Every piece a mover on this flight ends up a tenth or more inside, at any
+  // moment the stage is drawn through.
+  const blockersOf = (mover: number, flight: THREE.Vector3) => {
+    const chunk = chunks[mover];
+    const hit = new Set<number>();
+
+    for (
+      let moment = CROSSING_CHECK_STEP;
+      moment <= CROSSING_CHECK_END + 1e-9;
+      moment += CROSSING_CHECK_STEP
+    ) {
+      if (chunk.releaseAt >= moment) continue;
+
+      const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+      const turn = Math.min(travel, 1.5);
+      const scale = THREE.MathUtils.lerp(1, chunk.scale, stageShrinkAt(travel));
+
+      position.copy(flight).multiplyScalar(travel).add(pieces[mover].center);
+      rotation.setFromEuler(
+        euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
+      );
+
+      chunks.forEach((other, index) => {
+        if (index === mover || hit.has(index)) return;
+
+        const moving = other.releaseAt < moment;
+        const otherTravel = moving
+          ? stageTravelAt((moment - other.releaseAt) / Math.max(other.travel, 0.01))
+          : 0;
+        const otherScale = THREE.MathUtils.lerp(1, other.scale, stageShrinkAt(otherTravel));
+        const otherAt = new THREE.Vector3(...other.offset)
+          .multiplyScalar(otherTravel)
+          .add(pieces[index].center);
+
+        if (position.distanceTo(otherAt) > radii[mover] * scale + radii[index] * otherScale) return;
+
+        // The other piece's own turn, so a mover is not tested against a pose
+        // it never meets.
+        const otherTurn = Math.min(otherTravel, 1.5);
+        const otherRotation = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(
+            other.spin[0] * otherTurn,
+            other.spin[1] * otherTurn,
+            other.spin[2] * otherTurn,
+          ),
+        );
+        const inverse = otherRotation.clone().invert();
+        let inside = 0;
+
+        for (const sample of samples[mover]) {
+          point
+            .copy(sample)
+            .sub(pieces[mover].center)
+            .multiplyScalar(scale)
+            .applyQuaternion(rotation)
+            .add(position)
+            .sub(otherAt)
+            .applyQuaternion(inverse)
+            .multiplyScalar(1 / Math.max(otherScale, 1e-6))
+            .add(pieces[index].center);
+          if (pieces[index].box.containsPoint(point) && insideTests[index](point)) inside += 1;
+        }
+
+        if (inside >= samples[mover].length * STEER_FRACTION) hit.add(index);
+      });
+    }
+
+    return hit;
+  };
+  const axis = new THREE.Vector3();
+  const candidate = new THREE.Vector3();
+  const planned = offsets.map((offset) => offset.clone());
+
+  for (let round = 0; round < STEER_ROUNDS; round++) {
+    let moved = 0;
+
+    for (let mover = 0; mover < chunks.length; mover++) {
+      const blockers = blockersOf(mover, offsets[mover]);
+
+      if (blockers.size === 0) continue;
+
+      // Swing away from the nearest thing in the way.
+      const worst = [...blockers].reduce((best, index) =>
+        pieces[index].center.distanceTo(pieces[mover].center) <
+        pieces[best].center.distanceTo(pieces[mover].center)
+          ? index
+          : best,
+      );
+
+      axis.crossVectors(offsets[mover], pieces[worst].center.clone().sub(pieces[mover].center));
+
+      if (axis.lengthSq() < 1e-12) continue;
+
+      axis.normalize();
+
+      // The swing that goes round the blocker first, then the one across it
+      // (a piece boxed in on one side has the other to go to), and last a
+      // push straight away from what it hits. A turn cannot separate two
+      // pieces that left from almost the same place and fly almost the same
+      // way — the pair 261/284 held their centres 0.04 apart, against radii
+      // summing to 0.25, for the whole of the drawn break, and every turn of
+      // the one moved it into the other's new place. Leaning the flight away
+      // from the line between them does separate them, and it is still one
+      // straight line from where the piece broke off.
+      //
+      // The best candidate is taken, not the first clear one: a piece with
+      // nowhere clear to go still has somewhere BETTER to go, and the rounds
+      // then walk it out. Taking only a clear line left three pairs of
+      // pieces flying through each other that this clears.
+      const across = axis.clone().cross(offsets[mover]).normalize();
+      const apart = pieces[mover].center
+        .clone()
+        .sub(pieces[worst].center)
+        .normalize()
+        .multiplyScalar(offsets[mover].length());
+      let bestCount = blockers.size;
+      let best: THREE.Vector3 | null = null;
+
+      const consider = (flight: THREE.Vector3) => {
+        if (flight.angleTo(planned[mover]) > STEER_MAX_TURN) return false;
+
+        const count = blockersOf(mover, flight).size;
+
+        if (count >= bestCount) return false;
+
+        bestCount = count;
+        best = flight.clone();
+
+        return count === 0;
+      };
+
+      search: for (const turns of [axis, across]) {
+        for (const degrees of STEER_TURNS) {
+          if (consider(candidate.copy(offsets[mover]).applyAxisAngle(turns, (degrees * Math.PI) / 180))) {
+            break search;
+          }
+        }
+      }
+
+      if (bestCount > 0 && apart.lengthSq() > 1e-12) {
+        for (const share of STEER_APART) {
+          if (consider(candidate.copy(offsets[mover]).addScaledVector(apart, share))) break;
+        }
+      }
+
+      if (best) {
+        offsets[mover].copy(best);
+        chunks[mover].offset = [offsets[mover].x, offsets[mover].y, offsets[mover].z];
+        moved += 1;
+      }
+    }
+
+    if (moved === 0) break;
+  }
+}
+
 // `clearStandingBlockers`: the most a standing piece's release may be brought
 // forward, in breakup, and the earliest it may be brought forward to.
 const CLEAR_MAX_SHIFT = 0.03;
@@ -4313,10 +4626,9 @@ function clearStandingBlockers(
         const flown = (moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01);
         const travel = stageTravelAt(flown);
         const turn = Math.min(travel, 1.5);
-        const scale = THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1));
+        const scale = THREE.MathUtils.lerp(1, chunk.scale, stageShrinkAt(travel));
 
         position.set(...chunk.offset).multiplyScalar(travel).add(pieces[mover].center);
-        position.y -= stageFallAt(flown);
         rotation.setFromEuler(euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn));
 
         chunks.forEach((other, standing) => {
@@ -4442,7 +4754,7 @@ export function buildSolidThinkerChunks(
       cells.map((cell) => cell.seed.position),
     );
   }
-  const { exposedAt, neighbours, releaseAt } = planReleaseOrder(cells, offsets, options, straight);
+  const { exposedAt, neighbours, releaseAt, wallAt } = planReleaseOrder(cells, offsets, options, straight);
 
   const chunks = pieces.map((piece, index): ThinkerChunkData => {
     const offset = offsets[index];
@@ -4461,10 +4773,32 @@ export function buildSolidThinkerChunks(
       piece.polygons.filter((polygon) => polygon.kind === "surface"),
       piece.center,
     );
+    // The cut faces, SORTED by the moment each stops being buried, so the
+    // stage can draw the first n of them and no more (see `wall` below and
+    // the draw range in ThinkerStage). One draw call either way.
+    const caps = piece.polygons.filter((polygon) => polygon.kind === "cap");
+    const moments = wallAt[index];
+    const order = caps
+      .map((_, capIndex) => capIndex)
+      .sort((a, b) => moments[a] - moments[b]);
     const interior = makeFlatArrays(
-      piece.polygons.filter((polygon) => polygon.kind === "cap"),
+      order.map((capIndex) => caps[capIndex]),
       piece.center,
     );
+    // [moment, triangles drawn once the break has passed it], in order. Only
+    // the steps are kept, so this is a handful of pairs per piece rather than
+    // one per face.
+    const wall: Array<[number, number]> = [];
+    let triangles = 0;
+
+    order.forEach((capIndex) => {
+      triangles += Math.max(caps[capIndex].vertices.length - 2, 0);
+      const moment = moments[capIndex];
+      const last = wall[wall.length - 1];
+
+      if (last && last[0] === moment) last[1] = triangles;
+      else wall.push([moment, triangles]);
+    });
 
     driftCenter.add(offset);
 
@@ -4492,12 +4826,14 @@ export function buildSolidThinkerChunks(
       surfaceNormals: surface.normals,
       surfacePositions: surface.positions,
       travel: Math.min(TRAVEL_WINDOW, 1 - releaseAt[index]),
+      wall,
     };
   });
 
   if (straight) {
     straightenCrossingFlights(chunks, pieces, offsets, straight);
     clearStandingBlockers(chunks, pieces, neighbours);
+    steerClearOfSolids(chunks, pieces, offsets);
     driftCenter.set(0, 0, 0);
     offsets.forEach((offset) => driftCenter.add(offset));
   }
