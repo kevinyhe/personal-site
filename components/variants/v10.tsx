@@ -64,7 +64,7 @@ const CSS = `
   background-image: linear-gradient(
     90deg,
     var(--ink) max(0%, calc(var(--v10-fill) - 3%)),
-    transparent calc(var(--v10-fill) + 3%)
+    transparent var(--v10-fill)
   );
   -webkit-background-clip: text;
   background-clip: text;
