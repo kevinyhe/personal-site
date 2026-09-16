@@ -819,7 +819,17 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // rather than at the window's end (stageTravelAt), which is what the stage
 // draws now. Same pieces and same order; the flights the checks straighten
 // differ.
-export const FRACTURE_VERSION = 16;
+// 17: the fall is gone and the travel curve carries on at the pace its
+// window was planned at (STAGE_DRIFT_ON 0.3 -> 1), so the crossing checks
+// pose pieces further along their line and on the line itself.
+// 18: `steerClearOfSolids` — a third repair pass that turns a mover onto a
+// line that clears what the other two could not.
+// 19: the cut faces are baked in the order they come loose, with the
+// draw-range ladder (`wall`) that goes with them, so the stage draws the
+// faces a cavity has actually opened and no others.
+// 20: the shrink to `scale` is held off until a piece is a quarter of the
+// way out (stageShrinkAt), which the crossing checks pose pieces with.
+export const FRACTURE_VERSION = 20;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
@@ -848,6 +858,8 @@ type BakedChunkRecord = {
   scale: number;
   spin: [number, number, number];
   travel: number;
+  /** See `wall` in ThinkerChunkData: the cut faces' draw-range ladder. */
+  wall: Array<[number, number]>;
   /**
    * Byte offset and element count of each array in the .bin: positions as
    * int16 against `positionRange` (about the chunk's centre), normals as
@@ -940,6 +952,7 @@ async function loadBakedChunks(options: BuildSolidChunkOptions): Promise<Thinker
       surfaceNormals: normals(record.surfaceNormals),
       surfacePositions: positions(record.surfacePositions),
       travel: record.travel,
+      wall: record.wall ?? [[record.exposedAt, Infinity]],
     })),
     drift: header.drift,
     stats: header.stats,
