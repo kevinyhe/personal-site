@@ -25,6 +25,8 @@ import {
 import { CHERRY_BASE_YAW, CUT_TO_TREE, loadCherryChunks } from "@/components/cherryChunks";
 import {
   makeChunkGeometries,
+  STAGE_DRIFT_ON,
+  STAGE_FALL,
   type ThinkerChunkBuild,
 } from "@/components/thinkerFragments";
 import { useMarbleMaterials } from "@/components/marbleMaterials";
@@ -643,21 +645,70 @@ function smoothPhase(start: number, end: number, value: number) {
 // lukebaffait.fr, whose sequence is mostly played out by the time its box
 // is full), then drifting on steadily the same way for as long as the
 // scroll lasts.
-const DRIFT_ON = 0.3;
+const DRIFT_ON = STAGE_DRIFT_ON;
 // Released pieces also gain this much travel per second of plain time, so
 // they never hang still in the air when the scroll rests. Halved with the
 // flight (TRAVEL_WINDOW): the pieces go at half the pace they did.
 const DRIFT_PER_SECOND = 0.008;
+// How far a piece falls, in figure units, by the end of its travel window,
+// growing as the square of its time in flight — one constant acceleration
+// for every piece, which is what weight is.
+//
+// Asked for pieces that do not "float in midair". Two things made them
+// float and they compound. The curve below decelerates: x(2-x) has slope 0
+// at the window's end, so a piece arrived at its offset and sat there, and
+// the drift past it is 0.3 of the window's mean pace. And the flight has no
+// weight at all — the pieces fly the line they were given, level, for as
+// long as they are on screen. Measured through the stage's camera at panel
+// value 0.49 (1280x800), the end of the drawn break: 9 of the 57 pieces in
+// frame were moving less than 0.02 of their own width per 0.01 of the
+// break, and the pieces that had finished their window had come to rest on
+// a net path 179 degrees on screen — dead level.
+//
+// THE FALL IS VERTICAL AND NOTHING ELSE. Kevin has twice thrown out curved
+// flight ("straight line, no curve, no spiral") and that still holds: the
+// piece's own offset is unchanged, it is still a straight line, and the
+// only thing added is -y against the square of the time. A stone that is
+// thrown does exactly this, and the path it draws is the one thing that
+// reads as weight rather than as drift.
+//
+// 0.16 is where the droop reads and the stream still runs leftward. Over
+// the pieces past their window at the end of the drawn break, the net path
+// on screen at FALL 0 / 0.08 / 0.16 / 0.24 is 179 / 168 / 156 / 168
+// degrees, so 0.16 lands them about 24 degrees below level; the deepest
+// piece has fallen 0.17 / 0.34 / 0.51 figure units (0.34 is 1.4 piece radii
+// and a ninth of the figure's height); and the share of the flight that has
+// turned — the angle between a piece's screen path a fifth of the way in
+// and its path now — stays at 1-3 degrees for the median piece and 20-29 at
+// p90, against 0.2-0.8 and 3-14 with no fall. Past this the p90 turn runs
+// to 56-72 degrees and the late cloud starts to read as debris dropping out
+// of the frame rather than as fragments streaming past the lens.
+//
+// Read from thinkerFragments (with DRIFT_ON) rather than written twice: the
+// bake's crossing checks pose pieces with this fall and this curve, and a
+// bake cut against different ones clears crossings the stage still has.
+const FALL = STAGE_FALL;
 // A released piece keeps rolling with time in the air: this much `turn` per
 // second on top of the turn its travel buys, up to ROLL_LIMIT. See the
 // tumble note in the chunk loop for the measurement that set them.
 const ROLL_PER_SECOND = 0.3;
 const ROLL_LIMIT = 2;
 
+// Where the curve stops slowing: the point at which x(2-x) is down to the
+// drift's own pace, after which it carries on at exactly that. It used to
+// slow all the way to a stop at x = 1 and then jump back to DRIFT_ON, so a
+// piece three quarters of the way through its window was the slowest thing
+// on screen — that dead patch is half of what read as floating. The first
+// 85% of the window is the curve it always was, which is where the
+// separation was tuned (see UNSTICK), and the two now meet with the same
+// slope, so there is no kink to see.
+const KNEE = 1 - DRIFT_ON / 2;
+const KNEE_AT = KNEE * (2 - KNEE);
+
 function travelAt(x: number) {
   if (x <= 0) return 0;
-  if (x <= 1) return x * (2 - x);
-  return 1 + (x - 1) * DRIFT_ON;
+  if (x <= KNEE) return x * (2 - x);
+  return KNEE_AT + DRIFT_ON * (x - KNEE);
 }
 
 // How much of a piece's own travel window it spends UNSTICKING: over this
@@ -1562,6 +1613,9 @@ function ChunkedFigure({
       const travel = travelAt(progress);
       const turn = Math.min(travel, 1.5);
       position.set(...chunk.center).addScaledVector(scratchOffset.set(...chunk.offset), travel);
+      // The same weight the chunk loop gives the bough, so a petal lets go
+      // from where the bough actually is.
+      position.y -= FALL * progress * progress;
       quaternion.setFromEuler(
         scratchEuler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
       );
@@ -1725,6 +1779,22 @@ function ChunkedFigure({
       const breathing =
         Math.sin(clock.elapsedTime * 0.22 + index * 0.63) * 0.012 * travel;
       group.position.copy(chunk.center).addScaledVector(chunk.offset, travel);
+      // The weight (FALL). The clock is the flight's own — how far the piece
+      // is into its window — plus the share a parked scroll buys, so a piece
+      // scrolled back home lands exactly where it was carved and a page left
+      // alone keeps settling instead of hanging. DRIFT_PER_SECOND is travel a
+      // second and travel past the knee runs at DRIFT_ON a window, so a
+      // second of still time is DRIFT_PER_SECOND / DRIFT_ON of a window.
+      //
+      // It is the stage group's own -y, not the world's: the group is tilted
+      // 4.6 degrees off vertical (placement.rotation) and drifts another 2.3
+      // over the break, so at the deepest fall this leans the drop by 0.03
+      // figure units — a tenth of a piece — and it keeps the bake's crossing
+      // checks, which work in this same space, exact.
+      const flown =
+        localProgress +
+        (DRIFT_PER_SECOND / DRIFT_ON) * adriftRef.current[index] * Math.min(localProgress, 1);
+      group.position.y -= FALL * flown * flown;
       group.position.y += breathing;
       group.rotation.set(chunk.spin.x * turn, chunk.spin.y * turn, chunk.spin.z * turn);
       group.scale.setScalar(THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1)));

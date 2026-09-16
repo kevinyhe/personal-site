@@ -502,15 +502,75 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // the area, and a third fewer draw calls for the shadow pass to walk.
   // 4200 candidates are no longer needed for it: at 3600 they sit about 0.061
   // apart, still finer than `spacingNear`, and the cut is 33 s instead of 54.
-  candidateTarget: 3600,
-  spacingNear: 0.055,
-  spacingFar: 0.2,
-  // Cells reach full size within this far ALONG THE ORDER (the rank turned
-  // back into figure units, so it still reads as a distance). Steep: it is
-  // what decides how much of the figure is cut fine, and so most of the
-  // piece count. 0.20/0.45 came to 565 pieces and a 58 s cut, 0.24/0.40 to
-  // 383; 0.22/0.43 is 506, within 10% of the 476 this replaces.
-  spacingFalloff: 0.43,
+  //
+  // AND THEN ASKED FOR THE OPPOSITE, which is what the four numbers below
+  // are now: "some pieces can be really small but the largest pieces should
+  // be around the average sized ones right now". That is a ceiling and a
+  // floor, and only one of them is free. The ceiling is what the eye is on —
+  // measured over the pieces the stage is drawn long enough to show leaving
+  // (releaseAt <= 0.52, which is 121 of the 269 that cut had), their radius
+  // ran p10 0.120 / median 0.210 / p90 0.327 / max 0.534, with the smallest
+  // at 0.057, against a whole-figure mean of 0.267. It now runs 0.091 /
+  // 0.160 / 0.278 / 0.318 over 141 such pieces, smallest 0.024: the biggest
+  // piece anyone sees fly is 40% smaller, the p90 is that old whole-figure
+  // average, and the small end reaches less than half as far up.
+  //
+  // THE COUNT IS THE WALL. Every chunk costs about 2.3 GL draws a frame
+  // whether it ever moves or not, and the frame only came back inside 8.3 ms
+  // when the last round took the pieces from 421 to 269. Capping the radius
+  // of EVERY piece at 0.24 — today's median — takes at least 770 pieces,
+  // because the volume has to go somewhere; a cut that measured the
+  // distribution above at its best (spacingNear 0.09, sizeVariation 2.2)
+  // came out at 524. So the fineness is spent where it is seen and paid for
+  // where it is not: the base and the legs, 40% of the pieces, are drawn
+  // intact for the whole shot and never seen to break, and they are now cut
+  // in lumps (the whole figure's max radius is 0.854 against 0.755). 320
+  // pieces, up 19%.
+  //
+  // `spacingHold` is what makes that trade possible at all; see the option.
+  //
+  // What the four settle at, and what each was bought against, measured over
+  // the seen pieces (p10 / median / p90 / max radius) with the piece count
+  // and the front's fitted path on screen:
+  //   0.105 near, hold 1.0, far 0.55, up 1.0, down 2.3: 426 pieces, -46.6
+  //     deg, 0.094 / 0.170 / 0.246 / 0.284 — the distribution, over budget
+  //   0.125 near, hold 1.05, far 0.60, up 1.0, down 2.5: 320 pieces, -43.9
+  //     deg, 0.091 / 0.127 / 0.278 / 0.318 — as shipped
+  //   0.13 near, hold 1.0, far 0.65, up 1.0, down 2.7:  316 pieces, -41.6
+  //     deg, 0.076 / 0.149 / 0.274 / 0.320 — a finer small end, and the
+  //     front's coherence while the stage is clear falls to 0.506 with it
+  //   0.132 near, hold 1.05, far 0.62, up 1.0, down 2.8: 305 pieces, -37.5
+  //     deg, 0.079 / 0.100 / 0.268 / 0.356
+  //   0.125 near, hold 1.15, far 0.65, up 0.6, down 2.9: 456 pieces, -47.7
+  //     deg, 0.070 / 0.099 / 0.262 / 0.297 — the smallest small end anyone
+  //     measured, and 70% more pieces than the budget has
+  // Below about 300 pieces the front's path starts to go: at 295 it fitted
+  // 36.5 degrees below horizontal against the 41 the shot is built on.
+  //
+  // 5000 candidates, from 3600: the cloud is a FLOOR on cell size (a seed can
+  // only sit where there is a candidate), and 3600 of them sit 0.061 apart,
+  // which is coarser than the small end asked for here. At 5000 they sit
+  // about 0.052 apart. The cut is 44 s.
+  candidateTarget: 5000,
+  spacingNear: 0.125,
+  spacingFar: 0.6,
+  // How far the fine spacing runs before it opens out at all, in figure
+  // units of the order (see `spacingHold` in thinkerFragments for why the
+  // old exponential could not do this). The stage is drawn through about the
+  // first 45% of the order, and the base starts at 72% of it, so a hold that
+  // covers the first and stops before the second is what puts every fine
+  // piece where it is seen and every lump where it is not. 1.05 measured: no
+  // piece released inside the drawn window is bigger than 0.318, where the
+  // exponential grading let a 0.534 through.
+  spacingHold: 1.05,
+  // The width of the ramp that follows the hold, in the same units: the
+  // cells go from `spacingNear` to `spacingFar` over it, so full coarseness
+  // lands at 1.75 along the order — past the drawn window, short of the
+  // base.
+  // (Before `spacingHold` this was the exponential's own falloff, where the
+  // cells were 63% of the way out at this distance: 0.20/0.45 came to 565
+  // pieces and a 58 s cut, 0.24/0.40 to 383, and 0.43 was 506.)
+  spacingFalloff: 0.7,
   // RINGS AND RADIAL GRAIN, both of which were off. The comments here used
   // to read "no rings: the reference's cells show no concentric structure"
   // and "no radial grain: the reference's cells are as wide as they are
@@ -552,7 +612,19 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // nearly uniform, but at 0.5 ours read as a lattice ("too uniform"), so
   // this is back up to where slabs sit beside small fragments without the
   // slivers the old 3.0 made — 1.5 first, then 2.2 when 1.5 still read as
-  // even. That is the small side; the large side is wider still.
+  // even, and 2.5 for the "really small" pieces of the round above — the
+  // smallest piece that is seen to fly is a 0.024 speck against 0.057. That
+  // is the small side; the large side is NARROWER now (`sizeVariationUp`).
+  //
+  // The small side is also where the piece count is decided, and it is not
+  // linear: the room test makes neighbours keep the LARGER spacing, so a
+  // trough in the field comes out as a PATCH of fine cells rather than one
+  // small piece among big ones, and the count grows as the field's troughs
+  // deepen. At 3.0 with a 8000-point candidate cloud the sampler filled to
+  // the 800-piece cap whatever `spacingNear` was set to (0.055 and 0.085
+  // both did it). 2.5 is the deepest trough this budget pays for: at 2.8
+  // (and a coarser `spacingNear` to pay for it) the seen median falls
+  // 0.160 -> 0.138 and the front's path flattens to 37.5 degrees.
   //
   // The field's up-swing is an 11x spacing at the top (e^4.8 * 0.5), and the
   // sampler measures a candidate's room against the LARGER of the two
@@ -572,15 +644,28 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // 0.762 -> 0.737 — a coarse seed near the break carries its neighbours'
   // release with it. That is the whole of the bend, and it is Kevin's ask
   // against my number.
-  variationNear: 0.45,
-  sizeVariation: 2.2,
-  // The biggest pieces asked for at 150% bigger with the smallest left
-  // alone. The field is a product of sines and rarely leaves +-0.5, so
-  // the swing has to be steep to move the top end: 3.1 (e^3.1 against
-  // e^2.2, "2.5x" on paper) measured +6% on the ten biggest pieces; this
-  // is what it takes for 2.5x. After lukebaffait.fr, whose cloud is
-  // mostly even pieces with a few whole limbs among them.
-  sizeVariationUp: 4.8,
+  //
+  // 1, from 0.45: all of the variation, everywhere. This was held down
+  // because the field's up-swing was e^4.8 and one such seed swallowed its
+  // neighbourhood — with the up-swing at 1.0 the worst a coarse patch can do
+  // is 1.6x, and holding the variation down was then only holding the SMALL
+  // pieces back where they are most wanted. Over the first 45 released the
+  // p90/p10 radius ratio goes 2.38 -> 2.95, and over the whole figure
+  // 3.48 -> 3.56.
+  variationNear: 1,
+  sizeVariation: 2.5,
+  // The up-swing, e^+this, and it is the direct reverse of the round before:
+  // it was 4.8, which is an 11x spacing at the field's top and is where the
+  // whole-limb lumps came from ("the biggest pieces 150% bigger, the
+  // smallest left alone", after lukebaffait.fr's cloud of even pieces with a
+  // few limbs among them). Kevin looked at that and asked for the largest
+  // pieces to come down to the size of the average one. At 1.0 the worst a
+  // coarse patch can do is about 1.6x its target spacing, and the biggest
+  // piece released inside the drawn window measures 0.318 where 4.8 let
+  // 0.534 through. Dropping it further (0.6) is worth another 0.02 on that
+  // max and costs 140 pieces, because the seeds it takes off the top have to
+  // go somewhere.
+  sizeVariationUp: 1.0,
   // Safety cap; the spacing stops the sampler first. A cut this fine is
   // only affordable because it is baked (bakedPath): live it would be
   // minutes in a worker, longer than the reveal's failure net.
@@ -724,7 +809,17 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // carries the stage's unstick, which is what the crossing checks pose
 // pieces with. The options changed too, but those are fingerprinted; this
 // is for the code that reads them.
-export const FRACTURE_VERSION = 14;
+// 15: `neighbours` (which piece's cut faces are the wall of which cavity)
+// is found by POSITION rather than by Vector3 identity, so a piece whose
+// shared face never reaches the skin is exposed when its neighbour leaves
+// instead of when it leaves itself. Same pieces, same order, same flights;
+// 110 of the 269 chunks get an earlier `exposedAt`.
+// 16: the pieces have weight. The crossing checks pose them with the fall
+// (stageFallAt) and with a travel curve that stops slowing at the knee
+// rather than at the window's end (stageTravelAt), which is what the stage
+// draws now. Same pieces and same order; the flights the checks straighten
+// differ.
+export const FRACTURE_VERSION = 16;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };

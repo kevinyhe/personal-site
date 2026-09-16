@@ -588,9 +588,24 @@ export type BuildSolidChunkOptions = {
   spacingFar: number;
   /**
    * How quickly the spacing opens out, in figure units: at this distance
-   * from the impact the cells are ~63% of the way from near to far.
+   * from the impact the cells are ~63% of the way from near to far — or,
+   * with `spacingHold`, the width of the ramp that follows the hold.
    */
   spacingFalloff: number;
+  /**
+   * How far the grading stays at `spacingNear` before it opens out at all,
+   * in figure units (the rank turned back into them, with
+   * `gradeAlongSweep`). Left out, the spacing eases out exponentially from
+   * the blow, which is concave: whatever the falloff, the spacing at 2.2
+   * can be at most 1.76x the spacing at 1.25, so the part of the ORDER the
+   * stage is drawn through cannot be held fine while the base is cut
+   * coarse. With it the grading holds flat and then ramps over
+   * `spacingFalloff`, which is what lets the pieces that are seen to fly be
+   * small while the base — 40% of the pieces, drawn intact for the whole
+   * shot and never seen to break — is cut in lumps that cost one draw call
+   * each.
+   */
+  spacingHold?: number;
   /**
    * 0..1 pull of seeds onto the concentric shells around the impact. 0 is
    * a plain graded scatter; higher lines the cuts up into rings around the
@@ -804,6 +819,11 @@ const RELEASE_PROBE_FRACTION = 0.03;
 // gives (0.057) — the graph is no longer costing cohesion.
 const RELEASE_ORDER_TOLERANCE_TOUCHING = 0.25;
 const RELEASE_ORDER_TOLERANCE_DISTANT = 0.7;
+
+// The grid two cut points are snapped to when asking whether two pieces
+// share a face (see `neighbours` in planReleaseOrder): 1/3100 of the
+// figure's height, 1/240 of a median piece's radius.
+const CUT_POINT_GRID = 1e-3;
 
 // The flight, in multiples of `spread`: the push every piece gets along the
 // direction; the extra the piece furthest along it gets over the piece
@@ -2250,11 +2270,16 @@ function planSeeds(source: FragmentPiece, options: BuildSolidChunkOptions) {
   const inside = makeInsideTest(source);
 
   // Target cell width against distance from the impact: tight at the blow,
-  // easing out to `spacingFar`.
+  // easing out to `spacingFar`. Flat over `spacingHold` first when there is
+  // one, then a smoothstep over `spacingFalloff` (see the option).
   const spacingAt = (distance: number) =>
     options.spacingNear +
     (options.spacingFar - options.spacingNear) *
-      (1 - Math.exp(-distance / Math.max(options.spacingFalloff, 1e-6)));
+      (options.spacingHold === undefined
+        ? 1 - Math.exp(-distance / Math.max(options.spacingFalloff, 1e-6))
+        : smoothstep01(
+            (distance - options.spacingHold) / Math.max(options.spacingFalloff, 1e-6),
+          ));
 
   // Shells stepping outward from the impact, each one the local spacing
   // beyond the last, so the rings open out as the cells do. The step is
@@ -3576,16 +3601,81 @@ function planReleaseOrder(
   // before[u]: units that must start no later than u.
   const before: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
   // neighbours[c]: the cells that share cut points with c — the pieces whose
-  // leaving opens a cavity whose wall is c's own cut face. Collected here
-  // because the loop below already runs the touching test on every pair.
+  // leaving opens a cavity whose wall is c's own cut face (see `exposedAt`
+  // at the end of this function).
+  //
+  // BY POSITION, not by object identity, and that is the whole of the hole
+  // Kevin saw. `touching` above asks whether two cells' cap polygons share a
+  // Vector3 INSTANCE. A shared face only carries shared instances where it
+  // inherits them from the cached section of the whole figure by that plane
+  // (sectionOf) — the RIM, where the cut meets the skin. A face that lies
+  // entirely INSIDE the figure is built from intersections computed
+  // separately on each side, so the two copies are the same positions in
+  // different objects and the identity test says "not touching". Deep pieces
+  // therefore never learn that the piece in front of them has gone.
+  //
+  // Measured on the 269-cell bake: adjacency by position finds 1368 pairs
+  // (10.2 neighbours a piece) where identity leaves 110 of the 269 chunks
+  // with an exposedAt LATER than the position test gives, 58 of them inside
+  // the stretch the stage is drawn, and 67 chunks with no earlier neighbour
+  // at all against 13. Chunk 109, under the shoulder skin, is the one in the
+  // capture: it releases at 0.402 and was exposed at 0.402, while the piece
+  // it shares a face with (91) leaves at 0.159. Ray-cast through the black
+  // wedge at panel value 0.25, every hit for five pieces deep was an undrawn
+  // cut face and the only skin was back-facing, so the pixel was stage black
+  // — a hole straight into the figure, from breakup 0.045 to 0.402.
+  //
+  // The grid is safe because the relief (roughenCells) moves every copy of a
+  // position by one field of position alone, so two copies of a shared face
+  // stay bit-equal and land in the same cell; it is fine enough (1/3100 of
+  // the figure's height, 1/240 of a median piece's radius) that two faces
+  // that are not the same face do not.
+  //
+  // `touches` below is left on the identity test on purpose: it feeds the
+  // release ORDER (which probe a pair gets in `hits`, and which tolerance
+  // the texture's guard uses), and every number in the order was tuned
+  // against it. This is a drawing question, not an order one.
   const neighbours: number[][] = Array.from({ length: count }, () => []);
   const touches: Array<Set<number>> = Array.from({ length: count }, () => new Set());
+  const cellsAtCutPoint = new Map<string, number[]>();
+
+  cells.forEach(({ piece }, cell) => {
+    const seen = new Set<string>();
+
+    piece.polygons.forEach((polygon) => {
+      if (polygon.kind !== "cap") return;
+
+      polygon.vertices.forEach(({ point }) => {
+        const key = `${Math.round(point.x / CUT_POINT_GRID)},${Math.round(point.y / CUT_POINT_GRID)},${Math.round(point.z / CUT_POINT_GRID)}`;
+
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        const list = cellsAtCutPoint.get(key);
+
+        if (list) list.push(cell);
+        else cellsAtCutPoint.set(key, [cell]);
+      });
+    });
+  });
+
+  const neighbourSets: Array<Set<number>> = Array.from({ length: count }, () => new Set());
+
+  cellsAtCutPoint.forEach((list) => {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (cellUnit[list[i]] === cellUnit[list[j]]) continue;
+        neighbourSets[list[i]].add(list[j]);
+        neighbourSets[list[j]].add(list[i]);
+      }
+    }
+  });
+
+  neighbourSets.forEach((set, cell) => neighbours[cell].push(...set));
 
   for (let a = 0; a < count; a++) {
     for (let b = a + 1; b < count; b++) {
       if (cellUnit[a] === cellUnit[b] || !touching(a, b)) continue;
-      neighbours[a].push(b);
-      neighbours[b].push(a);
       touches[a].add(b);
       touches[b].add(a);
     }
@@ -3767,7 +3857,16 @@ function planReleaseOrder(
   if (shaped) {
     const unitTouches: Array<Set<number>> = Array.from({ length: unitCount }, () => new Set());
 
-    neighbours.forEach((others, cell) => {
+    // `touches`, not `neighbours`: the two were the same set until the wall
+    // test went positional, and this is the order, which every number in the
+    // release was tuned against. Off the wider set the clusters take in
+    // pieces that share a face deep inside the figure, which nobody sees go
+    // together — and it moves the release: measured on the same cut, 268 of
+    // 269 pieces changed moment (by up to 0.037 of the break), the gaps'
+    // coefficient of variation went 0.59 -> 0.68 and the pieces released by
+    // breakup 0.34 went 57 -> 55. What clusters on screen is pieces that
+    // share SKIN, which is what this set is.
+    touches.forEach((others, cell) => {
       others.forEach((other) => {
         if (cellUnit[other] !== cellUnit[cell]) unitTouches[cellUnit[cell]].add(cellUnit[other]);
       });
@@ -4013,17 +4112,34 @@ function samplePiece(piece: FragmentPiece) {
 // Keep the two in step — the crossing check poses pieces with this, and a
 // curve that is not the stage's would clear crossings the stage still has.
 const STAGE_UNSTICK = 0.18;
+/** The stage's DRIFT_ON and FALL; keep all three the same numbers. */
+export const STAGE_DRIFT_ON = 0.3;
+export const STAGE_FALL = 0.16;
+const STAGE_KNEE = 1 - STAGE_DRIFT_ON / 2;
+const STAGE_KNEE_AT = STAGE_KNEE * (2 - STAGE_KNEE);
 
 function stageTravelAt(x: number) {
   if (x <= 0) return 0;
 
-  const travel = x <= 1 ? x * (2 - x) : 1 + (x - 1) * 0.3;
+  const travel =
+    x <= STAGE_KNEE
+      ? x * (2 - x)
+      : STAGE_KNEE_AT + STAGE_DRIFT_ON * (x - STAGE_KNEE);
 
   if (x >= STAGE_UNSTICK) return travel;
 
   const t = x / STAGE_UNSTICK;
 
   return travel * t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+/**
+ * How far a piece has fallen, in figure units, for how far it is into its
+ * window: constant acceleration on the flight's own clock. See FALL in
+ * ThinkerStage for what it is for and what it measures.
+ */
+function stageFallAt(x: number) {
+  return x <= 0 ? 0 : STAGE_FALL * x * x;
 }
 
 // How far into the break the crossing checks look, and how often: just past
@@ -4072,11 +4188,15 @@ function straightenCrossingFlights(
 
   const poseAt = (index: number, moment: number) => {
     const chunk = chunks[index];
-    const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+    const flown = (moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01);
+    const travel = stageTravelAt(flown);
     const turn = Math.min(travel, 1.5);
+    const position = pieces[index].center.clone().addScaledVector(offsets[index], travel);
+
+    position.y -= stageFallAt(flown);
 
     return {
-      position: pieces[index].center.clone().addScaledVector(offsets[index], travel),
+      position,
       rotation: new THREE.Quaternion().setFromEuler(
         euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn),
       ),
@@ -4190,11 +4310,13 @@ function clearStandingBlockers(
     ) {
       chunks.forEach((chunk, mover) => {
         if (chunk.releaseAt >= moment) return;
-        const travel = stageTravelAt((moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01));
+        const flown = (moment - chunk.releaseAt) / Math.max(chunk.travel, 0.01);
+        const travel = stageTravelAt(flown);
         const turn = Math.min(travel, 1.5);
         const scale = THREE.MathUtils.lerp(1, chunk.scale, Math.min(travel, 1));
 
         position.set(...chunk.offset).multiplyScalar(travel).add(pieces[mover].center);
+        position.y -= stageFallAt(flown);
         rotation.setFromEuler(euler.set(chunk.spin[0] * turn, chunk.spin[1] * turn, chunk.spin[2] * turn));
 
         chunks.forEach((other, standing) => {
