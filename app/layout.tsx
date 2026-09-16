@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import SiteBackground from "@/components/SiteBackground";
 import SmoothScroll from "@/components/SmoothScroll";
 import "./globals.css";
+
+// The mono, for design 03 and the captions in 02.
+const mono = JetBrains_Mono({
+  display: "swap",
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500"],
+});
 
 const inter = Inter({
   display: "swap",
@@ -80,7 +88,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      className={`${inter.variable} ${displaySerif.variable}`}
+      className={`${inter.variable} ${displaySerif.variable} ${mono.variable}`}
       lang="en"
     >
       <head>

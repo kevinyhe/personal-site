@@ -108,12 +108,16 @@ const NARROW = 992;
  *  power from vexsim's six_motor_450 preset, which is what its Push Back
  *  scene drives (`python3 -m vexsim spec six_motor_450`); the pack from the
  *  V5 battery's datasheet. */
+/** The tagline, wrapped round the close-up of the robot: the first line
+ *  runs across the top of the frame, which the push-in leaves clear, and
+ *  the second sits beside the robot's shoulder in the left half. Sized so
+ *  the second line ends before the robot's edge at the frame's middle. */
 const AFTER =
-  "whitespace-nowrap font-serif-display italic text-[min(22vh,9.4vw)] leading-[0.86] tracking-[-0.03em] opacity-0";
+  "whitespace-nowrap font-serif-display italic text-[min(15vh,5.8vw)] leading-[1] tracking-[-0.03em] opacity-0";
 /** The introduction: the sans at reading size for a narrow column. */
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
-const STAIR = 5;
+const STAIR = 2;
 
 export default function StatementSection(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -308,7 +312,7 @@ export default function StatementSection(): JSX.Element {
     const frame0 = rootRef.current;
     const sceneW = frame0?.clientWidth ?? window.innerWidth;
     const sceneH = window.innerHeight;
-    const robotW = Math.min(1400, sceneW);
+    const robotW = Math.min(2200, sceneW);
     const robotH = Math.round((robotW * sceneH) / sceneW);
     const robot: HeroRobot | null = mountHeroRobot({
       url: "/models/hero.glb",
@@ -359,7 +363,20 @@ export default function StatementSection(): JSX.Element {
     //                it are gone: a clip from the bottom that follows it,
     //                and finishes over the last of the rise whatever the
     //                edge is doing;
-    //   0.74 - 1.00  the two lines come in, then the introduction.
+    //   0.22 - 0.72  the robot comes up from below the frame's bottom edge
+    //                and stops in the middle, turning the whole way, and
+    //                keeps turning until the section has scrolled off;
+    //   0.22 - 0.78  ...and the turn is one full circle over that, slowing
+    //                into a side profile, so it is settling as the push
+    //                begins and the close-up is always the same face;
+    //   0.68 - 1.00  the camera PUSHES IN, slowly, eased at both ends: the
+    //                robot's layer grows to twice the frame and slides down
+    //                and right, so what is left on screen is its upper
+    //                left, filling the right half of the width and the
+    //                bottom three quarters of the height, cut off by the
+    //                edges. The words keep the top and the left.
+    //   0.72 - 1.00  the two lines come in, then the introduction, on the
+    //                left, in the room it has left.
     // The turn runs from the moment it starts to rise until the section
     // has scrolled off the top, which is past the end of the pin: one full
     // circle, slow, as if on a turntable. One trigger runs the section's
@@ -371,6 +388,7 @@ export default function StatementSection(): JSX.Element {
     );
     const climb = gsap.parseEase("power2.out");
     const soft = gsap.parseEase("power2.out");
+    const glide = gsap.parseEase("power2.inOut");
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     let openFrames = 0;
     let spin = 0;
@@ -393,7 +411,8 @@ export default function StatementSection(): JSX.Element {
       }
       // Both pairs, top then bottom, one line after another.
       for (const [i, el] of lines.entries()) {
-        const q = soft(clamp01((p - 0.72 - i * 0.04) / 0.1));
+        // After the push-in has taken the robot out from under them.
+        const q = soft(clamp01((p - 0.84 - i * 0.04) / 0.12));
         el.style.opacity = String(q);
         el.style.transform = `translateY(${(1 - q) * 28}px)`;
       }
@@ -401,6 +420,20 @@ export default function StatementSection(): JSX.Element {
       const r = clamp01((p - 0.22) / 0.5);
       robot.yaw(spin);
       robot.rise(climb(r));
+      // The push-in. The robot stands in the middle third of its own
+      // canvas (x 0.33..0.67) and the middle 70% of its height; at twice
+      // the size, a box at (-16%, -5%) puts its left edge on the frame's
+      // middle and its top a quarter of the way down.
+      const z = glide(clamp01((p - 0.68) / 0.32));
+      const k = 1 + z;
+      robotConfig.width = `${100 * k}%`;
+      robotConfig.height = `${100 * k}%`;
+      // Measured off the render rather than the model's box: in profile
+      // the robot is narrower than its box and its lift's near side rises
+      // above it, so the offsets are what put its left edge on the frame's
+      // middle and its top a quarter of the way down.
+      robotConfig.x = `${-29 * z}%`;
+      robotConfig.y = `${14 * z}%`;
       // The wipe, from the bottom: the robot canvas is a scaled copy of
       // the frame, so its top edge scales back by the ratio.
       const scale = (frame0?.clientWidth ?? sceneW) / robotW;
@@ -430,6 +463,7 @@ export default function StatementSection(): JSX.Element {
       // fold to its bottom at the top of the screen. The pin is the middle
       // of that — one screen in, one screen short of the end.
       const RISE = 0.22;
+      const TURN_END = 0.78;
       ScrollTrigger.create({
         trigger: root,
         start: "top bottom",
@@ -444,9 +478,12 @@ export default function StatementSection(): JSX.Element {
           // The flower: open over the screen before the pin and the first
           // fifth of it, so it is full as the robot sets off.
           openScroll = clamp01(scrolled / (vh + 0.2 * pinLen));
-          // The turn: from the start of the rise to the end of the pass.
+          // The turn: one full circle from the start of the rise to a
+          // little past its end, eased out, so it comes to rest in profile
+          // as the push-in takes over.
           const riseAt = vh + RISE * pinLen;
-          spin = 2 * Math.PI * clamp01((scrolled - riseAt) / (H + vh - riseAt));
+          const turnEnd = vh + TURN_END * pinLen;
+          spin = 2 * Math.PI * gsap.parseEase("power2.inOut")(clamp01((scrolled - riseAt) / (turnEnd - riseAt)));
           lastP = p;
           apply(p);
         },
@@ -540,7 +577,7 @@ export default function StatementSection(): JSX.Element {
           each in a different cut: roman, italic, italic drawn hollow, bold
           italic. They come in one after another at the end of the
           pin; the timeline writes their opacity and lift directly. */}
-      <div className="pointer-events-none absolute left-[3vw] top-[7vh] z-[1] hidden lg:block" style={{ color: BLOSSOM_INK }}>
+      <div className="pointer-events-none absolute left-[4vw] top-[6vh] z-[1] hidden lg:block" style={{ color: BLOSSOM_INK }}>
         <p className={AFTER} data-after-line>
           I write software for
         </p>
@@ -548,12 +585,10 @@ export default function StatementSection(): JSX.Element {
           things that move.
         </p>
       </div>
-      {/* The introduction, in the clear on the right of the robot (it stands
-          in the middle 35..65 of the width). lukebaffait.fr's info section
-          does this after its tagline: a greeting, then a few plain lines in
-          the first person saying who and what. */}
+      {/* The introduction, bottom left under the tagline, in the room the
+          robot leaves when it drives off to the right. */}
       <div
-        className="pointer-events-none absolute right-[5vw] top-[56%] z-[1] hidden w-[22vw] -translate-y-1/2 lg:block"
+        className="pointer-events-none absolute bottom-[10vh] left-[4vw] z-[1] hidden w-[24vw] lg:block"
         style={{ color: BLOSSOM_INK }}
       >
         <p className={INTRO} data-after-line>
