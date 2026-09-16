@@ -59,7 +59,7 @@ export default function Terminal(): JSX.Element {
     }, 45);
     return () => window.clearInterval(id);
   }, []);
-  const pad = (s: string, n: number) => (s.length >= n ? s.slice(0, n - 1) + "…" : s + " ".repeat(n - s.length));
+  const pad = (s: string, n: number) => (s.length >= n ? s.slice(0, n - 2) + "… " : s + " ".repeat(n - s.length));
 
   return (
     <VariantShell accent={ACCENT} ground={GROUND} ink={INK} mono n={3}>

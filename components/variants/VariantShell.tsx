@@ -68,7 +68,7 @@ export default function VariantShell({
               key={v.n}
               title={`${v.name}: ${v.note}`}
             >
-              0{v.n}
+              {String(v.n).padStart(2, "0")}
             </Link>
           ))}
         </nav>
@@ -77,7 +77,7 @@ export default function VariantShell({
       <footer className="flex items-baseline justify-between px-[3vw] py-[2rem] text-[0.72rem] uppercase tracking-[0.18em] opacity-50">
         <span>{"©"} 2026 Kevin He</span>
         <span>
-          Design 0{n}, {VARIANTS[n - 1]?.name}
+          Design {String(n).padStart(2, "0")}, {VARIANTS[n - 1]?.name}
         </span>
       </footer>
     </div>
