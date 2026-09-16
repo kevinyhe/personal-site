@@ -738,11 +738,21 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // and the paths are as straight as they were. 0.18 left 4 pairs lasting;
   // 0.32 took the standing count to 3 but pulled the mean another degree
   // off and started to read as a puff rather than a stream.
+  // Off: see ONE_DIRECTION in thinkerFragments. Kept at its tuned value
+  // because nothing but that flag stands between it and being the flight
+  // again, and the numbers it bought are recorded there.
   outwardPush: 0.24,
   headFrom: 0.84,
   legsFrom: 0.4,
   seed: 211,
-  spread: 1.5,
+  // How far a piece flies, and so how fast: the whole flight scales with it.
+  // 0.6, from 1.5 — "make sure they move much slower". Measured through the
+  // stage's camera at panel value 0.37, the median flying piece has moved 138
+  // px of a 1280x800 frame where it moved 432, and 1.52 of its own diameters
+  // where it moved 2.82. At 0.9 it is 216 px. Nothing stops: past the knee a
+  // piece still carries on at one offset per window (STAGE_DRIFT_ON), it is
+  // simply a shorter offset.
+  spread: 0.6,
 };
 
 
@@ -855,7 +865,9 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // 21: `steerClearOfSolids` ignores the moments before a piece is out of its
 // socket (STEER_MOVED), so it steers the pieces that are really in the way
 // and leaves the rest on the line the plan gave them.
-export const FRACTURE_VERSION = 21;
+// 22: ONE_DIRECTION — every per-piece term in the flight is off, so the
+// pieces fly one common line, and `steerClearOfSolids` with them.
+export const FRACTURE_VERSION = 22;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };

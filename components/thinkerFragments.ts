@@ -850,6 +850,48 @@ const RELEASE_ORDER_TOLERANCE_DISTANT = 0.7;
 // figure's height, 1/240 of a median piece's radius.
 const CUT_POINT_GRID = 1e-3;
 
+/**
+ * ONE DIRECTION FOR EVERY PIECE. Asked for: "make the pieces all move in the
+ * same direction". Every term that turned a piece off the common line is off
+ * — the sideways expansion (FLIGHT_SPREAD), each piece's own way out of the
+ * stone (`outwardPush`), the smooth random field (`flightScatter`), the
+ * per-piece jitter, and the repair pass that steered pieces round each other
+ * (`steerClearOfSolids`). What is left is the direction and FLIGHT_STRETCH,
+ * which gives a piece further along the flight a longer offset: that is a
+ * difference of PACE along one line, not of direction, so the paths stay
+ * parallel.
+ *
+ * Measured on the bake, the first 120 pieces off deviate 0.0 / 0.0 / 0.0
+ * degrees from the stream's mean on screen, against 8.5 / 13.7 / 22.7. The
+ * stream still runs leftward: its mean direction is 185 degrees on screen,
+ * five below horizontal-left, where it was 144. All of the lift it used to
+ * have was the sideways expansion pushing the pieces high on the figure up.
+ *
+ * WHAT IT COSTS, because every one of these was bought by that divergence
+ * and Kevin is trading them away knowingly:
+ *
+ * Pass-through. `outwardPush` made it go away by construction — neighbours
+ * on a curved surface point apart, and a piece leaving along its own skin
+ * normal leaves the short way. On one common line a piece deep in the body
+ * flies through whatever is in front of it. Sampled-point audit over the
+ * drawn break, pairs a tenth or more inside each other once the mover has
+ * left its socket: inside standing marble 1 -> 186, flying through flying
+ * 0 -> 95; a quarter or more, 0 -> 50 and 0 -> 25.
+ *
+ * Separation on screen at panel value 0.317: flying pixels two or more
+ * pieces deep 0.112 -> 0.466, the nearest other piece 0.99 -> 0.36 piece
+ * sizes, a piece's outline on black 0.60 -> 0.23. Slower on top of that
+ * (see `spread`) takes them to 0.663, 0.33 and 0.095.
+ *
+ * The one remedy left that does not touch direction is letting a piece in
+ * the way go sooner (clearStandingBlockers, which moves the ORDER). It was
+ * tried wide: at CLEAR_MAX_SHIFT 0.10 / CLEAR_FROM 0.05 the standing pairs
+ * went 160 -> 157 and the build's shape collapsed forward — the share of the
+ * drawn stretch released by half of it went 31 -> 40%, by three quarters
+ * 59 -> 71% — so it is left where it was.
+ */
+const ONE_DIRECTION = true;
+
 // The flight, in multiples of `spread`: the push every piece gets along the
 // direction; the extra the piece furthest along it gets over the piece
 // furthest behind; and the fraction of a piece's sideways distance from the
@@ -4788,9 +4830,13 @@ export function buildSolidThinkerChunks(
       options.spread * 0.025,
     );
 
-    return direction
+    const offset = direction
       .clone()
-      .multiplyScalar(options.spread * (FLIGHT_PUSH + FLIGHT_STRETCH * lead))
+      .multiplyScalar(options.spread * (FLIGHT_PUSH + FLIGHT_STRETCH * lead));
+
+    if (ONE_DIRECTION) return offset;
+
+    return offset
       .addScaledVector(sideways, FLIGHT_SPREAD)
       .addScaledVector(outwards[index], options.spread * (options.outwardPush ?? 0))
       .add(jitter);
@@ -4798,7 +4844,7 @@ export function buildSolidThinkerChunks(
 
   const straight = options.flightScatter ? offsets.map((offset) => offset.clone()) : null;
 
-  if (options.flightScatter) {
+  if (options.flightScatter && !ONE_DIRECTION) {
     scatterFlights(
       offsets,
       pieces.map((piece) => piece.center),
@@ -4886,7 +4932,11 @@ export function buildSolidThinkerChunks(
   if (straight) {
     straightenCrossingFlights(chunks, pieces, offsets, straight);
     clearStandingBlockers(chunks, pieces, neighbours);
-    steerClearOfSolids(chunks, pieces, offsets);
+    // Off under ONE_DIRECTION: a pass whose only move is to turn a piece onto
+    // a different line cannot run when every piece has to fly the same one.
+    // With it on it turned 69 of 423 pieces by 10 degrees at the median, and
+    // that is exactly the spread this round is here to take out.
+    if (!ONE_DIRECTION) steerClearOfSolids(chunks, pieces, offsets);
     driftCenter.set(0, 0, 0);
     offsets.forEach((offset) => driftCenter.add(offset));
   }
