@@ -660,6 +660,48 @@ function travelAt(x: number) {
   return 1 + (x - 1) * DRIFT_ON;
 }
 
+// How much of a piece's own travel window it spends UNSTICKING: over this
+// first share of it the curve above is multiplied by a smootherstep, so the
+// piece leaves from rest instead of at its top speed.
+//
+// Asked for "more natural ease in as the piece lifts off from the surface".
+// `travelAt` alone is x(2-x), whose slope at zero is 2 — a piece's fastest
+// moment is the frame it comes loose, and it has been slowing ever since.
+// That is the opposite of a piece breaking free, and it is what read as
+// unnatural at the moment of release. With this the piece is at 0.013 of its
+// offset a twentieth of the way through its window where it used to be at
+// 0.098, reaches its top speed of 3.25 offsets a window at x 0.117, and from
+// x 0.18 on is on `travelAt` exactly — smootherstep arrives with both its
+// slope and its curvature at zero, so there is no kink to see.
+//
+// The tension is that the last round shortened TRAVEL_WINDOW to 0.35 because
+// pieces were not getting clear of each other, and an ease-in slows exactly
+// that. Keeping the old curve past the unstick is what pays for it: only a
+// piece less than UNSTICK * TRAVEL_WINDOW = 0.063 of the breakup old is
+// behind where it would have been. Measured on the bake through the stage's
+// camera at panel value 0.317 (1280x800), at UNSTICK 0 / 0.12 / 0.18 / 0.25
+// / 0.35: the share of flying-piece pixels two or more pieces cover 0.192 /
+// 0.191 / 0.203 / 0.219 / 0.290, the distance to the nearest other piece
+// 0.724 / 0.725 / 0.624 / 0.659 / 0.489 piece sizes, the share of a piece's
+// outline bordering black 0.397 / 0.382 / 0.402 / 0.400 / 0.355. It is free
+// to about 0.25 and 0.35 is not; 0.18 is the longest unstick that is, and at
+// 60 frames a second it is about four frames of a piece pulling away from
+// the wall it left.
+//
+// Keep STAGE_UNSTICK in thinkerFragments the same number. The bake's
+// crossing checks pose pieces with this curve, and a bake cut against a
+// different one clears crossings the stage still has.
+const UNSTICK = 0.18;
+
+function pieceTravelAt(x: number) {
+  if (x <= 0) return 0;
+  if (x >= UNSTICK) return travelAt(x);
+
+  const t = x / UNSTICK;
+
+  return travelAt(x) * t * t * t * (t * (t * 6 - 15) + 10);
+}
+
 // How far through the breakup the scroll is, 0..1, linear: the chunks take
 // their travel from this.
 function breakupAt({ breakStart, value }: { breakStart: number; value: number }) {
@@ -1657,7 +1699,7 @@ function ChunkedFigure({
       if (interior) interior.visible = shown > chunk.exposedAt;
       const adrift =
         DRIFT_PER_SECOND * adriftRef.current[index] * Math.min(localProgress, 1);
-      const travel = (travelAt(localProgress) + adrift) * (1 + settled * 0.06);
+      const travel = (pieceTravelAt(localProgress) + adrift) * (1 + settled * 0.06);
       // The tumble. `turn` used to be `Math.min(travel, 1.5)` alone, and the
       // cap was not what held it back: with travelWindow at 0.35 and `shown`
       // never past about 0.51 while the stage is drawn, travel reaches 1.05
