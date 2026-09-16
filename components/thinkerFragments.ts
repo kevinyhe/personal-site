@@ -647,6 +647,15 @@ export type BuildSolidChunkOptions = {
   seed: number;
   /** Distance scale of the flight, in the figure's units (it is 3.1 tall). */
   spread: number;
+  /**
+   * How much of each piece's flight runs along its OWN way out of the stone:
+   * the area-weighted mean of the skin it owned before the break, in units of
+   * `spread`, added to the common push. Neighbours on a curved surface point
+   * apart, so this separates pieces by construction instead of relying on the
+   * expansion about the figure's centre, and it aims a piece out of the body
+   * rather than through what is still standing. 0 when left out.
+   */
+  outwardPush?: number;
 };
 
 // Roughly how many surface points are offered to the sampler. It has to be
@@ -731,13 +740,15 @@ const RELEASE_RAMP_END = 0.51;
 // over the standing figure) 0.34 -> 0.54. A piece in frame there has moved
 // 2.3 of its own diameters since it left (median), from 1.7.
 //
-// Speed is what separates them, not direction. Turning the flights from 3 /
-// 6 / 9 degrees off the stream's mean on screen (median / p75 / p90) to 10 /
-// 19 / 32 with the smooth field in `flightScatter` moved the overlap share
-// at that frame by nothing (0.557 -> 0.555): a smooth field turns
-// neighbours together, so pieces that start touching stay stacked on the
-// screen. What pulls them apart is how far a piece gets before the next one
-// along leaves, which is this.
+// Speed is not the only thing that separates them, though until
+// `outwardPush` it was. Turning the flights from 3 / 6 / 9 degrees off the
+// stream's mean on screen (median / p75 / p90) to 10 / 19 / 32 with the
+// smooth field in `flightScatter` moved the overlap share at that frame by
+// nothing (0.557 -> 0.555): a smooth field turns neighbours TOGETHER, so
+// pieces that start touching stay stacked on the screen. What pulls them
+// apart is how far a piece gets before the next one along leaves, which is
+// this — and a flight that is each piece's own way out of the stone, which
+// turns neighbours APART. See `outwardPush` in thinkerChunks.
 //
 // What it costs: the pieces reach the top-left of the frame sooner, so 48
 // flying pieces are in frame at 0.317 where there were 63.
@@ -3891,13 +3902,16 @@ function planReleaseOrder(
  * the turns that fly pieces through standing marble or through each other,
  * and leave 5 / 8 / 18: see those for what that buys.
  *
- * Do not spend pass-through budget buying the spread back. Measured through
- * the stage's camera with a software ID render, the unrepaired scatter (10 /
+ * Do not spend pass-through budget buying the spread back WITH THIS FIELD.
+ * Measured through the stage's camera with a software ID render, the unrepaired scatter (10 /
  * 19 / 32 degrees against the straight flights' 3 / 6 / 9) moves the share of
  * the flying cloud's pixels that two or more pieces cover by nothing at all:
  * 0.555 against 0.557, at panel value 0.317. A smooth field turns
  * neighbouring pieces together by design, so it does not open them up; what
- * does is how far a piece gets before the next one leaves (TRAVEL_WINDOW).
+ * does is how far a piece gets before the next one leaves (TRAVEL_WINDOW)
+ * and, since `outwardPush`, the part of each flight that runs along the
+ * piece's own skin normal: a direction that is structured outward buys the
+ * spread AND pays pass-through back, which a random field cannot.
  * Damping the repairs smoothly over the field's own grain instead of piece by
  * piece was tried, to keep what the repairs take back coherent: it held the
  * neighbour correlation (0.36 -> 0.62 over pieces a piece apart) but damped
@@ -3993,12 +4007,23 @@ function samplePiece(piece: FragmentPiece) {
   return points;
 }
 
-// The stage's travel curve (travelAt in ThinkerStage), for the crossing
-// check below: quick off the mark, slowing through the piece's window.
+// The stage's own per-piece travel curve (pieceTravelAt in ThinkerStage), for
+// the crossing check below: a smootherstep unstick over the first UNSTICK of
+// the window, then quick off the mark and slowing through the rest of it.
+// Keep the two in step — the crossing check poses pieces with this, and a
+// curve that is not the stage's would clear crossings the stage still has.
+const STAGE_UNSTICK = 0.18;
+
 function stageTravelAt(x: number) {
   if (x <= 0) return 0;
-  if (x <= 1) return x * (2 - x);
-  return 1 + (x - 1) * 0.3;
+
+  const travel = x <= 1 ? x * (2 - x) : 1 + (x - 1) * 0.3;
+
+  if (x >= STAGE_UNSTICK) return travel;
+
+  const t = x / STAGE_UNSTICK;
+
+  return travel * t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 // How far into the break the crossing checks look, and how often: just past
@@ -4024,7 +4049,10 @@ const CROSSING_ROUNDS = 4;
  * more of one's sampled points inside the other at some moment): while
  * tuning, 4 on the plane's own break, 10 with the scatter and the texture,
  * 7 with this; pairs that stay overlapped for 0.06 of the break or more,
- * 10, 15 and 10. As shipped: 9, and 11.
+ * 10, 15 and 10. As shipped: 4, and 2 — `outwardPush` takes most of them
+ * out before this pass ever sees them, and what this pass straightens a
+ * piece back TO is now its OUTWARD flight, not the common one, because
+ * `straight` is taken after the outward term is added.
  * Each pair found turns its more-turned piece half way back to straight,
  * for up to CROSSING_ROUNDS rounds, the last of which straightens it.
  * Poses are the stage's own: travel on its curve, spin times travel, the
@@ -4245,7 +4273,27 @@ export function buildSolidThinkerChunks(
   const maxAlong = Math.max(...along);
   const span = Math.max(maxAlong - minAlong, 1e-6);
   const driftCenter = new THREE.Vector3();
-  const offsets = pieces.map((piece) => {
+  // Each piece's own way OUT of the stone (`outwardPush`): the mean of the
+  // skin it owned, weighted by area. A piece with almost no skin — one cut
+  // out of the middle of a limb — has no such direction, so it falls back to
+  // the line from the figure's centre of surface, which is the way out of
+  // the figure itself.
+  const outwards = pieces.map((piece) => {
+    const out = new THREE.Vector3();
+
+    piece.polygons.forEach((polygon) => {
+      if (polygon.kind !== "surface") return;
+
+      const share = polygonArea(polygon.vertices) / polygon.vertices.length;
+
+      polygon.vertices.forEach((vertex) => out.addScaledVector(vertex.normal, share));
+    });
+
+    if (out.lengthSq() < 1e-12) out.copy(piece.center).sub(origin);
+
+    return out.lengthSq() < 1e-12 ? out.set(0, 1, 0) : out.normalize();
+  });
+  const offsets = pieces.map((piece, index) => {
     const fromOrigin = piece.center.clone().sub(origin);
     const lead = (fromOrigin.dot(direction) - minAlong) / span;
     const sideways = fromOrigin.clone().addScaledVector(direction, -fromOrigin.dot(direction));
@@ -4257,6 +4305,7 @@ export function buildSolidThinkerChunks(
       .clone()
       .multiplyScalar(options.spread * (FLIGHT_PUSH + FLIGHT_STRETCH * lead))
       .addScaledVector(sideways, FLIGHT_SPREAD)
+      .addScaledVector(outwards[index], options.spread * (options.outwardPush ?? 0))
       .add(jitter);
   });
 

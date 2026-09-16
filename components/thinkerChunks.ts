@@ -418,6 +418,13 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // turns taken back are the ones that flew pieces from the shoulder down
   // through the body or through each other, so what survives leans up: the
   // seen stream's mean direction lifts by 5 degrees. Still straight paths.
+  //
+  // `outwardPush` below now carries the spread this field could not: the
+  // first 120 pieces off measure 17.5 / 27.2 / 38.0 degrees, which is the
+  // reference's own 13 / 20 / 38, and the pass-through went DOWN rather than
+  // up. That is not an argument for widening this field, which is random
+  // where the outward push is structured — it is why the field can stay
+  // where it is.
   flightScatter: { tilt: 0.4, yaw: 0.2, grain: 0.8, shares: [0.97, 0, 0.03] },
   // The pieces' spin rates spread out: most turn a little slower, a few
   // clearly faster. The reference's pieces turned, in the picture plane,
@@ -437,11 +444,18 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // The cells are graded along the order rather than around a point: see
   // the spacing notes below.
   gradeAlongSweep: true,
-  // The cells, after lukebaffait.fr's own break (frames of its hero
-  // sequence, a Blender cell fracture of The Creation of Adam): blocky,
-  // convex, nearly all the same size — about a tenth of the figure's
-  // height across — with no slivers, no rings and no radial grain, coming
-  // apart in a front that sweeps from the nearest point to the farthest.
+  // The cells. They were cut after lukebaffait.fr's own break (frames of its
+  // hero sequence, a Blender cell fracture of The Creation of Adam): blocky,
+  // convex, nearly all the same size — about a tenth of the figure's height
+  // across — with no slivers, no rings and no radial grain, coming apart in
+  // a front that sweeps from the nearest point to the farthest. That reading
+  // of the reference still holds; what no longer holds is copying it. Kevin
+  // looked at the result and said the pattern left behind reads as if small
+  // chunks had been carved out at random rather than as something that
+  // shattered, so the cells now carry the rings and the radial grain the
+  // reference does not have (see `shellBias` and `radialStretch`) and are
+  // half again bigger.
+  //
   // Cell width at the blow and far from it, in figure units (height 3.1):
   // finer at the blow, which is the shoulder the break starts at, so the
   // first pieces off are the smaller ones, as the reference's fingertips
@@ -478,34 +492,87 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
   // candidates and variationNear 1 (the field at full strength), halving
   // spacingNear from 0.075 to 0.05 moved the pieces within 0.55 of the
   // shoulder by nothing at all: mean radius 0.232 either way.
-  candidateTarget: 4200,
-  spacingNear: 0.05,
-  spacingFar: 0.22,
+  //
+  // ASKED FOR LARGER PIECES, and this is most of where they came from —
+  // together with the radial grain below, which lengthens every cell along
+  // the line from the blow and so takes a third of the seeds out on its own.
+  // Measured on the bake: 421 pieces at a median radius of 0.194 -> 269 at
+  // 0.240, and on screen through the stage's camera at panel value 0.317 the
+  // median flying piece goes from 29 to 38 pixels wide (1280x800). Half again
+  // the area, and a third fewer draw calls for the shadow pass to walk.
+  // 4200 candidates are no longer needed for it: at 3600 they sit about 0.061
+  // apart, still finer than `spacingNear`, and the cut is 33 s instead of 54.
+  candidateTarget: 3600,
+  spacingNear: 0.055,
+  spacingFar: 0.2,
   // Cells reach full size within this far ALONG THE ORDER (the rank turned
   // back into figure units, so it still reads as a distance). Steep: it is
   // what decides how much of the figure is cut fine, and so most of the
   // piece count. 0.20/0.45 came to 565 pieces and a 58 s cut, 0.24/0.40 to
   // 383; 0.22/0.43 is 506, within 10% of the 476 this replaces.
   spacingFalloff: 0.43,
-  // No rings: the reference's cells show no concentric structure.
-  shellBias: 0,
-  // No radial grain: the reference's cells are as wide as they are long
-  // (1 is none; the sampler clamps below it).
-  radialStretch: 1,
+  // RINGS AND RADIAL GRAIN, both of which were off. The comments here used
+  // to read "no rings: the reference's cells show no concentric structure"
+  // and "no radial grain: the reference's cells are as wide as they are
+  // long", and both were true readings of lukebaffait.fr. They are struck
+  // out because Kevin looked at what they produced and said the pattern left
+  // behind "does not resemble patterns from shattering, more as if small
+  // chunks were just randomly carved out". He is describing an even convex
+  // cell fracture, which is exactly what the reference is and exactly what
+  // those two lines asked for. His words outrank the reference.
+  //
+  // What a real impact fracture has instead: cracks running OUT from the
+  // blow, rings crossing them, and cells that are longer along the line from
+  // the blow than they are across it. `shellBias` pulls seeds onto the
+  // concentric shells around the impact, so their bisectors line up into
+  // rings with spokes between; `radialStretch` shrinks the radial part of
+  // the sampler's room test, so a cell has to be that much longer toward the
+  // blow than it is wide.
+  //
+  // Measured on the bake, over the 45 pieces released first (the ones the
+  // eye is on): the median piece's long axis against the line from the blow,
+  // |cos|, 0.446 -> 0.638, and the share of pieces past 0.8 of it 0.244 ->
+  // 0.289. A direction with no grain at all measures 0.5. Rendered, that is
+  // the difference between a scoop and a splinter: the cut faces left on the
+  // standing figure at panel value 0.254 go from about thirty small dents
+  // scattered over the head and shoulder to a dozen long angular planes
+  // meeting along one edge.
+  //
+  // The numbers here are where the pattern reads as broken stone and the
+  // cells are still pieces rather than slabs. Baked with the spacing above:
+  // stretch 1.6 / 2.0 / 2.4 gave 155 / 205 / 274 pieces at 0.55 spacing near
+  // and alignment 0.615 / 0.625 / 0.638; stretch 2.0 at a coarser 0.085 /
+  // 0.30 spacing came out at 87 pieces, which is the whole shoulder leaving
+  // as four slabs. shellBias 1.2 / 1.8 / 2.5 moved the alignment 0.612 /
+  // 0.638 / 0.677 and, past about 2, started taking the front's coherence
+  // with it (0.679 at 2.5).
+  shellBias: 1.8,
+  radialStretch: 2.4,
   // Unevenness on the target spacing, e^±this: the reference's pieces are
   // nearly uniform, but at 0.5 ours read as a lattice ("too uniform"), so
   // this is back up to where slabs sit beside small fragments without the
   // slivers the old 3.0 made — 1.5 first, then 2.2 when 1.5 still read as
   // even. That is the small side; the large side is wider still.
   //
-  // A quarter of it over the part the break opens with. The field's
-  // up-swing is an 11x spacing at the top (e^4.8 * 0.5), and the sampler
-  // measures a candidate's room against the LARGER of the two spacings, so
-  // one coarse seed sets the size of everything around it — which is why
-  // the shoulder stayed at a mean radius of 0.232 however fine the spacing
-  // asked it to be. At 0.25 the first 45 pieces released come out at 0.198
-  // and the whole-limb lumps stay in the part that is never seen to break.
-  variationNear: 0.25,
+  // The field's up-swing is an 11x spacing at the top (e^4.8 * 0.5), and the
+  // sampler measures a candidate's room against the LARGER of the two
+  // spacings, so one coarse seed sets the size of everything around it —
+  // which is why the shoulder stayed at a mean radius of 0.232 however fine
+  // the spacing asked it to be. At 0.25 the first 45 pieces released came out
+  // at 0.198 and the whole-limb lumps stayed in the part that is never seen
+  // to break.
+  //
+  // 0.45, from 0.25: asked TWICE for more variation in the pieces' SIZE, and
+  // at 0.25 the part that is seen had none to speak of. Measured over the
+  // first 45 released, the ratio of the p90 piece radius to the p10: 1.93 at
+  // 0.25 (and 1.93 on the cut this replaces — the last round did not move it
+  // at all), 2.38 at 0.45. Over the whole figure, 3.36 -> 3.48. What it costs
+  // is the front: the rank correlation of release against position along the
+  // front's own line, over everything released while the stage is clear,
+  // 0.762 -> 0.737 — a coarse seed near the break carries its neighbours'
+  // release with it. That is the whole of the bend, and it is Kevin's ask
+  // against my number.
+  variationNear: 0.45,
   sizeVariation: 2.2,
   // The biggest pieces asked for at 150% bigger with the smallest left
   // alone. The field is a product of sines and rarely leaves +-0.5, so
@@ -536,6 +603,34 @@ export const THINKER_CHUNK_OPTIONS: BuildSolidChunkOptions = {
     fraction(-1.15, -0.08, 0.7),
   ],
   direction: flightDirectionInFigureSpace(),
+  // Each piece also flies a little along its OWN way out of the stone — the
+  // mean of the skin it owned — on top of the common push above.
+  //
+  // Asked for "a pattern that doesn't have the pieces phasing through each
+  // other". Every piece flew the SAME way, so a piece's straight path could
+  // run through marble that was still standing, and two pieces that left
+  // from different places at different moments could cross. A piece that
+  // carries its own outward normal leaves the body the short way and
+  // neighbours on a curved surface separate by construction.
+  //
+  // Measured with the sampled-point audit over the drawn break (a quarter or
+  // more of one piece's points inside another at some moment): pairs of
+  // FLYING pieces 10 -> 4, and those overlapping for 0.06 of the break or
+  // longer 10 -> 2; pieces a quarter or more inside STANDING marble 7 -> 3.
+  // Separation on screen at panel value 0.317 improves with it rather than
+  // against it: flying pixels covered by two or more pieces 0.337 -> 0.203,
+  // the nearest other piece 0.549 -> 0.624 piece sizes, the share of a
+  // piece's outline bordering black 0.28 -> 0.402.
+  //
+  // It costs the stream's tightness, and that is the trade: the first 120
+  // pieces off spread 5 / 8.3 / 17.5 degrees about the stream's mean on
+  // screen (median / p75 / p90) and now spread 17.5 / 27.2 / 38.0 — which is
+  // lukebaffait.fr's own cloud, measured at 13 / 20 / 38. The stream still
+  // reads leftward: its mean direction is 150 degrees on screen, from 147,
+  // and the paths are as straight as they were. 0.18 left 4 pairs lasting;
+  // 0.32 took the standing count to 3 but pulled the mean another degree
+  // off and started to read as a puff rather than a stream.
+  outwardPush: 0.24,
   headFrom: 0.84,
   legsFrom: 0.4,
   seed: 211,
@@ -625,7 +720,11 @@ function buildInWorker(options: BuildSolidChunkOptions) {
 // 13: TRAVEL_WINDOW 0.55 -> 0.35, crossing checks run to 0.52, standing
 // blockers are released a moment sooner (clearStandingBlockers), spinSpread
 // [0.6, 1.5] -> [0.4, 2.0] (same pieces; new flights, spins and times).
-export const FRACTURE_VERSION = 13;
+// 14: `outwardPush` (a new term in every flight), and stageTravelAt now
+// carries the stage's unstick, which is what the crossing checks pose
+// pieces with. The options changed too, but those are fingerprinted; this
+// is for the code that reads them.
+export const FRACTURE_VERSION = 14;
 
 export function chunkOptionsFingerprint(options: BuildSolidChunkOptions) {
   const rest: Partial<BuildSolidChunkOptions> = { ...options };
