@@ -20,7 +20,7 @@ export const TL = {
   headH: 60,
   firstCard: 310,
   /** Gravity comes on. */
-  toPile: 765,
+  toPile: 782,
   contactTop: 810,
   total: 910,
 } as const;
@@ -63,6 +63,9 @@ export type StageEls = {
   frame: HTMLElement;
   /** Shown only while the frame is at rest: the legend and the hint. */
   withFrame: HTMLElement[];
+  /** No scene to look at. The legend shows from the top, or the first
+   *  screen would be an empty one. */
+  plain?: boolean;
 };
 
 /**
@@ -80,7 +83,8 @@ export function makeStage(els: StageEls): (s: number) => number {
     if (clip !== lastClip) { els.frame.style.clipPath = clip; lastClip = clip; }
     const ground = frameGround(s);
     if (ground !== lastGround) { els.frame.style.backgroundColor = ground; lastGround = ground; }
-    const show = Math.round(smooth(0.6, 1, k) * 100) / 100;
+    const amount = els.plain && s < TL.widenStart ? 1 : smooth(0.6, 1, k);
+    const show = Math.round(amount * 100) / 100;
     if (show !== lastShow) {
       for (const el of els.withFrame) {
         el.style.opacity = String(show);

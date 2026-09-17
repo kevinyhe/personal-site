@@ -43,7 +43,8 @@ export default function B02(): JSX.Element {
     const r = root.current, s = stage.current, f = frame.current, l = legend.current, h = hint.current;
     const lb = label.current, ln = labelName.current, lg = labelGroup.current;
     if (!r || !s || !f || !l || !h || !lb || !ln || !lg) return undefined;
-    const applyStage = makeStage({ frame: f, withFrame: [l, h] });
+    const els = { frame: f, withFrame: [l, h] };
+    const applyStage = makeStage(els);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let made: Cluster | null = null;
@@ -71,8 +72,9 @@ export default function B02(): JSX.Element {
 
     // No WebGL. The frame still opens and closes with the page, and the
     // words stand on plain grounds.
+    const plainStage = makeStage({ frame: f, withFrame: [l], plain: true });
     const onScroll = (): void => {
-      applyStage((-r.getBoundingClientRect().top / Math.max(1, s.clientHeight)) * 100);
+      plainStage((-r.getBoundingClientRect().top / Math.max(1, s.clientHeight)) * 100);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
@@ -180,7 +182,7 @@ export default function B02(): JSX.Element {
                   data-words
                   style={{ "--ground": look.ground, color: look.ink } as CSSProperties}
                 >
-                  <p className="font-mono text-[1.3rem] uppercase tracking-[0.16em]" style={{ color: look.soft }}>
+                  <p className="font-mono text-[1.5rem] uppercase tracking-[0.16em]" style={{ color: look.soft }}>
                     <span className="tabular-nums">{pad(i + 1)} / {pad(projects.length)}</span>
                     <span className="mx-[1.4rem]">·</span>
                     <span className="tabular-nums">{p.year}</span>
@@ -194,14 +196,14 @@ export default function B02(): JSX.Element {
                   <div className="max-w-[33vw]">
                     <h3 className="font-serif-display text-[min(12vh,6vw)] italic leading-[0.92] tracking-[-0.03em]">{p.title}</h3>
                     <p className="mt-[3vh] max-w-[30vw] font-sans text-[2.2rem] font-light leading-[1.34]">{p.tagline}</p>
-                    <ul className="mt-[3.4vh] flex max-w-[30vw] flex-wrap gap-x-[1.6rem] gap-y-[0.6rem] font-mono text-[1.25rem] uppercase tracking-[0.12em]" style={{ color: look.soft }}>
+                    <ul className="mt-[3.4vh] flex max-w-[30vw] flex-wrap gap-x-[1.6rem] gap-y-[0.6rem] font-mono text-[1.5rem] uppercase tracking-[0.12em]" style={{ color: look.soft }}>
                       {p.stack.map((t) => (
                         <li key={t}>{t}</li>
                       ))}
                     </ul>
                     {p.href ? (
                       <a
-                        className="pointer-events-auto mt-[3.4vh] inline-block font-mono text-[1.3rem] tracking-[0.06em] underline underline-offset-[0.5em]"
+                        className="pointer-events-auto mt-[3.4vh] inline-block font-mono text-[1.5rem] tracking-[0.06em] underline underline-offset-[0.5em]"
                         href={p.href}
                         rel="noreferrer"
                         target="_blank"
@@ -225,7 +227,7 @@ export default function B02(): JSX.Element {
           >
             {EMAIL}
           </a>
-          <ul className="mt-[4.5vh] flex gap-[4rem] font-mono text-[1.4rem] uppercase tracking-[0.14em]">
+          <ul className="mt-[4.5vh] flex gap-[4rem] font-mono text-[1.6rem] uppercase tracking-[0.14em]">
             {elsewhere.map((e) => (
               <li key={e.label}>
                 <a className="pointer-events-auto underline-offset-[0.5em] hover:underline" href={e.href} rel="noreferrer" target="_blank">
