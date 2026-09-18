@@ -173,7 +173,7 @@ export default function B04(): JSX.Element {
           </div>
         )}
         <section className="px-[8vw] pb-[14vh] pt-[16vh] text-white" id="work" style={{ background: `linear-gradient(${BAND}, #3a122d 60%, #5c1d4a)` }}>
-          <h2 className="font-mono text-[1.3rem] uppercase tracking-[0.18em]" style={{ color: BLOSSOM }}>
+          <h2 className="font-mono text-[1.5rem] uppercase tracking-[0.18em]" style={{ color: BLOSSOM }}>
             Work
           </h2>
           <div className="mt-[8vh] flex flex-col gap-[10vh]">
@@ -181,15 +181,15 @@ export default function B04(): JSX.Element {
               <article className="grid grid-cols-1 gap-x-[4vw] gap-y-[2rem] md:grid-cols-[1fr_1fr]" key={p.title}>
                 <h3 className="font-sans text-[6.4rem] font-bold leading-[0.98] tracking-[-0.035em]">{p.title}</h3>
                 <div className="max-w-[62rem]">
-                  <p className="font-mono text-[1.3rem] uppercase tracking-[0.14em]" style={{ color: BLOSSOM }}>
+                  <p className="font-mono text-[1.5rem] uppercase tracking-[0.14em]" style={{ color: BLOSSOM }}>
                     {meta(p)}
                   </p>
                   <p className="mt-[1.6rem] font-sans text-[2.6rem] font-light leading-[1.25]">{p.tagline}</p>
-                  <p className="mt-[1.6rem] font-mono text-[1.3rem] leading-[1.6]" style={{ color: BLOSSOM }}>
+                  <p className="mt-[1.6rem] font-mono text-[1.5rem] leading-[1.6]" style={{ color: BLOSSOM }}>
                     {p.stack.join(" · ")}
                   </p>
                   {p.href && (
-                    <a className="mt-[1.6rem] inline-block font-mono text-[1.3rem] underline underline-offset-[0.4em]" href={p.href} rel="noreferrer" target="_blank">
+                    <a className="mt-[1.6rem] inline-block font-mono text-[1.5rem] underline underline-offset-[0.4em]" href={p.href} rel="noreferrer" target="_blank">
                       {host(p.href)}
                     </a>
                   )}
@@ -200,12 +200,12 @@ export default function B04(): JSX.Element {
         </section>
         <div aria-hidden="true" className="h-[40vh]" style={{ background: `linear-gradient(#5c1d4a, #b04a84 45%, ${BLOSSOM})` }} />
         <section className="px-[8vw] pb-[14vh] pt-[8vh]" id="skills" style={{ background: `linear-gradient(${BLOSSOM}, #fbd0e6)`, color: PLUM }}>
-          <h2 className="font-mono text-[1.3rem] uppercase tracking-[0.18em]">Skills</h2>
+          <h2 className="font-mono text-[1.5rem] uppercase tracking-[0.18em]">Skills</h2>
           <div className="mt-[8vh] grid grid-cols-1 gap-x-[4vw] gap-y-[8vh] md:grid-cols-2">
             {skillGroups.map((g) => (
               <div key={g.label}>
                 <h3 className="font-sans text-[3.2rem] font-medium leading-[1.1] tracking-[-0.02em]">{g.label}</h3>
-                <ul className="mt-[2.4rem] flex flex-wrap gap-x-[2.8rem] gap-y-[1.6rem] font-mono text-[1.3rem]">
+                <ul className="mt-[2.4rem] flex flex-wrap gap-x-[2.8rem] gap-y-[1.6rem] font-mono text-[1.5rem]">
                   {g.skills.map((s) => (
                     <li className="flex items-center gap-[0.9rem]" key={s.name}>
                       <SkillMark onDark={false} size="2rem" skill={s} tinted={false} />
@@ -226,11 +226,11 @@ export default function B04(): JSX.Element {
 
   return (
     <div className="relative" ref={rootRef} style={{ backgroundColor: BAND }}>
-      <div aria-hidden="true" className="sticky top-0 h-screen w-full overflow-hidden" ref={stageRef}>
+      <div aria-hidden="true" className="sticky top-0 h-screen w-full overflow-hidden" ref={stageRef} style={{ backgroundColor: BAND }}>
         <canvas className="block h-full w-full" ref={canvasRef} />
         {/* The band above is plum to its last row. So is the top of this, until the flight is under way. */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[45vh]" ref={veilRef} style={{ background: `linear-gradient(${BAND}, ${BAND} 12%, transparent)` }} />
-        <p className="pointer-events-none absolute inset-x-0 bottom-[7vh] text-center font-mono text-[1.3rem] uppercase tracking-[0.2em]" ref={hintRef} style={{ color: BLOSSOM }}>
+        <p className="pointer-events-none absolute inset-x-0 bottom-[7vh] text-center font-mono text-[1.5rem] uppercase tracking-[0.2em]" ref={hintRef} style={{ color: BLOSSOM }}>
           Scroll to fly
         </p>
       </div>
@@ -318,11 +318,11 @@ export default function B04(): JSX.Element {
 function Contact(): JSX.Element {
   return (
     <>
-      <h2 className="font-mono text-[1.3rem] uppercase tracking-[0.18em]">Contact</h2>
+      <h2 className="font-mono text-[1.5rem] uppercase tracking-[0.18em]">Contact</h2>
       <a className="mt-[2.4rem] block w-fit font-sans text-[min(7.2vw,13rem)] font-medium leading-[1] tracking-[-0.04em]" href={`mailto:${EMAIL}`}>
         {EMAIL}
       </a>
-      <ul className="mt-[4.8rem] flex flex-wrap gap-x-[4.8rem] gap-y-[1.6rem] font-mono text-[1.3rem]">
+      <ul className="mt-[4.8rem] flex flex-wrap gap-x-[4.8rem] gap-y-[1.6rem] font-mono text-[1.6rem]">
         {elsewhere.map((l) => (
           <li key={l.label}>
             <a className="underline-offset-[0.4em] hover:underline" href={l.href} rel="noreferrer" target="_blank">

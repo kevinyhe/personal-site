@@ -50,7 +50,9 @@ void main() {
   // A wide glow, a tighter one, then the disc with a soft edge.
   col += uSun * (pow(sd, 6.0) * 0.16 + pow(sd, 48.0) * 0.3);
   float disc = smoothstep(0.9984, 0.9992, sd);
-  col = mix(col, mix(uSun, vec3(1.0), 0.55), disc * 0.9);
+  // The disc is the sun's own colour, brighter. Mixed toward white it
+  // went grey against the dark skies.
+  col = mix(col, min(uSun * 1.35 + 0.12, vec3(1.0)), disc * 0.9);
   // Stars: a grid on the sky dome, one point in a few of its cells.
   if (uStars > 0.01 && dir.y > 0.0) {
     vec2 g = vec2(atan(dir.x, -dir.z) * 90.0, dir.y * 140.0);
