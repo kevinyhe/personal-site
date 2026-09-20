@@ -248,6 +248,12 @@ export function startPlates(root: HTMLElement, mode: Mode): () => void {
     const on = phase.k === SKILLS_STOP;
     const alpha = on ? (still ? 1 : labelAlpha(phase.raw)) : 0;
     const c0 = (1 - crop) / 2;
+    // The names' layer is still scrolling into its pin while the plate
+    // opens; the numbers follow the plate, so take that offset back out.
+    let lift = 0;
+    if (on && skillsLayer) {
+      lift = (skillsLayer.getBoundingClientRect().top - stage.getBoundingClientRect().top) / Math.max(1, stageH);
+    }
     markEls.forEach((el, g) => {
       const p = plate.marks[g];
       if (!p || !on) {
@@ -261,9 +267,9 @@ export function startPlates(root: HTMLElement, mode: Mode): () => void {
       const x = frame.x0 + fu * (frame.x1 - frame.x0);
       const y = frame.y0 + fv * (frame.y1 - frame.y0);
       set(el, "left", pct(x));
-      set(el, "top", pct(y));
+      set(el, "top", pct(y - lift));
       set(el, "opacity", String(round(alpha * inside)));
-      markBoxes[g] = { x0: round(x * 100), y0: round(y * 100), x1: round(x * 100), y1: round(y * 100) };
+      markBoxes[g] = { x0: round(x * 100), y0: round((y - lift) * 100), x1: round(x * 100), y1: round((y - lift) * 100) };
     });
   };
 
