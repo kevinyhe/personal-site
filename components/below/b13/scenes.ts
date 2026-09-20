@@ -73,7 +73,7 @@ export function buildMicrophone(bag: Bag, g: Greys): Built {
 
   // Rings of sound going out from the capsule in the plane that faces the
   // camera. Each has its own unlit material so it can fade as it grows.
-  const ringGeo = bag.add(new THREE.TorusGeometry(1, 0.05, 6, 72));
+  const ringGeo = bag.add(new THREE.TorusGeometry(1, 0.08, 6, 72));
   const rings: { m: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number }[] = [];
   for (let i = 0; i < 4; i++) {
     const mat = bag.add(new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -141,7 +141,7 @@ export function buildBlaster(bag: Bag, g: Greys): Built {
   for (let i = 0; i < 10; i++) board.add(mesh(pin, g.light, -0.45 + i * 0.1, 0.07, 0.3));
 
   // Packets: small cubes leaving the board toward the right, fading out.
-  const packetGeo = box(0.07, 0.07, 0.07);
+  const packetGeo = box(0.1, 0.1, 0.1);
   const packets: { m: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number }[] = [];
   for (let i = 0; i < 6; i++) {
     const mat = bag.add(new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -186,7 +186,7 @@ export function buildRing(bag: Bag, g: Greys): Built {
   const c = 1.4;
   for (const [x, z] of [[-c, -c], [c, -c], [c, c], [-c, c]]) group.add(mesh(post, g.mid, x, 0.05, z));
   // Three ropes a side.
-  const rope = bag.add(new THREE.CylinderGeometry(0.03, 0.03, 2.8, 8));
+  const rope = bag.add(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 8));
   for (const y of [-0.15, 0.15, 0.45]) {
     for (const side of [-1, 1]) {
       const a = mesh(rope, g.light, 0, y, side * c);
@@ -277,7 +277,7 @@ export function buildField(bag: Bag, g: Greys): RobotScene {
   }
   // The path it drives, a figure of eight, marked with dots behind it.
   const path = (u: number): [number, number] => [Math.sin(u) * 1.15, Math.sin(2 * u) * 0.75];
-  const dotGeo = bag.add(new THREE.CylinderGeometry(0.035, 0.035, 0.012, 10));
+  const dotGeo = bag.add(new THREE.CylinderGeometry(0.06, 0.06, 0.012, 10));
   for (let i = 0; i < 48; i++) {
     const [x, z] = path((i / 48) * Math.PI * 2);
     group.add(mesh(dotGeo, g.light, x, floorY + 0.006, z));
@@ -415,6 +415,13 @@ function markTexture(bag: Bag, name: string, icon: string | undefined, mark: str
   if (!ctx) return null;
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, size, size);
+  // A dim tile behind the mark. The bar pass drops any cell that touches
+  // black, which would eat an icon's thin strokes; on a grey tile only the
+  // tile's edge is dropped and the strokes show as wider bars.
+  ctx.fillStyle = "#3a3a3a";
+  ctx.beginPath();
+  ctx.roundRect(4, 4, size - 8, size - 8, 22);
+  ctx.fill();
   ctx.fillStyle = "#fff";
   const found = skillIcon(icon);
   if (found) {
