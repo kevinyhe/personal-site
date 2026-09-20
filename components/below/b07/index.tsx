@@ -3,7 +3,8 @@
 import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BAND } from "@/components/bandColours";
-import { projects } from "@/components/profile";
+import { projects, skillGroups } from "@/components/profile";
+import { elsewhere, EMAIL } from "@/components/siteContent";
 import { ContactLinks, pad2, ProjectBullets, ProjectFacts, SkillGroups } from "./content";
 import styles from "./desk.module.css";
 import Desktop, { type DeskControls } from "./Desktop";
@@ -50,7 +51,15 @@ function MoveIn(): JSX.Element {
   return (
     <div className="relative" data-track style={{ height: `calc(${SCREEN} * ${TRACK_SCREENS})` }}>
       <section className="h-full" id="work">
-        <h2 className="sr-only">Work</h2>
+        <div className="sr-only">
+          <h2>Work</h2>
+          {projects.map((p) => (
+            <div key={p.title}>
+              <h3>{p.title}</h3>
+              <p>{`${p.tagline} ${p.stack.join(", ")}. ${p.award ? `${p.year}. ${p.award}.` : `${p.year}.`}`}</p>
+            </div>
+          ))}
+        </div>
         <div className="sticky top-0 w-full overflow-hidden" data-stage style={{ height: SCREEN, backgroundColor: DEEP }}>
           {/* The desktop goes in here, behind the canvas. It shows through
               the one place the canvas is clear: the television's screen. */}
@@ -66,12 +75,22 @@ function MoveIn(): JSX.Element {
         </div>
       </section>
       {/* Two places along the track, after the camera is seated. A link to
-          either scrolls here, and the window of that name opens. */}
+          either scrolls here, and the window of that name opens. The words
+          in all three are for a reader who cannot see the screen: the
+          desktop takes no keyboard until the camera is seated. */}
       <section className="pointer-events-none absolute left-0 w-full" id="skills" style={{ top: `calc(${SCREEN} * ${ARRIVE.skills})`, height: `calc(${SCREEN} * 0.3)` }}>
-        <h2 className="sr-only">Skills</h2>
+        <div className="sr-only">
+          <h2>Skills</h2>
+          {skillGroups.map((g) => (
+            <p key={g.label}>{`${g.label}: ${g.skills.map((k) => k.name).join(", ")}.`}</p>
+          ))}
+        </div>
       </section>
       <section className="pointer-events-none absolute left-0 w-full" id="contact" style={{ top: `calc(${SCREEN} * ${ARRIVE.contact})`, height: `calc(${SCREEN} * 0.3)` }}>
-        <h2 className="sr-only">Contact</h2>
+        <div className="sr-only">
+          <h2>Contact</h2>
+          <p>{`${EMAIL}. ${elsewhere.map((l) => `${l.label} ${l.handle}`).join(", ")}.`}</p>
+        </div>
       </section>
     </div>
   );

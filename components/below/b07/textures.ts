@@ -365,26 +365,31 @@ export function screenPictureTexture(aspect: number): THREE.CanvasTexture {
   const h = 400;
   const w = Math.round(h * aspect);
   const { canvas, ctx } = sheet(w, h);
-  const g = ctx.createRadialGradient(w / 2, h * 0.42, 10, w / 2, h * 0.42, w * 0.7);
-  g.addColorStop(0, BLOSSOM);
-  g.addColorStop(0.5, "#c77daa");
-  g.addColorStop(1, "#6b2c55");
-  ctx.fillStyle = g;
+  // A wide picture on a nearly square set: dark bands above and below.
+  ctx.fillStyle = DEEP;
   ctx.fillRect(0, 0, w, h);
+  const ph = Math.round(w / 1.85);
+  const top = Math.round((h - ph) / 2);
+  const g = ctx.createRadialGradient(w / 2, top + ph * 0.46, 10, w / 2, top + ph * 0.46, w * 0.6);
+  g.addColorStop(0, BLOSSOM);
+  g.addColorStop(0.45, "#d48cb8");
+  g.addColorStop(1, "#4a1c3c");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, top, w, ph);
   ctx.fillStyle = BLOSSOM;
-  ctx.fillRect(0, h * 0.13, w, h * 0.05);
-  const pane = (x: number, y: number, pw: number, ph: number): void => {
+  ctx.fillRect(0, top, w, ph * 0.06);
+  const pane = (x: number, y: number, pw: number, pht: number): void => {
     ctx.fillStyle = DEEP;
-    ctx.fillRect(x * w, y * h, pw * w, ph * h);
+    ctx.fillRect(x * w, top + y * ph, pw * w, pht * ph);
     ctx.fillStyle = BLOSSOM;
-    ctx.fillRect(x * w, y * h, pw * w, h * 0.035);
+    ctx.fillRect(x * w, top + y * ph, pw * w, ph * 0.05);
     ctx.globalAlpha = 0.7;
-    for (let i = 0; i < 5; i += 1) ctx.fillRect(x * w + 8, y * h + h * 0.07 + i * h * 0.045, pw * w * (0.5 + ((i * 37) % 40) / 100), 3);
+    for (let i = 0; i < 5; i += 1) ctx.fillRect(x * w + 8, top + y * ph + ph * 0.1 + i * ph * 0.06, pw * w * (0.4 + ((i * 37) % 40) / 100), 3);
     ctx.globalAlpha = 1;
   };
-  pane(0.12, 0.24, 0.3, 0.4);
-  pane(0.38, 0.34, 0.42, 0.36);
-  pane(0.62, 0.56, 0.26, 0.2);
+  pane(0.09, 0.14, 0.26, 0.5);
+  pane(0.3, 0.3, 0.56, 0.5);
+  pane(0.62, 0.62, 0.3, 0.3);
   for (let y = 0; y < h; y += 4) {
     ctx.fillStyle = "rgba(26,8,18,0.28)";
     ctx.fillRect(0, y, w, 2);
