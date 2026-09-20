@@ -118,7 +118,7 @@ export const LAMP = {
 export const LIGHTS = {
   lamp: { colour: "#ffc994", candela: 5, angle: 1.02, penumbra: 0.75 },
   glow: { colour: "#f9b9dc", candela: 0.34, at: [0, SCREEN.cy, SCREEN.lipZ + 0.2] },
-  sky: { above: "#e8c4da", below: "#4a1c3c", level: 2.1 },
+  sky: { above: "#e8c4da", below: "#4a1c3c", level: 1.15 },
 } as const;
 
 /** Things the camera must stay out of. Boxes, a little generous. */
