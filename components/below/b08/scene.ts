@@ -14,7 +14,11 @@ import {
   type Headline,
   headlineSpecs,
   LENS,
+  LENS_IOR,
+  LENS_THICKNESS,
   LENS_Z,
+  LIFT_GROW,
+  LIFT_Z,
   lensGrid,
   lensShow,
   type Placed,
@@ -80,7 +84,12 @@ type Look = {
   tint: string;
   /** How deep the tint is: 0 clear, 1 the tint itself. */
   depth: number;
-  /** How far the ray travels inside, in radii. More bends the type more. */
+  /**
+   * How far the ray travels inside, in radii. More bends the type more,
+   * but past about twice the radius of the curve it meets, a curved
+   * solid shows only a speck of what is behind it, blown up. These are
+   * set so a curved one shows about the middle half.
+   */
   thickness: number;
   ior: number;
   dispersion: number;
@@ -95,16 +104,16 @@ type Look = {
 
 /** One per solid, in the order of SOLIDS. */
 const LOOKS: Look[] = [
-  { tint: BLOSSOM, depth: 0.6, thickness: 1.6, ior: 1.45, dispersion: 6, rot: [0.5, 0.6, 0.1], spin: [0.05, 0.08], swing: false, tumble: 0.9 },
-  { tint: ROSE, depth: 0.45, thickness: 1.2, ior: 1.45, dispersion: 5, rot: [-0.4, 0.5, 0.3], spin: [0.07, -0.05], swing: false, tumble: -0.7 },
-  { tint: BLOSSOM, depth: 0.7, thickness: 1.4, ior: 1.5, dispersion: 8, rot: [0.45, 0.35, 0], spin: [0.31, 0.23], swing: true, tumble: 0.4 },
-  { tint: ROSE, depth: 0.5, thickness: 1.2, ior: 1.45, dispersion: 6, rot: [0.2, -0.4, 0.5], spin: [0.27, 0.21], swing: true, tumble: -0.5 },
-  { tint: "#ffd9ec", depth: 0.35, thickness: 3.2, ior: 1.45, dispersion: 4, rot: [0.1, -0.12, 0], spin: [0.37, 0.29], swing: true, tumble: 0 },
-  { tint: BLOSSOM, depth: 0.6, thickness: 1.8, ior: 1.5, dispersion: 10, rot: [0.3, 0, 0.5], spin: [0.03, 0.12], swing: false, tumble: 0.8 },
-  { tint: "#ffffff", depth: 0, thickness: 1.6, ior: 1.45, dispersion: 6, rot: [0.2, 0.3, -0.7], spin: [0.06, 0.07], swing: false, tumble: -0.9 },
-  { tint: BLOSSOM, depth: 0.5, thickness: 2.0, ior: 1.45, dispersion: 5, rot: [0, 0, 0], spin: [0.04, 0.05], swing: false, tumble: 0.3 },
-  { tint: ROSE, depth: 0.55, thickness: 1.6, ior: 1.5, dispersion: 10, rot: [0.4, 0.2, 0.3], spin: [0.08, 0.06], swing: false, tumble: 1.0 },
-  { tint: BLOSSOM, depth: 0.7, thickness: 1.0, ior: 1.45, dispersion: 6, rot: [-0.3, 0.5, -0.6], spin: [0.33, 0.19], swing: true, tumble: 0.6 },
+  { tint: BLOSSOM, depth: 0.6, thickness: 1.6, ior: 1.45, dispersion: 9, rot: [0.5, 0.6, 0.1], spin: [0.05, 0.08], swing: false, tumble: 0.9 },
+  { tint: ROSE, depth: 0.45, thickness: 1.2, ior: 1.45, dispersion: 8, rot: [-0.4, 0.5, 0.3], spin: [0.07, -0.05], swing: false, tumble: -0.7 },
+  { tint: BLOSSOM, depth: 0.7, thickness: 0.5, ior: 1.5, dispersion: 10, rot: [0.45, 0.35, 0], spin: [0.31, 0.23], swing: true, tumble: 0.4 },
+  { tint: ROSE, depth: 0.5, thickness: 1.2, ior: 1.45, dispersion: 8, rot: [0.2, -0.4, 0.5], spin: [0.27, 0.21], swing: true, tumble: -0.5 },
+  { tint: BLOSSOM, depth: 0.3, thickness: 1.8, ior: 1.45, dispersion: 6, rot: [0.1, -0.12, 0], spin: [0.37, 0.29], swing: true, tumble: 0 },
+  { tint: BLOSSOM, depth: 0.6, thickness: 1.2, ior: 1.5, dispersion: 12, rot: [0.3, 0, 0.5], spin: [0.03, 0.12], swing: false, tumble: 0.8 },
+  { tint: BLOSSOM, depth: 0.3, thickness: 0.7, ior: 1.45, dispersion: 8, rot: [0.2, 0.3, -0.7], spin: [0.06, 0.07], swing: false, tumble: -0.9 },
+  { tint: BLOSSOM, depth: 0.5, thickness: 1.0, ior: 1.45, dispersion: 6, rot: [0, 0, 0], spin: [0.04, 0.05], swing: false, tumble: 0.3 },
+  { tint: ROSE, depth: 0.55, thickness: 1.4, ior: 1.5, dispersion: 12, rot: [0.4, 0.2, 0.3], spin: [0.08, 0.06], swing: false, tumble: 1.0 },
+  { tint: BLOSSOM, depth: 0.7, thickness: 1.0, ior: 1.45, dispersion: 8, rot: [-0.3, 0.5, -0.6], spin: [0.33, 0.19], swing: true, tumble: 0.6 },
 ];
 
 const SHEET_VERT = /* glsl */ `
@@ -120,11 +129,14 @@ void main() {
 `;
 
 // The ground, the type going, the type coming, then the shadows.
+// The type going slides up as it fades and the type coming rises into
+// its place, by uSlide of the sheet's height.
 // uShadow: xy the middle of a shadow on the sheet, z its reach, w its strength.
 const SHEET_FRAG = /* glsl */ `
 uniform sampler2D uFrom;
 uniform sampler2D uTo;
 uniform float uMix;
+uniform float uSlide;
 uniform vec3 uGround;
 uniform vec3 uShade;
 uniform vec4 uShadow[SHADOWS];
@@ -138,14 +150,15 @@ vec4 sheet(sampler2D tex, vec2 at) {
 }
 
 void main() {
-  vec4 going = sheet(uFrom, vUv - vec2(0.0, 0.12 * uMix));
-  vec4 coming = sheet(uTo, vUv + vec2(0.0, 0.12 * (1.0 - uMix)));
+  vec4 going = sheet(uFrom, vUv - vec2(0.0, uSlide * uMix));
+  vec4 coming = sheet(uTo, vUv + vec2(0.0, uSlide * (1.0 - uMix)));
   vec3 col = uGround;
   col = mix(col, going.rgb, going.a * (1.0 - uMix));
   col = mix(col, coming.rgb, coming.a * uMix);
   float shade = 0.0;
   for (int i = 0; i < SHADOWS; i++) {
     vec4 s = uShadow[i];
+    if (s.w <= 0.0) continue;
     vec2 d = (vAt - s.xy) / max(s.z, 0.0001);
     shade += s.w * exp(-dot(d, d) * 1.4);
   }
@@ -212,6 +225,7 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
     uFrom: { value: sheetTextures[0] as THREE.Texture },
     uTo: { value: sheetTextures[0] as THREE.Texture },
     uMix: { value: 0 },
+    uSlide: { value: 0.12 },
     uGround: { value: new THREE.Color(PALE) },
     // A shadow on blossom is a deeper blossom, part way to the plum.
     uShade: { value: new THREE.Color(BLOSSOM).lerp(new THREE.Color(BAND), 0.5) },
@@ -260,7 +274,7 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
   });
 
   const lensGeo = keep(buildLensGeometry());
-  const lensLook: Look = { ...LOOKS[LENS], tint: BLOSSOM, depth: 0.3, thickness: 3.0, dispersion: 5 };
+  const lensLook: Look = { ...LOOKS[LENS], tint: BLOSSOM, depth: 0.3, thickness: LENS_THICKNESS, ior: LENS_IOR, dispersion: 4 };
   const lensMat = glass(lensLook, 0.05 * viewHeightAt(LENS_Z));
   const lenses = content.skills.map(() => {
     const mesh = new THREE.Mesh(lensGeo, lensMat);
@@ -302,7 +316,7 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
         // three makes a new one at the new size.
         sheetTextures[i].dispose();
       }
-      if (i === SKILLS_STOP) drawMarks(c, grid, content.skills, family);
+      if (i === SKILLS_STOP) drawMarks(c, grid, content.skills, family, view);
       else drawHeadline(c, heads[i], i === CONTACT_STOP ? "CONTACT" : specs[i].text, family, i !== CONTACT_STOP);
       sheetTextures[i].needsUpdate = true;
     });
@@ -412,12 +426,14 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
       const near = Math.exp(-(dx * dx + dy * dy) * 30) * cursor.amount;
       spot.x = at.x;
       spot.y = at.y + Math.sin(t * 0.6 + j * 0.9) * 0.002;
-      spot.z = LENS_Z + lift * 0.5 + near * 0.5;
-      spot.r = grid.r * shown * (1 + 0.14 * Math.max(lift, near));
+      const up = Math.max(lift, near);
+      spot.z = LENS_Z + up * LIFT_Z;
+      spot.r = grid.r * shown * (1 + LIFT_GROW * up);
       toWorld(spot, view, placed);
       mesh.position.set(placed.x, placed.y, placed.z);
       mesh.scale.setScalar(Math.max(placed.radius, 1e-4));
-      mesh.rotation.set(clamp(dy, -1, 1) * 0.35 * cursor.amount, clamp(dx, -1, 1) * 0.35 * cursor.amount, 0);
+      // A small lean only: a tilted lens slides its mark toward its rim.
+      mesh.rotation.set(clamp(dy, -1, 1) * 0.2 * cursor.amount, clamp(dx, -1, 1) * 0.2 * cursor.amount, 0);
       const onto = CAM_Z / (CAM_Z - placed.z);
       shadow.set(
         placed.x * onto + placed.z * 0.1,
@@ -431,6 +447,8 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
     sheetUniforms.uFrom.value = sheetTextures[words.from];
     sheetUniforms.uTo.value = sheetTextures[words.to];
     sheetUniforms.uMix.value = words.from === words.to ? 0 : words.t;
+    // The marks do not slide: each has to be under its lens as the lens lands.
+    sheetUniforms.uSlide.value = words.from === SKILLS_STOP || words.to === SKILLS_STOP ? 0 : 0.12;
 
     renderer.render(scene, camera);
   };
@@ -465,6 +483,10 @@ export function buildGlass(canvas: HTMLCanvasElement, family: string, content: C
         c.height = 1;
       }
       renderer.dispose();
+      // The copy of the sheet the glass looks into is three's own and it
+      // keeps no handle on it. Letting the context go frees that too.
+      // The canvas is ours alone and is thrown away after this.
+      renderer.forceContextLoss();
     },
   };
 }
