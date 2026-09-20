@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { BAND, BLOSSOM } from "@/components/bandColours";
 import { buildEdges } from "./edges";
-import { BOX_MAX, BOX_MIN, CENTRE, DIM_GAP, DIST, FAR, FOV, NEAR, type Pose } from "./layout";
+import { CENTRE, dimensionLines, DIST, FAR, FOV, LABEL_WIDTH, NEAR, type Pose } from "./layout";
 import { COMPOSITE_FRAG, MASK_FRAG, QUAD_VERT, STROKES } from "./shaders";
 
 /**
@@ -58,57 +58,13 @@ type Wheel = { node: THREE.Object3D; base: THREE.Quaternion; axis: THREE.Vector3
 const pause = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
 
 /** The model's greys, moved into the palette: dark parts plum, light parts blossom, white parts nearly white. */
-const PART_DARK = new THREE.Color("#612b50");
+const PART_DARK = new THREE.Color("#5a2549");
 const PART_MID = new THREE.Color(BLOSSOM);
-const PART_LIGHT = new THREE.Color("#fff3f9");
+const PART_LIGHT = new THREE.Color("#fde3f0");
 function tint(c: THREE.Color): THREE.Color {
   const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
   const out = new THREE.Color();
   return l < 0.5 ? out.lerpColors(PART_DARK, PART_MID, l / 0.5) : out.lerpColors(PART_MID, PART_LIGHT, (l - 0.5) / 0.5);
-}
-
-/** The dimension lines of the drawing, in the robot's own axes: [solid lines, dashed centre lines]. */
-function dimensionLines(): [number[], number[]] {
-  const [x0, y0, z0] = BOX_MIN;
-  const [x1, y1, z1] = BOX_MAX;
-  const g = DIM_GAP;
-  const over = g * 1.35;
-  const t = 0.012;
-  const s: number[] = [];
-  const seg = (ax: number, ay: number, az: number, bx: number, by: number, bz: number): void => {
-    s.push(ax, ay, az, bx, by, bz);
-  };
-  // Length, on the floor beside the right side. Two lines out from the
-  // corners, the measured line between them, a slash at each end.
-  seg(x0, y0, z1 + g, x1, y0, z1 + g);
-  seg(x0, y0, z1, x0, y0, z1 + over);
-  seg(x1, y0, z1, x1, y0, z1 + over);
-  seg(x0 - t, y0, z1 + g - t, x0 + t, y0, z1 + g + t);
-  seg(x1 - t, y0, z1 + g - t, x1 + t, y0, z1 + g + t);
-  // Width, on the floor ahead of the front.
-  seg(x1 + g, y0, z0, x1 + g, y0, z1);
-  seg(x1, y0, z0, x1 + over, y0, z0);
-  seg(x1, y0, z1, x1 + over, y0, z1);
-  seg(x1 + g - t, y0, z0 - t, x1 + g + t, y0, z0 + t);
-  seg(x1 + g - t, y0, z1 - t, x1 + g + t, y0, z1 + t);
-  // Height, behind the rear left corner.
-  seg(x0 - g, y0, z0, x0 - g, y1, z0);
-  seg(x0, y0, z0, x0 - over, y0, z0);
-  seg(x0, y1, z0, x0 - over, y1, z0);
-  seg(x0 - g - t, y0 - t, z0, x0 - g + t, y0 + t, z0);
-  seg(x0 - g - t, y1 - t, z0, x0 - g + t, y1 + t, z0);
-  // The footprint on the floor.
-  seg(x0, y0, z0, x1, y0, z0);
-  seg(x1, y0, z0, x1, y0, z1);
-  seg(x1, y0, z1, x0, y0, z1);
-  seg(x0, y0, z1, x0, y0, z0);
-
-  // Centre lines: along the robot through the middle of the drivetrain,
-  // and across it.
-  const d: number[] = [];
-  d.push(x0 - 0.03, y0, 0, x1 + 0.03, y0, 0);
-  d.push(0, y0, z0 - 0.03, 0, y0, z1 + 0.03);
-  return [s, d];
 }
 
 export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reveal {
@@ -143,8 +99,8 @@ export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reve
   // comes out at about its own colour, and a face turned away at about
   // four tenths of it. Nothing falls to black.
   const solidScene = new THREE.Scene();
-  solidScene.add(new THREE.HemisphereLight("#fff0f6", "#8a4a72", 1.5));
-  const key = new THREE.DirectionalLight("#ffd9b8", 2.4);
+  solidScene.add(new THREE.HemisphereLight("#fff0f6", "#8a4a72", 1.3));
+  const key = new THREE.DirectionalLight("#ffd9b8", 2.1);
   key.position.set(-1.6, 2.2, 3);
   solidScene.add(key);
   const rim = new THREE.DirectionalLight("#ff86c4", 3.2);
@@ -177,24 +133,23 @@ export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reve
   const dimMat = keep(new THREE.LineBasicMaterial({ color: "#ffffff" }));
   const dashMat = keep(new THREE.LineDashedMaterial({ color: BLOSSOM, dashSize: 0.022, gapSize: 0.012 }));
 
-  const [solidLines, dashedLines] = dimensionLines();
+  // The dimension lines wait for the robot. Without it they would
+  // measure empty air.
+  const marks = new THREE.Group();
+  marks.visible = false;
+  drawHold.add(marks);
+  const dims = dimensionLines();
   const dimGeo = keep(new THREE.BufferGeometry());
-  dimGeo.setAttribute("position", new THREE.Float32BufferAttribute(solidLines, 3));
-  drawHold.add(new THREE.LineSegments(dimGeo, dimMat));
+  dimGeo.setAttribute("position", new THREE.Float32BufferAttribute(dims.lines, 3));
+  marks.add(new THREE.LineSegments(dimGeo, dimMat));
   const dashGeo = keep(new THREE.BufferGeometry());
-  dashGeo.setAttribute("position", new THREE.Float32BufferAttribute(dashedLines, 3));
+  dashGeo.setAttribute("position", new THREE.Float32BufferAttribute(dims.dashed, 3));
   const dashes = new THREE.LineSegments(dashGeo, dashMat);
   dashes.computeLineDistances();
-  drawHold.add(dashes);
+  marks.add(dashes);
 
   // The three measurements, as type that always faces the lens.
-  const size = [BOX_MAX[0] - BOX_MIN[0], BOX_MAX[2] - BOX_MIN[2], BOX_MAX[1] - BOX_MIN[1]];
-  const labelAt: [number, number, number][] = [
-    [(BOX_MIN[0] + BOX_MAX[0]) / 2, BOX_MIN[1], BOX_MAX[2] + DIM_GAP + 0.035],
-    [BOX_MAX[0] + DIM_GAP + 0.035, BOX_MIN[1], (BOX_MIN[2] + BOX_MAX[2]) / 2],
-    [BOX_MIN[0] - DIM_GAP - 0.045, (BOX_MIN[1] + BOX_MAX[1]) / 2, BOX_MIN[2]],
-  ];
-  const labels = size.map((metres, i) => {
+  const labels = dims.labels.map((label) => {
     const sheet = document.createElement("canvas");
     sheet.width = 512;
     sheet.height = 128;
@@ -202,11 +157,11 @@ export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reve
     texture.colorSpace = THREE.SRGBColorSpace;
     const material = keep(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.12, 0.03, 1);
-    sprite.position.set(...labelAt[i]);
+    sprite.scale.set(LABEL_WIDTH, LABEL_WIDTH / 4, 1);
+    sprite.position.set(...label.at);
     sprite.renderOrder = 10;
-    drawHold.add(sprite);
-    return { sheet, texture, text: `${Math.round(metres * 1000)} mm` };
+    marks.add(sprite);
+    return { sheet, texture, text: label.text };
   });
   const redrawLabels = (family: string): void => {
     for (const l of labels) {
@@ -364,6 +319,7 @@ export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reve
     findWheels(drawn);
     solidHold.add(solid);
     drawHold.add(drawn);
+    marks.visible = true;
     progress = "solid";
 
     // The edges, one part at a time with a breath between, so the page
@@ -438,7 +394,7 @@ export function buildReveal(canvas: HTMLCanvasElement, monoFamily: string): Reve
       const spread = 1.4 * Math.sqrt(Math.min(2, f.dt * 60));
       u.uTexel.value.set(spread / maskRead.width, spread / maskRead.height);
       u.uTime.value = f.time;
-      u.uKeep.value = Math.exp(-f.dt / 3.2);
+      u.uKeep.value = Math.exp(-f.dt / 4.5);
       u.uDrop.value = 0.03 * f.dt;
       u.uFloor.value = floats || f.dt === 0 ? 0 : 0.0045;
       u.uFlow.value = 0.08 * f.dt;

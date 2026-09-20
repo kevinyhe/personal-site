@@ -137,14 +137,14 @@ void main() {
 
   // The ground: lines of equal height on a slow field. Every fourth line
   // is stronger, as on a map.
-  vec2 c = p * 1.25;
+  vec2 c = p * 1.4;
   float f = noise(c + vec2(uTime * 0.011, uTime * 0.007)) * 0.72;
   f += noise(c * 2.3 + vec2(-uTime * 0.013, 4.0 + uTime * 0.009)) * 0.28;
-  float v = f * 13.0;
+  float v = f * 22.0;
   float iso = abs(fract(v) - 0.5) / max(fwidth(v), 0.004);
   float line = 1.0 - smoothstep(uLine * 0.5, uLine * 0.5 + 1.0, iso);
   float major = 1.0 - step(0.5, mod(floor(v), 4.0));
-  float ink = line * (0.07 + 0.08 * major);
+  float ink = line * (0.06 + 0.09 * major);
 
   // A little light on the ground behind the robot, to lift it off.
   float glow = 1.0 - smoothstep(0.0, uSpot.z, distance(p, uSpot.xy));
@@ -159,7 +159,7 @@ void main() {
   vec4 b = texture2D(uDraw, vUv);
   vec4 bx = max(texture2D(uDraw, vUv + vec2(uPixel.x, 0.0)), texture2D(uDraw, vUv - vec2(uPixel.x, 0.0)));
   vec4 by = max(texture2D(uDraw, vUv + vec2(0.0, uPixel.y)), texture2D(uDraw, vUv - vec2(0.0, uPixel.y)));
-  b = max(b, max(bx, by) * 0.6);
+  b = max(b, max(bx, by) * 0.4);
 
   vec3 ca = groundA * (1.0 - a.a) + a.rgb;
   vec3 cb = groundB * (1.0 - b.a) + b.rgb;

@@ -214,8 +214,9 @@ function Plain({ withStage, hint }: { withStage: boolean; hint: boolean }): JSX.
       {withStage ? (
         <div className="relative w-full overflow-hidden" data-stage style={{ height: SCREEN, backgroundColor: BAND }}>
           <div className="absolute inset-0" data-canvas />
-          <p className={`absolute bottom-[4vh] left-1/2 -translate-x-1/2 ${SMALL}`} data-mono style={{ opacity: hint ? 0.7 : 0 }}>
-            Move the cursor across it.
+          {/* Always there, with or without words: the scene reads the mono font's name from it. */}
+          <p className={`absolute bottom-[4vh] left-1/2 -translate-x-1/2 opacity-70 ${SMALL}`} data-mono>
+            {hint ? "Move the cursor across it." : null}
           </p>
         </div>
       ) : null}
@@ -275,7 +276,9 @@ export default function B10(): JSX.Element {
   // visitor changes their motion setting or turns a tablet on its side.
   useEffect(() => {
     const less = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const narrow = window.matchMedia("(max-width: 899px), (orientation: portrait)");
+    // Too narrow for a robot with text beside it. In a media query an em
+    // is the browser's own 16, not the page's rem, so 56em is 896 wide.
+    const narrow = window.matchMedia("(max-width: 56em), (orientation: portrait)");
     const pick = (): void => {
       if (!webglWorks()) setMode("plain");
       else if (less.matches) setMode("still");
