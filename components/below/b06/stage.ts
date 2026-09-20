@@ -143,7 +143,7 @@ function bind(
 
   /** The row at rest, the first strip open, nothing moving. */
   function drawStill(): void {
-    const lay = L.openLayout(0, L.workRowLeft(0.5));
+    const lay = L.openLayout(0, L.sideFor(0, L.workRowLeft(0.5) + L.WORK.w / 2));
     lay.rects.forEach((r, i) => {
       const win = L.artWindow(i % L.WORK.perProject, r.width);
       const pose: Pose = { left: r.left, width: r.width, top: L.WORK.top, height: L.WORK.h, stand: 1, light: i === 0 ? 1 : 0.6, alpha: 1 };
@@ -202,9 +202,8 @@ function bind(
   let phase: L.Phase = "work";
   let hover = -1;
   let held = -1;
-  let heldSide: L.Side = "right";
-  let lastOpen = 0;
-  let lastSide: L.Side = "right";
+  // The side the open strip's title is on. Set when the strip opens.
+  let side: L.Side = "right";
   let openness = 0;
   let skillHover = -1;
   let lastSkill = 0;
@@ -225,9 +224,13 @@ function bind(
     held = -1;
     hover = -1;
   };
+  /** Holds strip i open, as a click on it does. If it was not open
+   *  already, its title goes to the side that suits where the strip
+   *  stands in the row now. */
   const hold = (i: number): void => {
     if (i < 0 || i >= L.WORK.count) return;
-    heldSide = L.openLayout(i, workRow.spring.x).side;
+    if (hover !== i) side = L.sideFor(i, workRow.spring.x + i * L.WORK_PITCH + L.WORK.w / 2);
+    hover = i;
     held = i;
   };
 
@@ -285,26 +288,13 @@ function bind(
     else if (held < 0) {
       if (!pointer.over || !pointer.mouse || dragging) hover = -1;
       else {
-        const at = L.workSlotAt(pointer.x, pointer.y, x, L.WORK.top + workTop);
-        if (at >= 0) hover = at;
-        else if (hover >= 0) {
-          // Off the row's places, but still on the strip that is open.
-          const r = L.openLayout(hover, x).rects[hover];
-          const on =
-            pointer.x >= r.left &&
-            pointer.x <= r.left + r.width &&
-            pointer.y >= L.WORK.top + workTop &&
-            pointer.y <= L.WORK.top + workTop + L.WORK.h;
-          if (!on) hover = -1;
-        }
+        const hit = L.workHit(pointer.x, pointer.y, x, L.WORK.top + workTop, hover, side);
+        hover = hit.strip;
+        side = hit.side;
       }
     }
     const open = held >= 0 ? held : hover;
-    const lay = open >= 0 ? L.openLayout(open, x, held >= 0 ? heldSide : undefined) : null;
-    if (open >= 0 && lay) {
-      lastOpen = open;
-      lastSide = lay.side;
-    }
+    const lay = open >= 0 ? L.openLayout(open, side) : null;
     openness += ((open >= 0 ? 1 : 0) - openness) * follow;
 
     // ------------------------------------------------------ work strips
@@ -493,8 +483,13 @@ function bind(
         close();
         return;
       }
-      const at = L.workSlotAt(pointer.x, pointer.y, workRow.spring.x, L.WORK.top + workTop);
-      hold(at >= 0 ? at : hover);
+      // What the pointer is on now. A finger has opened nothing by
+      // hovering, so for a finger this is the strip's place at rest.
+      const hit = L.workHit(pointer.x, pointer.y, workRow.spring.x, L.WORK.top + workTop, hover, side);
+      if (hit.strip < 0) return;
+      hover = hit.strip;
+      side = hit.side;
+      held = hit.strip;
     } else if (phase === "skills" && !pointer.mouse) {
       // A finger cannot hover. A tap opens the skill under it, and a tap
       // anywhere else closes it.
@@ -521,6 +516,16 @@ function bind(
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape" && held >= 0) close();
   };
+  // A link reached with the keyboard is in a column that may be out of
+  // sight. Hold its project open so the link can be seen.
+  const onFocus = (e: FocusEvent): void => {
+    const info = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-info]") : null;
+    if (!info) return;
+    const project = Number(info.dataset.info);
+    // Already held open by either of its strips: leave it as it is.
+    if (held >= 0 && Math.floor(held / L.WORK.perProject) === project) return;
+    hold(project * L.WORK.perProject);
+  };
 
   journey.addEventListener("pointerdown", onDown);
   window.addEventListener("pointermove", onMove, { passive: true });
@@ -528,6 +533,7 @@ function bind(
   window.addEventListener("pointercancel", onUp);
   document.documentElement.addEventListener("pointerleave", onLeave);
   window.addEventListener("keydown", onKey);
+  workLayer.addEventListener("focusin", onFocus);
 
   // ------------------------------------------------------------ the loop
   let raf = 0;
@@ -616,8 +622,8 @@ function bind(
           stage: { width: stageW, height: stageH },
           open,
           held,
-          side: open >= 0 ? lastSide : null,
-          project: open >= 0 ? Math.floor(lastOpen / L.WORK.perProject) : null,
+          side: open >= 0 ? side : null,
+          project: open >= 0 ? Math.floor(open / L.WORK.perProject) : null,
           counter: shownCounter,
           work: {
             left: workRow.spring.x,
@@ -655,6 +661,7 @@ function bind(
     window.removeEventListener("pointercancel", onUp);
     document.documentElement.removeEventListener("pointerleave", onLeave);
     window.removeEventListener("keydown", onKey);
+    workLayer.removeEventListener("focusin", onFocus);
     stage.style.cursor = "";
     if (dev) delete holder.__b06;
     endScene();

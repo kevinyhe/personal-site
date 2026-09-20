@@ -65,16 +65,19 @@ function webglWorks(): boolean {
  * its own line box, the small print fades in, and the bullets and link
  * come only when the strip is held open.
  */
-function Info({ index }: { index: number }): JSX.Element {
+function Info({ index, short = false }: { index: number; short?: boolean }): JSX.Element {
+  // Each line sits in a box that hides what is outside it, so the line
+  // can rise into view. The small padding keeps the box from trimming
+  // the last letter, which tight tracking pushes past the line's edge.
   const p = projects[index];
   const lines = titleLines(p.title);
   return (
     <article className="group absolute left-0 top-0 w-[30%]" data-held="false" data-info={index} data-on="false">
       <h3 className={CAPS} data-title style={{ fontSize: "5vw" }}>
         {lines.map((line, k) => (
-          <span className="block overflow-hidden" key={line}>
+          <span className="block overflow-hidden pb-[0.05em]" key={line}>
             <span
-              className="inline-block translate-y-[108%] whitespace-nowrap transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform group-data-[on=true]:translate-y-0 group-data-[on=true]:delay-[var(--wait)] group-data-[on=true]:duration-700 motion-reduce:transition-none"
+              className="inline-block translate-y-[115%] whitespace-nowrap pr-[0.06em] transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] will-change-transform group-data-[on=true]:translate-y-0 group-data-[on=true]:delay-[var(--wait)] group-data-[on=true]:duration-700 motion-reduce:transition-none"
               data-line
               style={{ "--wait": `${120 + k * 90}ms` } as CSSProperties}
             >
@@ -88,25 +91,27 @@ function Info({ index }: { index: number }): JSX.Element {
         <p className="mt-[1.2rem] text-white">{p.stack.join(", ")}</p>
         <p className="mt-[1.2rem] opacity-80">{metaOf(p)}</p>
       </div>
-      <div className="pointer-events-none mt-[2rem] font-mono text-[1.5rem] leading-[1.5] opacity-0 transition-opacity duration-300 group-data-[held=true]:pointer-events-auto group-data-[held=true]:opacity-100 motion-reduce:transition-none">
-        <ul>
-          {p.bullets.map((b) => (
-            <li className="mt-[0.8rem]" key={b}>
-              {b}
-            </li>
-          ))}
-        </ul>
-        {p.href ? (
-          <a
-            className="mt-[1.2rem] inline-block text-white underline underline-offset-[0.35em]"
-            href={p.href}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {hostOf(p.href)}
-          </a>
-        ) : null}
-      </div>
+      {short ? null : (
+        <div className="pointer-events-none mt-[2rem] font-mono text-[1.5rem] leading-[1.5] opacity-0 transition-opacity duration-300 group-data-[held=true]:pointer-events-auto group-data-[held=true]:opacity-100 motion-reduce:transition-none">
+          <ul>
+            {p.bullets.map((b) => (
+              <li className="mt-[0.8rem]" key={b}>
+                {b}
+              </li>
+            ))}
+          </ul>
+          {p.href ? (
+            <a
+              className="mt-[1.2rem] inline-block text-white underline underline-offset-[0.35em]"
+              href={p.href}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {hostOf(p.href)}
+            </a>
+          ) : null}
+        </div>
+      )}
     </article>
   );
 }
@@ -218,9 +223,10 @@ function Plain({ withStage }: { withStage: boolean }): JSX.Element {
             {`01 / ${pad2(projects.length)}`}
           </p>
           {/* The same words stand in the list below, so a reader is not
-              told them twice. */}
+              told them twice. The bullets and the link are left to the
+              list: nothing here can be clicked. */}
           <div aria-hidden>
-            <Info index={0} />
+            <Info index={0} short />
           </div>
         </div>
       ) : null}
