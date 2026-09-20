@@ -1,0 +1,317 @@
+/*
+ * The look of the television's picture: the wallpaper, and the three
+ * things a tube lays over whatever it shows. Lines, dark corners, and a
+ * flicker. All lengths are rem or percent, so they grow with the page.
+ */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: #f9b9dc;
+  /* The set is nearly square and the window is wide, so the picture is
+     shown as a wide film is on an old set: a dark band above and below. */
+  background-color: #1a0812;
+}
+
+/* The picture. A little larger than the part in view, so when the camera
+   leans there is still picture at the edge and not the dark band. */
+.picture {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--b07-safe-w, 100%) + 6rem);
+  height: calc(var(--b07-safe-h, 100%) + 6rem);
+  transform: translate(-50%, -50%);
+  background-color: #6b2c55;
+  /* Pale in the middle so the set glows pink from across the room. Dots
+     over it, the same halftone as the rest of the site. */
+  background-image:
+    radial-gradient(circle at center, rgba(26, 8, 18, 0.2) 0, rgba(26, 8, 18, 0.2) 22%, rgba(26, 8, 18, 0) 24%),
+    radial-gradient(ellipse 70% 70% at 50% 46%, #f9b9dc 0%, #d48cb8 38%, #8a4a74 72%, #4a1c3c 100%);
+  background-size:
+    2.4rem 2.4rem,
+    100% 100%;
+}
+
+/* The part of the picture that is in view when the camera is seated. The
+   page sets the two sizes. Without them it is the whole picture. */
+.safe {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--b07-safe-w, 100%);
+  height: var(--b07-safe-h, 100%);
+  transform: translate(-50%, -50%);
+}
+
+.fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(26, 8, 18, 0) 0,
+    rgba(26, 8, 18, 0) 0.25rem,
+    rgba(26, 8, 18, 0.2) 0.25rem,
+    rgba(26, 8, 18, 0.2) 0.5rem
+  );
+}
+
+.corners {
+  background-image: radial-gradient(ellipse 78% 78% at 50% 50%, rgba(26, 8, 18, 0) 55%, rgba(26, 8, 18, 0.55) 100%);
+}
+
+.cornersSlight {
+  background-image: radial-gradient(ellipse 80% 80% at 50% 50%, rgba(26, 8, 18, 0) 62%, rgba(26, 8, 18, 0.3) 100%);
+}
+
+.sheen {
+  background-image: linear-gradient(115deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 32%);
+}
+
+.flicker {
+  background-color: #f9b9dc;
+  opacity: 0;
+  animation: b07-flicker 5.3s steps(1, end) infinite;
+}
+
+@keyframes b07-flicker {
+  0% {
+    opacity: 0;
+  }
+  7% {
+    opacity: 0.035;
+  }
+  9% {
+    opacity: 0;
+  }
+  41% {
+    opacity: 0.02;
+  }
+  42% {
+    opacity: 0.045;
+  }
+  44% {
+    opacity: 0;
+  }
+  78% {
+    opacity: 0.03;
+  }
+  80% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flicker {
+    animation: none;
+  }
+}
+
+.window {
+  position: absolute;
+  max-width: calc(var(--b07-safe-w, 100%) - 4rem);
+  border: 0.15rem solid #f9b9dc;
+  background-color: rgba(26, 8, 18, 0.95);
+  box-shadow: 0.9rem 0.9rem 0 rgba(26, 8, 18, 0.45);
+  outline: none;
+}
+
+.window:focus-visible,
+.window:focus-within {
+  border-color: #ffffff;
+}
+
+.bar {
+  display: flex;
+  height: 4.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.6rem;
+  padding-left: 1.4rem;
+  background-color: #f9b9dc;
+  color: #1a0812;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.bar:active {
+  cursor: grabbing;
+}
+
+/* A row of short strokes in the bar, the grip of an old window. */
+.grip {
+  flex: 1 1 auto;
+  height: 1.4rem;
+  background-image: repeating-linear-gradient(to bottom, #1a0812 0, #1a0812 0.15rem, rgba(26, 8, 18, 0) 0.15rem, rgba(26, 8, 18, 0) 0.45rem);
+  opacity: 0.55;
+  outline: none;
+}
+
+.grip:focus-visible {
+  opacity: 1;
+  outline: 0.25rem solid #1a0812;
+  outline-offset: 0.3rem;
+}
+
+.close {
+  position: relative;
+  width: 4.2rem;
+  height: 4.2rem;
+  flex: 0 0 auto;
+  border-left: 0.15rem solid #1a0812;
+  background-color: #f9b9dc;
+  cursor: pointer;
+  outline: none;
+}
+
+/* The cross is two bars, not a letter, so no font can draw it wrong. */
+.close::before,
+.close::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.8rem;
+  height: 0.25rem;
+  background-color: #1a0812;
+}
+
+.close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.close:hover,
+.close:focus-visible {
+  background-color: #ffffff;
+}
+
+.icon {
+  display: flex;
+  width: 12rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem 0;
+  color: #1a0812;
+  cursor: pointer;
+  outline: none;
+}
+
+.icon svg {
+  width: 6.4rem;
+  height: 6.4rem;
+}
+
+.iconName {
+  padding: 0.2rem 0.8rem;
+  background-color: #1a0812;
+  color: #f9b9dc;
+}
+
+.icon:hover .iconName,
+.icon:focus-visible .iconName,
+.icon[aria-expanded="true"] .iconName {
+  background-color: #f9b9dc;
+  color: #1a0812;
+}
+
+.icon:focus-visible {
+  outline: 0.25rem solid #ffffff;
+  outline-offset: 0.2rem;
+}
+
+.row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 4rem 1fr auto;
+  align-items: baseline;
+  gap: 1.2rem;
+  padding: 1.1rem 1.6rem;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+.row:hover,
+.row:focus-visible,
+.row[aria-expanded="true"] {
+  background-color: #f9b9dc;
+  color: #1a0812;
+}
+
+.menu {
+  padding: 0 1.4rem;
+  height: 100%;
+  cursor: pointer;
+  outline: none;
+}
+
+.menu:hover,
+.menu:focus-visible,
+.menu[aria-expanded="true"] {
+  background-color: #1a0812;
+  color: #f9b9dc;
+}
+
+/* The same desktop laid flat on the page: what the server sends, and what
+   a visitor who asked for less motion reads. Nothing moves or floats. */
+.flat {
+  position: relative;
+  overflow: hidden;
+  border: 0.15rem solid #f9b9dc;
+  color: #f9b9dc;
+  background-color: #6b2c55;
+  background-image:
+    radial-gradient(circle at center, rgba(26, 8, 18, 0.2) 0, rgba(26, 8, 18, 0.2) 22%, rgba(26, 8, 18, 0) 24%),
+    linear-gradient(to bottom, #8a4a74 0%, #4a1c3c 100%);
+  background-size:
+    2.4rem 2.4rem,
+    100% 100%;
+}
+
+.pane {
+  position: relative;
+  border: 0.15rem solid #f9b9dc;
+  background-color: rgba(26, 8, 18, 0.95);
+  box-shadow: 0.9rem 0.9rem 0 rgba(26, 8, 18, 0.45);
+}
+
+.paneBar {
+  display: flex;
+  height: 4.2rem;
+  align-items: center;
+  gap: 1.6rem;
+  padding: 0 1.4rem;
+  background-color: #f9b9dc;
+  color: #1a0812;
+}
+
+.more > summary {
+  display: inline-block;
+  padding: 0.3rem 1rem;
+  border: 0.15rem solid #f9b9dc;
+  cursor: pointer;
+  list-style: none;
+  outline: none;
+}
+
+.more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more > summary:hover,
+.more > summary:focus-visible,
+.more[open] > summary {
+  background-color: #f9b9dc;
+  color: #1a0812;
+}
