@@ -42,6 +42,7 @@ function sheetUniforms(face: THREE.Texture | null): Uniforms {
     uPhase: { value: 0 },
     uEdge: { value: 0 },
     uIdle: { value: 0 },
+    uPointer: { value: new THREE.Vector2(0.5, 0.5) },
     uFrom: { value: 0 },
     uTo: { value: 0 },
     uMix: { value: 1 },
@@ -81,6 +82,7 @@ function show(u: Uniforms, look: Look, time: number): void {
   u.uPhase.value = look.phase;
   u.uEdge.value = look.edge;
   u.uIdle.value = look.idle;
+  (u.uPointer.value as THREE.Vector2).set(...look.at);
   u.uFrom.value = look.artFrom;
   u.uTo.value = look.artTo;
   u.uMix.value = look.mix;

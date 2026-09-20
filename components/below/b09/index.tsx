@@ -97,7 +97,7 @@ function Journey(): JSX.Element {
         style={{ marginTop: `calc(${SCREEN} * -1)`, height: `calc(${SCREEN} * 6)` }}
       >
         <div className="sticky top-0 w-full will-change-transform" data-layer="work" style={{ height: SCREEN }}>
-          <h2 className={`absolute top-[7vh] ${SMALL}`} style={{ left: `${TEXT_LEFT}vw` }}>
+          <h2 className={`absolute top-[7vh] transition-opacity duration-500 ${SMALL}`} data-work-label style={{ left: `${TEXT_LEFT}vw` }}>
             <span className="opacity-60">Work</span>
           </h2>
           {projects.map((p, i) => {

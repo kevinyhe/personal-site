@@ -31,6 +31,8 @@ uniform float uWave;
 uniform float uPhase;
 uniform float uEdge;
 uniform float uIdle;
+uniform vec2 uPointer;
+uniform vec2 uSize;
 varying vec2 vUv;
 varying float vLift;
 varying float vSlope;
@@ -41,12 +43,19 @@ void main() {
   float off = (uv.x - uEdge) * 2.6;
   float amp = uWave * (0.3 + 0.7 * exp(-off * off));
   float a = uv.x * 11.0 - uPhase + uv.y * 1.4;
+  // The ground keeps a slow ripple, and rings spread from the cursor.
   float b = uv.x * 5.0 + uv.y * 3.0 + uTime * 0.6;
-  float lift = sin(a) * amp + sin(b) * uIdle;
+  float away = length((uv - uPointer) * uSize);
+  float c = away * 5.0 - uTime * 2.4;
+  float ring = exp(-away * 0.7) * uIdle;
+  float lift = sin(a) * amp + sin(b) * uIdle + sin(c) * ring;
   vLift = lift;
-  vSlope = cos(a) * amp + cos(b) * uIdle;
+  vSlope = cos(a) * amp + cos(b) * uIdle + cos(c) * ring;
   vec3 p = position;
+  // Mostly toward the camera, and a little up and down, so the top and
+  // bottom edges wave as well.
   p.z += lift;
+  p.y += lift * 0.12;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }
 `;
@@ -154,39 +163,40 @@ vec3 art2(vec2 uv, float t, float aa) {
   vec3 col = PLUM;
   // The ropes.
   for (int r = 0; r < 3; r++) {
-    float y = 0.14 + 0.07 * float(r);
-    col = mix(col, WINE, stroke(uv.y - y, 0.003, aa));
+    float y = 0.1 + 0.07 * float(r);
+    col = mix(col, ROSE, 0.55 * stroke(uv.y - y, 0.003, aa));
   }
 
   for (int i = 0; i < 3; i++) {
     float k = float(i);
     float ph = fract(t * 0.36 + k * 0.371);
-    vec2 c = vec2(0.42 + 0.38 * k, 0.34 + 0.1 * hash(k + 2.0));
+    vec2 c = vec2(0.42 + 0.38 * k, 0.36 + 0.1 * hash(k + 2.0));
     float R = 0.36 - 0.04 * k;
     float side = 1.0;
     if (i == 1) side = -1.0;
     float a0 = 1.5708 + side * 1.9;
-    float swing = smoothstep(0.0, 0.4, ph);
+    float swing = smoothstep(0.0, 0.35, ph);
     swing = swing * swing;
-    float fade = 1.0 - smoothstep(0.75, 1.0, ph);
+    float fade = 1.0 - smoothstep(0.8, 1.0, ph);
 
-    for (int j = 0; j < 12; j++) {
-      float s = float(j) / 11.0;
+    for (int j = 0; j < 16; j++) {
+      float s = float(j) / 15.0;
       float a = a0 - side * 2.4 * s * swing;
       vec2 p = c + R * vec2(cos(a), sin(a));
-      float on = fill(length(q - p) - (0.006 + 0.012 * s), aa);
-      col = mix(col, BLOSSOM, on * fade * (0.35 + 0.65 * s));
+      float on = fill(length(q - p) - (0.007 + 0.017 * s), aa);
+      col = mix(col, BLOSSOM, on * fade * (0.4 + 0.6 * s));
     }
 
     float aEnd = a0 - side * 2.4 * swing;
     vec2 hit = c + R * vec2(cos(aEnd), sin(aEnd));
     float far = length(q - hit);
-    col = mix(col, WHITE, fill(far - 0.028, aa) * fade);
+    col = mix(col, WHITE, fill(far - 0.034, aa) * fade);
 
-    float after = clamp((ph - 0.4) / 0.6, 0.0, 1.0);
-    float live = step(0.4, ph) * (1.0 - after);
-    col = mix(col, WHITE, stroke(far - after * 0.24, 0.004, aa) * live);
-    col = mix(col, BLOSSOM, stroke(far - after * 0.38, 0.003, aa) * live);
+    float after = clamp((ph - 0.35) / 0.55, 0.0, 1.0);
+    float live = step(0.35, ph) * (1.0 - after * after);
+    col = mix(col, WHITE, stroke(far - 0.034 - after * 0.14, 0.006, aa) * live);
+    col = mix(col, BLOSSOM, stroke(far - 0.034 - after * 0.26, 0.0045, aa) * live);
+    col = mix(col, ROSE, stroke(far - 0.034 - after * 0.4, 0.003, aa) * live);
   }
   return col;
 }
@@ -197,6 +207,13 @@ const ART_3 = `
 vec2 pathAt(float s) {
   return vec2(0.8 + 0.5 * sin(s), 0.5 + 0.3 * sin(2.0 * s + 0.5));
 }
+// How far p is from the straight line a to b.
+float segment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float along = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * along);
+}
 vec3 art3(vec2 uv, float t, float aa) {
   vec2 q = vec2(uv.x * 1.6, uv.y);
   vec3 col = CREAM;
@@ -205,33 +222,34 @@ vec3 art3(vec2 uv, float t, float aa) {
   vec2 g = abs(fract(q / 0.2 + 0.5) - 0.5) * 0.2;
   col = mix(col, MAUVE, 0.5 * max(stroke(g.x, 0.0015, aa), stroke(g.y, 0.0015, aa)));
 
-  // The plotted path, as dots.
+  // The plotted path, as dashes.
   float least = 10.0;
-  for (int j = 0; j < 40; j++) {
-    float s = float(j) * 0.15708;
-    least = min(least, length(q - pathAt(s)));
+  for (int j = 0; j < 48; j++) {
+    float s = float(j) * 0.1309;
+    least = min(least, segment(q, pathAt(s), pathAt(s + 0.08)));
   }
-  col = mix(col, WINE, fill(least - 0.006, aa));
+  col = mix(col, WINE, fill(least - 0.0045, aa));
 
-  // The part just driven.
+  // The part just driven, thick at the robot and thin behind.
   float s0 = t * 0.45;
   float trail = 10.0;
-  for (int j = 1; j < 20; j++) {
-    float back = float(j) * 0.05;
-    trail = min(trail, length(q - pathAt(s0 - back)) - 0.011 * (1.0 - back));
+  for (int j = 0; j < 14; j++) {
+    float back = float(j) * 0.09;
+    float d = segment(q, pathAt(s0 - back), pathAt(s0 - back - 0.09));
+    trail = min(trail, d - 0.014 * (1.0 - float(j) / 14.0));
   }
-  col = mix(col, WINE, fill(trail, aa));
+  col = mix(col, PLUM, fill(trail, aa));
 
   vec2 at = pathAt(s0);
   vec2 ahead = normalize(pathAt(s0 + 0.02) - at);
   vec2 l = q - at;
   vec2 b = vec2(dot(l, ahead), dot(l, vec2(-ahead.y, ahead.x)));
-  float body = max(abs(b.x), abs(b.y)) - 0.06;
+  float body = max(abs(b.x), abs(b.y)) - 0.075;
   col = mix(col, PLUM, fill(body, aa));
   // Wheels along both sides, and a mark at the front.
-  float wheels = max(abs(b.x) - 0.045, abs(abs(b.y) - 0.052) - 0.008);
+  float wheels = max(abs(b.x) - 0.058, abs(abs(b.y) - 0.064) - 0.011);
   col = mix(col, BLOSSOM, fill(wheels, aa));
-  float nose = max(abs(b.x - 0.036) - 0.012, abs(b.y) - 0.022);
+  float nose = max(abs(b.x - 0.045) - 0.014, abs(b.y) - 0.028);
   col = mix(col, WHITE, fill(nose, aa));
   return col;
 }
@@ -352,7 +370,7 @@ void main() {
   col = mix(col, uFlatColour, uFlat);
 
   // Light from the slope of the wave, so the wave can be seen.
-  col += vSlope * (0.35 + 1.2 * uFlat);
+  col += vSlope * (0.35 + 0.6 * uFlat);
 
   float d = roundBox((vUv - 0.5) * uSize, uSize * 0.5, uRound);
   float inside = 1.0 - smoothstep(-uPixel, 0.0, d);
