@@ -302,9 +302,14 @@ export function buildTv(options: { still: boolean; mono: string; sans: string })
               const mesh = o as THREE.Mesh;
               if (!mesh.isMesh) return;
               modelParts.push(mesh.geometry);
-              const old = mesh.material as THREE.Material | THREE.Material[];
-              if (Array.isArray(old)) old.forEach((m) => m.dispose());
-              else old.dispose();
+              // The file's own material carries two 1x1 placeholder
+              // textures; they go with it.
+              const old = mesh.material as THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[];
+              for (const m of Array.isArray(old) ? old : [old]) {
+                m.map?.dispose();
+                m.normalMap?.dispose();
+                m.dispose();
+              }
               mesh.material = tvMat;
             });
             if (disposed) {
