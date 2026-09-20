@@ -7,7 +7,7 @@ import { BELOWS, pad2 } from "@/components/below/list";
 
 /**
  * Slot to design. Each is its own chunk, so a page only downloads the
- * scene it shows: ten three.js scenes in one bundle would be the whole
+ * scene it shows: this many three.js scenes in one bundle would be the whole
  * cost of the home page several times over.
  */
 const DESIGNS: Record<number, ComponentType> = {
@@ -21,6 +21,16 @@ const DESIGNS: Record<number, ComponentType> = {
   8: dynamic(() => import("@/components/below/b08")),
   9: dynamic(() => import("@/components/below/b09")),
   10: dynamic(() => import("@/components/below/b10")),
+  11: dynamic(() => import("@/components/below/b11")),
+  12: dynamic(() => import("@/components/below/b12")),
+  13: dynamic(() => import("@/components/below/b13")),
+  14: dynamic(() => import("@/components/below/b14")),
+  15: dynamic(() => import("@/components/below/b15")),
+  16: dynamic(() => import("@/components/below/b16")),
+  17: dynamic(() => import("@/components/below/b17")),
+  18: dynamic(() => import("@/components/below/b18")),
+  19: dynamic(() => import("@/components/below/b19")),
+  20: dynamic(() => import("@/components/below/b20")),
 };
 
 export const hasBelow = (n: number): boolean => Boolean(DESIGNS[n]);

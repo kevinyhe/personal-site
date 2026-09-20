@@ -1,5 +1,5 @@
 /**
- * Ten ways to build what comes after the statement band on the home page
+ * Ways to build what comes after the statement band on the home page
  * (the work, the skills, how to reach me), each a 3D scene. A plain
  * module, not a client one: server routes map over it.
  *
@@ -20,6 +20,16 @@ export const BELOWS: Below[] = [
   { n: 8, name: "Glass", after: "noomoagency.com", note: "Glass solids drifting over very large type, bending it." },
   { n: 9, name: "Tilt", after: "robin-noguier.com", note: "One tilted plane per project, the ground changing colour with it." },
   { n: 10, name: "Reveal", after: "landonorris.com", note: "The robot drawn two ways; the cursor's trail shows the other." },
+  { n: 11, name: "Plates", after: "sondaven.com", note: "Each project a bar-dithered picture that opens out of the page as it scrolls." },
+  { n: 12, name: "Map", after: "mount.jp", note: "An illustrated valley map; the camera travels between shrines, one per project." },
+  { n: 13, name: "Index", after: "lukebaffait.fr", note: "A serif project list; hovering a row raises its bar-dithered scene behind the type." },
+  { n: 14, name: "Paper", after: "niccolomiranda.com", note: "Printed halftone pages on blossom paper that turn in 3D." },
+  { n: 15, name: "Dusk", after: "taotajima.jp", note: "A dusk sky of dithered cloud; the work is set in wide-spaced serif across it." },
+  { n: 16, name: "Bough", after: "the site's own sakura tree", note: "Scroll climbs the tree; each project a branch that blossoms as you reach it." },
+  { n: 17, name: "Lanterns", after: "the site's own shrine", note: "A night path of lanterns under the torii; each lantern lights one project." },
+  { n: 18, name: "Channels", after: "the site's own television", note: "The work on the hero's television; scroll turns the dial through static." },
+  { n: 19, name: "Relief", after: "garden-eight.com", note: "Blossoms and the robot as a pale plaster relief under moving light." },
+  { n: 20, name: "Brush", after: "junni.co.jp", note: "A dark grid where brush strokes write each project and bloom into petals." },
 ];
 
 export const pad2 = (n: number): string => String(n).padStart(2, "0");
