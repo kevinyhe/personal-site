@@ -32,6 +32,10 @@ float lightAt(vec3 p) {
   }
   float along = mod(p.z - ${f(SMALL_Z0)} + ${f(SMALL_STEP / 2)}, ${f(SMALL_STEP)}) - ${f(SMALL_STEP / 2)};
   float inRun = step(${f(SMALL_END - 1)}, p.z) * step(p.z, ${f(SMALL_Z0 + 1)});
+  // No small lanterns stand in the clearing round a project lantern.
+  for (int i = 0; i < 5; i++) {
+    inRun *= smoothstep(3.6, 5.0, abs(p.z - uLights[i].z));
+  }
   vec3 ds = vec3(abs(p.x) - ${f(SMALL_X)}, p.y - 1.3, along);
   sum += uSmall * inRun * 0.7 / (0.7 + dot(ds, ds));
   return sum;
