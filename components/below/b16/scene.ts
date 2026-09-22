@@ -147,6 +147,8 @@ export function buildScene(): Scene {
   }
 
   // --------------------------------------------------------- branches
+  const collarMaterial = new THREE.MeshStandardMaterial({ color: "#a8969f", roughness: 0.9, metalness: 0, emissive: new THREE.Color("#2a1c24") });
+  kits.push(collarMaterial);
   const branches: (BuiltBranch | null)[] = L.BRANCHES.map(() => null);
   const branchGroups = L.BRANCHES.map((b, i) => {
     const g = new THREE.Group();
@@ -178,12 +180,14 @@ export function buildScene(): Scene {
     // The generator's group stays at identity for a spray; move it whole.
     group.add(gen.group);
     const bark = tree.branchMesh.material as THREE.MeshStandardMaterial;
-    // The sections' bough lifts its bark the same way: a thin stem far
-    // from the key otherwise falls near black.
-    bark.color.setHex(0xeae0e4);
-    bark.emissive.setHex(0x7a6670);
-    bark.emissiveIntensity = 0.55;
-    group.add(buildCollar(bark));
+    // A little lighter than the trunk, since a thin stem shows fewer bars,
+    // and lifted so its shadow side still keeps a hairline.
+    bark.color.setHex(0xb4a2ac);
+    bark.emissive.setHex(0x4a3842);
+    bark.emissiveIntensity = 0.6;
+    // Not the bark material: that one carries the generator's wind and
+    // vertex colours, which a plain cylinder has no attributes for.
+    group.add(buildCollar(collarMaterial));
     tree.blossomGrowth.value = 0;
     group.updateMatrixWorld(true);
     const tips = tree.branches
@@ -214,9 +218,9 @@ export function buildScene(): Scene {
     }
     const bark = tree.branchMesh?.material as THREE.MeshStandardMaterial | undefined;
     if (bark) {
-      bark.color.setHex(0xeae0e4);
-      bark.emissive.setHex(0x6a5660);
-      bark.emissiveIntensity = 0.45;
+      bark.color.setHex(0xb4a2ac);
+      bark.emissive.setHex(0x4a3842);
+      bark.emissiveIntensity = 0.6;
     }
     crown.add(tree.group);
     tree.blossomGrowth.value = 0;

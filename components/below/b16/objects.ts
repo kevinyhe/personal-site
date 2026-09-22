@@ -75,11 +75,15 @@ export function buildTrunk(): { mesh: THREE.Mesh; kit: Kit } {
 
   const texture = barkTexture();
   const material = new THREE.MeshStandardMaterial({
-    color: "#e2d4dc",
+    // Mid-tone on purpose. The grade turns a lit blossom into a full bar;
+    // the trunk lit by the key comes out near 150 of 255, about half a
+    // bar, and its shadow side near 70, a hairline. So wood and flower
+    // stay apart in the bars.
+    color: "#8f7d87",
     map: texture ?? undefined,
     roughness: 0.9,
     metalness: 0,
-    emissive: new THREE.Color("#4a3040"),
+    emissive: new THREE.Color("#2a1c24"),
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "Trunk";
@@ -135,7 +139,7 @@ function barkTexture(): THREE.CanvasTexture | null {
  * thin at its cut end; this tapers from trunk-thick down to it. In the
  * spray's own frame: from inside the trunk at +x out along the stem's rise.
  */
-export function buildCollar(material: THREE.Material): THREE.Mesh {
+export function buildCollar(material: THREE.MeshStandardMaterial): THREE.Mesh {
   const from = new THREE.Vector3(0.9, -0.22, 0);
   const to = new THREE.Vector3(-0.95, 0.3, 0.01);
   const length = from.distanceTo(to);
