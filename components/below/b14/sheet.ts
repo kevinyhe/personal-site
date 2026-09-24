@@ -281,8 +281,9 @@ function plateBack(c: Content, n: number, m: MeasureFont): Printed {
 
 /** One group of skills in a column: its name, its line, then a mark and a name per skill. */
 function skillColumn(pg: Page, g: Content["skillGroups"][number], x: number, top: number, width: number, bottom: number): number {
-  const face = titleFace(g.label);
-  const lf = face === "serif" ? f("serif", 52) : f("sans", 36, { weight: 500, italic: false, tracking: -0.01 });
+  // Four of the five labels carry an "&", which the serif cannot set, so
+  // all five are in Inter and the columns match.
+  const lf = f("sans", 36, { weight: 500, italic: false, tracking: -0.01 });
   const labelLines = pg.wrapped(g.label, lf, width);
   let y = pg.lines(labelLines, x, top, lf, 1.02);
   const bf = f("sans", 22, { italic: true });
