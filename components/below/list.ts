@@ -30,6 +30,16 @@ export const BELOWS: Below[] = [
   { n: 18, name: "Channels", after: "the site's own television", note: "The work on the hero's television; scroll turns the dial through static." },
   { n: 19, name: "Relief", after: "garden-eight.com", note: "Blossoms and the robot as a pale plaster relief under moving light." },
   { n: 20, name: "Brush", after: "junni.co.jp", note: "A dark grid where brush strokes write each project and bloom into petals." },
+  { n: 21, name: "Diorama", after: "messenger.abeto.co", note: "A small floating island of the valley you turn by dragging; each project a place on it." },
+  { n: 22, name: "Gates", after: "fushimi inari, as awwwards scroll tunnels do it", note: "Scroll walks through a tunnel of torii; each run of gates carries one project." },
+  { n: 23, name: "Globe", after: "oceanic globe sites on awwwards", note: "A tiny planet of hills, shrines and sakura you spin; projects are pins on it." },
+  { n: 24, name: "Letters", after: "locomotive.ca and obys.agency", note: "The name in solid 3D serif letters that shatter into petals and reform as each project." },
+  { n: 25, name: "Exploded", after: "product exploded-view pages", note: "Scroll pulls the robot apart into its parts; each part labelled with a project or skill." },
+  { n: 26, name: "Lanterns rising", after: "night-sky lantern pieces on awwwards", note: "Paper lanterns rise into a plum night, each one lit with a project." },
+  { n: 27, name: "Pond", after: "water-shader sites on awwwards", note: "A koi pond seen from above; the cursor ripples it and each lily pad is a project." },
+  { n: 28, name: "Screen", after: "dogstudio.co", note: "A folding screen that opens panel by panel in 3D, each panel painted with a project." },
+  { n: 29, name: "Seasons", after: "seasonal scroll stories on awwwards", note: "One sakura tree through four seasons as you scroll; the work hangs on it." },
+  { n: 30, name: "Garden", after: "zen garden pieces on awwwards", note: "Raked sand the cursor rakes; stones set in it are the projects." },
 ];
 
 export const pad2 = (n: number): string => String(n).padStart(2, "0");

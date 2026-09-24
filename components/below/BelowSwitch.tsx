@@ -31,6 +31,16 @@ const DESIGNS: Record<number, ComponentType> = {
   18: dynamic(() => import("@/components/below/b18")),
   19: dynamic(() => import("@/components/below/b19")),
   20: dynamic(() => import("@/components/below/b20")),
+  21: dynamic(() => import("@/components/below/b21")),
+  22: dynamic(() => import("@/components/below/b22")),
+  23: dynamic(() => import("@/components/below/b23")),
+  24: dynamic(() => import("@/components/below/b24")),
+  25: dynamic(() => import("@/components/below/b25")),
+  26: dynamic(() => import("@/components/below/b26")),
+  27: dynamic(() => import("@/components/below/b27")),
+  28: dynamic(() => import("@/components/below/b28")),
+  29: dynamic(() => import("@/components/below/b29")),
+  30: dynamic(() => import("@/components/below/b30")),
 };
 
 export const hasBelow = (n: number): boolean => Boolean(DESIGNS[n]);
