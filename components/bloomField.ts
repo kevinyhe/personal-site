@@ -188,8 +188,12 @@ export function createBloomField({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
+    // Lean the spray about the middle of its foot, and shrink it a
+    // little so the lean never carries a tip past the canvas edge, which
+    // the bars would show as a straight cut.
     ctx.translate(W / 2, H);
     ctx.rotate(tilt);
+    ctx.scale(0.78, 0.78);
     ctx.translate(-W / 2, -H);
     const t = progress;
 

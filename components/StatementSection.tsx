@@ -5,7 +5,6 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 import { mountHeroRobot, type HeroRobot } from "@/components/heroRobot";
-import { createRobotReveal } from "@/components/robotReveal";
 import { createBloomField } from "@/components/bloomField";
 import {
   createBarCanvas,
@@ -129,7 +128,6 @@ const LINE_ROWS = ["I build systems", "that bring ideas", "to life."];
 export default function StatementSection(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const revealRef = useRef<HTMLCanvasElement | null>(null);
   const lineRef = useRef<HTMLParagraphElement | null>(null);
 
   // The flower, opened BY THE SCROLL.
@@ -302,7 +300,7 @@ export default function StatementSection(): JSX.Element {
     const config: BarLayerConfig = {
       // Hanging down the right of the band, past the centred sentence, and
       // again down the left as its mirror.
-      x: "-13%", y: "2%", width: "50%", height: "100%",
+      x: "-9%", y: "2%", width: "50%", height: "100%",
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
@@ -334,9 +332,6 @@ export default function StatementSection(): JSX.Element {
       endX: robotW * 0.5,
       fill: 0.7,
       shaded: true,
-      // The engineer's drawing the hover opens onto: blossom edges on the
-      // band's own plum, white dimensions, a faint floor grid.
-      drawing: { fill: BAND, edge: INK, dim: "#ffffff", faint: INK },
     });
     const robotConfig: BarLayerConfig = {
       x: "0%", y: "0%", width: "100%", height: "100%",
@@ -353,7 +348,7 @@ export default function StatementSection(): JSX.Element {
     // THE SPRAY on the left third: sakura boughs that grow and bloom as a
     // wave from left to right (bloomField), in the flower's own grade.
     // Just right of the original flower, leaning right, toward the text.
-    const FIELD_X = 0.1;
+    const FIELD_X = 0.17;
     const FIELD_W = 0.3;
     const fieldH = 720;
     const field = createBloomField({
@@ -372,25 +367,6 @@ export default function StatementSection(): JSX.Element {
       { type: "canvas", source, config },
       ...(robot ? [{ type: "canvas" as const, source: robot.source, config: robotConfig }] : []),
     ];
-    // Hover the robot and a window opens onto its drawing (robotReveal).
-    // The window maps into the robot layer's box, which the push-in moves,
-    // so it reads that box live off robotConfig.
-    const pct = (v: string | number) => (typeof v === "number" ? v : parseFloat(v)) / 100;
-    const overlay = revealRef.current;
-    const reveal =
-      robot && overlay && !reduced
-        ? createRobotReveal({
-            overlay,
-            robot,
-            rect: () => ({
-              x: pct(robotConfig.x),
-              y: pct(robotConfig.y),
-              w: pct(robotConfig.width),
-              h: pct(robotConfig.height),
-            }),
-            colours: { ground: "#1a0812", grid: INK, rim: "#ffe3f1" },
-          })
-        : null;
     bar = createBarCanvas(canvas, layers, {
       colors: () => ({ bg: hexToRgb(BAND), fill: hexToRgb(INK) }),
       defaults: { bgOpacity: 0 },
@@ -553,7 +529,6 @@ export default function StatementSection(): JSX.Element {
     return () => {
       stopped = true;
       context.revert();
-      reveal?.dispose();
       field.dispose();
       robot?.dispose();
       bar?.destroy();
@@ -631,12 +606,6 @@ export default function StatementSection(): JSX.Element {
         className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
         data-statement-scene
         ref={canvasRef}
-      />
-      {/* The window onto the robot's drawing, laid exactly over the bars. */}
-      <canvas
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
-        ref={revealRef}
       />
 
       {/* What is left once the sentence has gone: four lines on the left
