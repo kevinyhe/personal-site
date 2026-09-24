@@ -6,6 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 import { mountHeroRobot, type HeroRobot } from "@/components/heroRobot";
 import { createRobotReveal } from "@/components/robotReveal";
+import { createBloomField } from "@/components/bloomField";
 import {
   createBarCanvas,
   hexToRgb,
@@ -119,6 +120,11 @@ const AFTER =
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
 const STAIR = 2;
+/** Where the robot's turn comes to rest, radians: a three-quarter view,
+ *  its front turned a little toward the lens. */
+const END_YAW = -0.6;
+/** The sentence, in three stepped lines on the right. */
+const LINE_ROWS = ["I build systems", "that bring ideas", "to life."];
 
 export default function StatementSection(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -296,7 +302,7 @@ export default function StatementSection(): JSX.Element {
     const config: BarLayerConfig = {
       // Hanging down the right of the band, past the centred sentence, and
       // again down the left as its mirror.
-      x: "64%", y: "2%", width: "50%", height: "100%",
+      x: "68%", y: "34%", width: "50%", height: "100%",
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
@@ -344,10 +350,23 @@ export default function StatementSection(): JSX.Element {
       // rather than filling to one solid mass. That cap is the effect.
       xSquares: 300, ySquares: 190, maxSquareWidth: "64%", bgOpacity: 0, fillOpacity: 1,
     };
-    const configLeft: BarLayerConfig = { ...config, x: "-14%", mirrorX: true };
+    // THE SPRAY on the left third: sakura boughs that grow and bloom as a
+    // wave from left to right (bloomField), in the flower's own grade.
+    const FIELD_W = 0.36;
+    const fieldH = 720;
+    const field = createBloomField({
+      width: Math.round((FIELD_W * sceneW * fieldH) / sceneH),
+      height: fieldH,
+      still: reduced,
+    });
+    const fieldConfig: BarLayerConfig = {
+      x: "0%", y: "0%", width: `${FIELD_W * 100}%`, height: "100%",
+      blackPoint: 200, whitePoint: 25, threshold: 255,
+      xSquares: 170, ySquares: 260, bgOpacity: 0, fillOpacity: 1,
+    };
     const layers: BarLayer[] = [
+      { type: "canvas", source: field.source, config: fieldConfig },
       { type: "canvas", source, config },
-      { type: "canvas", source, config: configLeft },
       ...(robot ? [{ type: "canvas" as const, source: robot.source, config: robotConfig }] : []),
     ];
     // Hover the robot and a window opens onto its drawing (robotReveal).
@@ -412,7 +431,6 @@ export default function StatementSection(): JSX.Element {
     );
     const climb = gsap.parseEase("power2.out");
     const soft = gsap.parseEase("power2.out");
-    const glide = gsap.parseEase("power2.inOut");
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     let openFrames = 0;
     let spin = 0;
@@ -423,16 +441,20 @@ export default function StatementSection(): JSX.Element {
       // into the ground, and the first frame is empty. The sheet starts at
       // the clip's own start (BLOOM_FROM 0) for exactly this reason.
       const shut = p < 0.22 ? 0 : clamp01((p - 0.22) / 0.5);
-      const open = p < 0.22 ? openScroll : 1 - shut;
+      // The wave runs left to right: the spray on the left first, and the
+      // flower at the right end last, over the back half of the opening.
+      const fieldOpen = p < 0.22 ? openScroll : 1 - shut;
+      const open = p < 0.22 ? clamp01((openScroll - 0.55) / 0.45) : 1 - shut;
+      field.set(fieldOpen);
       openFrames = clamp01(open) * (FRAMES - 1);
       want = Math.round(openFrames);
       // And they sink as they close: the box slides down the frame over
       // the rise, a whole frame's worth, so at the end the top of it has
       // just gone under the bottom edge — barely hidden, not switched off.
-      for (const c of [config, configLeft]) {
-        c.y = `${2 + 100 * shut}%`;
-        c.fillOpacity = open <= 0.002 ? 0 : 1;
-      }
+      config.y = `${34 + 100 * shut}%`;
+      config.fillOpacity = open <= 0.002 ? 0 : 1;
+      fieldConfig.y = `${100 * shut}%`;
+      fieldConfig.fillOpacity = fieldOpen <= 0.002 ? 0 : 1;
       // Both pairs, top then bottom, one line after another.
       for (const [i, el] of lines.entries()) {
         // After the push-in has taken the robot out from under them.
@@ -450,7 +472,10 @@ export default function StatementSection(): JSX.Element {
       // canvas (x 0.33..0.67) and the middle 70% of its height; at twice
       // the size, a box at (-16%, -5%) puts its left edge on the frame's
       // middle and its top a quarter of the way down.
-      const z = glide(clamp01((p - 0.68) / 0.32));
+      // It comes up where it ends: the close-up framing holds the whole way
+      // (no rise in the middle and push-in after), so it rises straight
+      // into the bottom right at its final size.
+      const z = 1;
       const k = 1 + z;
       robotConfig.width = `${100 * k}%`;
       robotConfig.height = `${100 * k}%`;
@@ -462,9 +487,12 @@ export default function StatementSection(): JSX.Element {
       robotConfig.y = `${14 * z}%`;
       // The wipe, from the bottom: the robot canvas is a scaled copy of
       // the frame, so its top edge scales back by the ratio.
-      const scale = (frame0?.clientWidth ?? sceneW) / robotW;
+      // The robot's layer is k times the frame and offset by its y, so
+      // its top on the page scales and shifts with that.
+      const scale = ((frame0?.clientWidth ?? sceneW) / robotW) * k;
       const box = wipe.getBoundingClientRect();
-      const top = canvas.getBoundingClientRect().top + robot.topPx() * scale;
+      const cb = canvas.getBoundingClientRect();
+      const top = cb.top + cb.height * 0.14 * z + robot.topPx() * scale;
       const cut = r <= 0 ? 0 : box.bottom - top;
       const finish = box.height * soft(clamp01((r - 0.72) / 0.28));
       wipe.style.clipPath = `inset(0 0 ${Math.max(0, cut, finish)}px 0)`;
@@ -509,7 +537,9 @@ export default function StatementSection(): JSX.Element {
           // as the push-in takes over.
           const riseAt = vh + RISE * pinLen;
           const turnEnd = vh + TURN_END * pinLen;
-          spin = 2 * Math.PI * gsap.parseEase("power2.inOut")(clamp01((scrolled - riseAt) / (turnEnd - riseAt)));
+          // Half a turn as it rises, coming to rest at a three-quarter
+          // angle (front and near side both showing), not in profile.
+          spin = END_YAW - Math.PI + Math.PI * gsap.parseEase("power2.inOut")(clamp01((scrolled - riseAt) / (turnEnd - riseAt)));
           lastP = p;
           apply(p);
         },
@@ -521,6 +551,7 @@ export default function StatementSection(): JSX.Element {
       stopped = true;
       context.revert();
       reveal?.dispose();
+      field.dispose();
       robot?.dispose();
       bar?.destroy();
       video.pause();
@@ -632,25 +663,31 @@ export default function StatementSection(): JSX.Element {
 
       {/* The sentence, in the middle. The box round it is what the wipe
           clips as the robot rises through it; the flowers hang either side. */}
-      <div className="relative z-[1] w-full px-6 sm:px-16">
+      {/* Padding below, not a transform, lifts the sentence: the wipe clips
+          this box, and a transform would carry the first line outside it. */}
+      <div className="relative z-[1] w-full pb-[26vh]">
+        {/* Off centre, to the right of the spray and short of the flower at
+            the end: large, in the display serif, stepped like the lines
+            that follow the robot. */}
         <p
-          className="mx-auto max-w-[17ch] text-balance text-center font-serif-display italic text-[clamp(2.4rem,5.6vw,6rem)] leading-[0.98] tracking-[-0.025em]"
+          aria-label={LINE}
+          className="ml-[38vw] whitespace-nowrap font-serif-display italic text-[min(18vh,7vw)] leading-[1.02] tracking-[-0.03em]"
           ref={lineRef}
         >
-          {LINE.split(" ").map((word, index, all) => (
-            // The word stays one box so lines break between words, and the
-            // letters inside it are what the scroll writes.
-            <span className="inline-block" key={index}>
-              {Array.from(word).map((glyph, at) => (
-                <span
-                  className="inline-block will-change-[filter,opacity]"
-                  data-letter
-                  key={at}
-                >
-                  {glyph}
+          {LINE_ROWS.map((row, r) => (
+            <span aria-hidden="true" className="block" key={r} style={{ marginLeft: `${r * STAIR * 1.6}vw` }}>
+              {row.split(" ").map((word, index, all) => (
+                // The word stays one box, and the letters inside it are
+                // what the scroll writes.
+                <span className="inline-block" key={index}>
+                  {Array.from(word).map((glyph, at) => (
+                    <span className="inline-block will-change-[filter,opacity]" data-letter key={at}>
+                      {glyph}
+                    </span>
+                  ))}
+                  {index < all.length - 1 ? "\u00a0" : ""}
                 </span>
               ))}
-              {index < all.length - 1 ? " " : ""}
             </span>
           ))}
         </p>
