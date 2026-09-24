@@ -76,11 +76,15 @@ export function createBloomField({
   height,
   seed = 11,
   still = false,
+  tilt = 0,
 }: {
   width: number;
   height: number;
   seed?: number;
   still?: boolean;
+  /** Lean the whole spray, radians, about the middle of its foot:
+   *  positive leans it right. */
+  tilt?: number;
 }): BloomField {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -184,6 +188,9 @@ export function createBloomField({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
+    ctx.translate(W / 2, H);
+    ctx.rotate(tilt);
+    ctx.translate(-W / 2, -H);
     const t = progress;
 
     // Boughs: mid grey, so they come out as thin bars under the petals.

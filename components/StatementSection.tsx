@@ -120,9 +120,9 @@ const AFTER =
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
 const STAIR = 2;
-/** Where the robot's turn comes to rest, radians: a three-quarter view,
- *  its front turned a little toward the lens. */
-const END_YAW = -0.6;
+/** Where the robot's turn comes to rest, radians: the angle it passes
+ *  half way up, turned well round from profile. */
+const END_YAW = -0.6 - Math.PI / 2;
 /** The sentence, in three stepped lines on the right. */
 const LINE_ROWS = ["I build systems", "that bring ideas", "to life."];
 
@@ -302,7 +302,7 @@ export default function StatementSection(): JSX.Element {
     const config: BarLayerConfig = {
       // Hanging down the right of the band, past the centred sentence, and
       // again down the left as its mirror.
-      x: "68%", y: "34%", width: "50%", height: "100%",
+      x: "-13%", y: "2%", width: "50%", height: "100%",
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
@@ -352,15 +352,18 @@ export default function StatementSection(): JSX.Element {
     };
     // THE SPRAY on the left third: sakura boughs that grow and bloom as a
     // wave from left to right (bloomField), in the flower's own grade.
-    const FIELD_W = 0.36;
+    // Just right of the original flower, leaning right, toward the text.
+    const FIELD_X = 0.1;
+    const FIELD_W = 0.3;
     const fieldH = 720;
     const field = createBloomField({
       width: Math.round((FIELD_W * sceneW * fieldH) / sceneH),
       height: fieldH,
       still: reduced,
+      tilt: 0.28,
     });
     const fieldConfig: BarLayerConfig = {
-      x: "0%", y: "0%", width: `${FIELD_W * 100}%`, height: "100%",
+      x: `${FIELD_X * 100}%`, y: "0%", width: `${FIELD_W * 100}%`, height: "100%",
       blackPoint: 200, whitePoint: 25, threshold: 255,
       xSquares: 170, ySquares: 260, bgOpacity: 0, fillOpacity: 1,
     };
@@ -441,17 +444,17 @@ export default function StatementSection(): JSX.Element {
       // into the ground, and the first frame is empty. The sheet starts at
       // the clip's own start (BLOOM_FROM 0) for exactly this reason.
       const shut = p < 0.22 ? 0 : clamp01((p - 0.22) / 0.5);
-      // The wave runs left to right: the spray on the left first, and the
-      // flower at the right end last, over the back half of the opening.
-      const fieldOpen = p < 0.22 ? openScroll : 1 - shut;
-      const open = p < 0.22 ? clamp01((openScroll - 0.55) / 0.45) : 1 - shut;
+      // The wave runs left to right: the original flower at the far left
+      // first, then the bough beside it.
+      const open = p < 0.22 ? clamp01(openScroll / 0.55) : 1 - shut;
+      const fieldOpen = p < 0.22 ? clamp01((openScroll - 0.3) / 0.7) : 1 - shut;
       field.set(fieldOpen);
       openFrames = clamp01(open) * (FRAMES - 1);
       want = Math.round(openFrames);
       // And they sink as they close: the box slides down the frame over
       // the rise, a whole frame's worth, so at the end the top of it has
       // just gone under the bottom edge — barely hidden, not switched off.
-      config.y = `${34 + 100 * shut}%`;
+      config.y = `${2 + 100 * shut}%`;
       config.fillOpacity = open <= 0.002 ? 0 : 1;
       fieldConfig.y = `${100 * shut}%`;
       fieldConfig.fillOpacity = fieldOpen <= 0.002 ? 0 : 1;
