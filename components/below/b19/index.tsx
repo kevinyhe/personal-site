@@ -101,7 +101,7 @@ function Journey(): JSX.Element {
         style={{ height: SCREEN, background: `linear-gradient(${BAND} 0%, ${BAND} 6%, ${PALE} 30%)` }}
       >
         <div className="absolute inset-0 overflow-hidden" data-canvas />
-        <p className={`absolute bottom-[4vh] right-[5vw] ${SMALL}`} data-hint style={{ opacity: 0.7 }}>
+        <p className={`absolute bottom-[4vh] right-[5vw] px-[1rem] py-[0.6rem] ${SMALL}`} data-hint style={{ opacity: 0.7, backgroundColor: PALE }}>
           Move the cursor. The light follows it.
         </p>
       </div>
@@ -182,7 +182,7 @@ function Journey(): JSX.Element {
 
       <section className="relative z-10 w-full" id="contact" style={{ height: SCREEN }}>
         <div className="absolute inset-0" data-contact style={{ opacity: 0, visibility: "hidden" }}>
-          <h2 className={`absolute bottom-[58%] left-1/2 -translate-x-1/2 ${SMALL}`}>Contact</h2>
+          <h2 className={`absolute bottom-[60%] left-1/2 -translate-x-1/2 ${SMALL}`}>Contact</h2>
           <a
             className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-sans text-[4.2vw] font-light leading-none tracking-[-0.03em]"
             href={`mailto:${EMAIL}`}
@@ -261,7 +261,7 @@ export default function B19(): JSX.Element {
   useEffect(() => {
     const less = window.matchMedia("(prefers-reduced-motion: reduce)");
     // In a media query an em is the browser's own 16, not the page's rem, so 56em is 896 wide.
-    const small = window.matchMedia("(max-width: 56em), (max-aspect-ratio: 13/10)");
+    const small = window.matchMedia("(max-width: 56em), (max-aspect-ratio: 7/5)");
     const pick = (): void => {
       if (!webglWorks()) setMode("plain");
       else if (less.matches || small.matches) setMode("still");

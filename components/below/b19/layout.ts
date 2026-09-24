@@ -30,7 +30,7 @@ export const panelX = (i: number): number => i * PITCH;
 export const TILE_FIRST = -1;
 export const TILE_COUNT = 9;
 export const TILE_W = 2;
-export const TILE_H = 1.5;
+export const TILE_H = 1.6;
 export const tileX = (t: number): number => (t + TILE_FIRST) * PITCH;
 /** Height map texels per world unit. */
 export const PPU = 400;
@@ -56,7 +56,7 @@ export const HOLDS: readonly { from: number; to: number; panel: number; vh: numb
   { from: 3.3, to: 3.9, panel: 3, vh: VH_WORK, reach: 0.78 },
   { from: 4.4, to: 5.0, panel: 4, vh: VH_WORK, reach: 0.78 },
   { from: 6.0, to: 7.0, panel: 5, vh: VH_SKILLS, reach: 0.97 },
-  { from: 7.8, to: 99, panel: 6, vh: VH_WORK, reach: 0.7 },
+  { from: 7.8, to: 99, panel: 6, vh: VH_WORK, reach: 0.8 },
 ];
 
 /**
@@ -311,7 +311,9 @@ export const skillWidthCss = `calc(${SKILL.nameWidth} * var(--arbor-screen-h) / 
 // --------------------------------------------------------- the contact
 
 /** The warm spot the light narrows to, relative to panel 6's centre, and its half size. */
-export const SPOT = { x: 0, y: 0.04, rx: 0.64, ry: 0.28 };
+export const SPOT = { x: 0, y: 0.04, rx: 0.72, ry: 0.28 };
+/** The shader keeps the spot at full light out to this share of its half size, then fades to its edge. */
+export const SPOT_FULL = 0.7;
 
 // ----------------------------------------------------------- the light
 
