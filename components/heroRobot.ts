@@ -95,6 +95,19 @@ export type HeroRobot = {
   /** Raise it from below the frame's bottom edge (0) to standing on the
    *  floor (1). Draws. */
   rise(t: number): void;
+  /** Put its centre at this share of the canvas width (0 left, 1 right)
+   *  and roll the wheels by the distance covered. For a drive the page
+   *  plots itself. Draws. */
+  moveTo(xFrac: number): void;
+  /** Drive along a curve in the floor from one share of the width to
+   *  another, t in 0..1: a cubic that sets off at ARC_HEADING, swings out
+   *  toward the lens and comes back in to park heading right, the robot
+   *  turned to the curve's tangent the whole way and the wheels rolling by
+   *  the arc covered. Draws. */
+  arc(fromFrac: number, toFrac: number, t: number): void;
+  /** The heading the arc sets off on, radians of yaw. A turn before it
+   *  should end here, so the two join without a kink. */
+  readonly ARC_HEADING: number;
   /** Where its top is right now, CSS px from the canvas's top. */
   topPx(): number;
   /** Where its leading edge is right now, CSS px from the canvas's left.
@@ -436,6 +449,48 @@ export function mountHeroRobot({
     });
   };
 
+  // The curve's control points, as shares of the distance D between the
+  // two stations: the first pulls back and out toward the lens (+z), the
+  // second sits on the line in from the park, so the path arrives square.
+  const ARC_P1 = { x: -0.6, z: 0.45 };
+  const ARC_P2 = { x: -0.55, z: 0 };
+  const ARC_HEADING = Math.atan2(-ARC_P1.z, ARC_P1.x);
+  const arcPoint = (x0: number, x3: number, t: number) => {
+    const D = x3 - x0;
+    const p1x = x0 + ARC_P1.x * D, p1z = ARC_P1.z * D;
+    const p2x = x3 + ARC_P2.x * D, p2z = ARC_P2.z * D;
+    const u = 1 - t;
+    const x = u * u * u * x0 + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * x3;
+    const z = 3 * u * u * t * p1z + 3 * u * t * t * p2z;
+    const dx = 3 * u * u * (p1x - x0) + 6 * u * t * (p2x - p1x) + 3 * t * t * (x3 - p2x);
+    const dz = 3 * u * u * p1z + 6 * u * t * (p2z - p1z) + 3 * t * t * (0 - p2z);
+    return { x, z, dx, dz };
+  };
+  const arc = (fromFrac: number, toFrac: number, t: number) => {
+    if (disposed || !loaded) return;
+    const x0 = (fromFrac * 2 - 1) * halfWidth;
+    const x3 = (toFrac * 2 - 1) * halfWidth;
+    const { x, z, dx, dz } = arcPoint(x0, x3, Math.min(1, Math.max(0, t)));
+    // Heading from the tangent. Forward is +x at yaw 0 and yaw turns it
+    // toward -z, so yaw = atan2(-dz, dx). The wheels roll by the ground
+    // covered, along whichever way the robot is pointing.
+    const ds = Math.hypot(x - robot.position.x, z - robot.position.z);
+    for (const w of wheels) w.node.rotateOnAxis(w.axis, (w.sign * ds) / w.radius);
+    robot.position.x = x;
+    robot.position.z = z;
+    turn = Math.atan2(-dz, dx);
+    robot.rotation.y = (facing < 0 ? Math.PI : 0) + turn;
+    render();
+  };
+
+  const moveTo = (xFrac: number) => {
+    if (disposed || !loaded) return;
+    const x = (xFrac * 2 - 1) * halfWidth;
+    roll(x - robot.position.x);
+    robot.position.x = x;
+    render();
+  };
+
   const seek = (t: number) => {
     if (disposed) return;
     progress = Math.min(1, Math.max(0, t));
@@ -484,5 +539,5 @@ export function mountHeroRobot({
     canvas.remove();
   };
 
-  return { play, seek, yaw, rise, topPx, frontPx, canvas, source, dispose, ready };
+  return { play, seek, yaw, rise, moveTo, arc, ARC_HEADING, topPx, frontPx, canvas, source, dispose, ready };
 }
