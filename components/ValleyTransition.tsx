@@ -20,6 +20,7 @@ import {
   createToriiGate,
 } from "@/components/valley/sources/shrine";
 import { sceneFx } from "@/components/sceneFx";
+import { BAND, BLOSSOM } from "@/components/bandColours";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -70,9 +71,12 @@ gsap.registerPlugin(ScrollTrigger);
  * the cloud body was too thin to hide the framed picture behind it, and the
  * hills ran light at the bottom into a light band. One swap fixes all of
  * them, and every grade below is the reference's own again.
+ *
+ * The values themselves are the site's shared pair (bandColours): the foot
+ * of the hills runs into the statement band on BAR_FILL.
  */
-const BAR_FILL = "#2a0d1e";
-const BAR_BG = "#f9b9dc";
+const BAR_FILL = BAND;
+const BAR_BG = BLOSSOM;
 
 /** The reference's own breakpoint: below it, it skips the fir and the near cloud. */
 const BREAKPOINT = 992;
