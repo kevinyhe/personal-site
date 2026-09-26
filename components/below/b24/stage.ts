@@ -1,5 +1,5 @@
 import { BAND, BLOSSOM } from "@/components/bandColours";
-import { type BarCanvas, type CanvasSource, createBarCanvas, hexToRgb } from "@/components/valley/barShader";
+import { type BarCanvas, type BarLayerConfig, type CanvasSource, createBarCanvas, hexToRgb } from "@/components/valley/barShader";
 import * as L from "./layout";
 import { type Form, type Fonts, sampleForm } from "./sample";
 import { buildScene, type LettersScene } from "./scene";
@@ -136,11 +136,27 @@ function bind(
   // browser once a frame is shown, so it cannot be read later.
   const copy = mode === "still" ? document.createElement("canvas") : null;
 
+  // The dither reads this object on every draw, so a new size only has to
+  // change its row count to keep the cells square.
+  const barConfig: BarLayerConfig = {
+    x: 0,
+    y: 0,
+    width: "100%",
+    height: "100%",
+    xSquares: COLUMNS,
+    ySquares: Math.round(COLUMNS / aspect),
+    // A bright face is a wide run of blossom, a dark side a thin one; the
+    // gaps are left clear so the plum shows between the bars.
+    bgOpacity: 1,
+    fillOpacity: 0,
+  };
+
   // ------------------------------------------------------------ size
   const measure = (): void => {
     stageW = Math.max(1, stage.clientWidth);
     stageH = Math.max(1, stage.clientHeight);
     aspect = stageW / stageH;
+    barConfig.ySquares = Math.round(COLUMNS / aspect);
     const srcW = Math.min(MAX_SOURCE, Math.round(stageW));
     const srcH = Math.max(1, Math.round(srcW / aspect));
     scene.resize(srcW, srcH, aspect);
@@ -213,13 +229,10 @@ function bind(
 
   // ----------------------------------------------------------- frame
   let shownHint = -1;
-  const frame = (dt: number): void => {
-    time += dt;
+  /** Reads the scroll and shows the text that goes with it. Runs even before the words are built. */
+  const follow = (): void => {
     if (journey) u = -journey.getBoundingClientRect().top / stageH;
     pair = L.pairAt(u);
-    stepSprings(dt);
-    scene.render({ pair, time, leanX: lean.x, leanY: lean.y, push: { x: push.x, y: push.y, s: push.s } });
-
     for (let f = 0; f < blocks.length; f += 1) {
       const el = blocks[f];
       if (!el) continue;
@@ -236,6 +249,13 @@ function bind(
       hint.style.opacity = hv ? "0.6" : "0";
       shownHint = hv;
     }
+  };
+
+  const frame = (dt: number): void => {
+    time += dt;
+    follow();
+    stepSprings(dt);
+    scene.render({ pair, time, leanX: lean.x, leanY: lean.y, push: { x: push.x, y: push.y, s: push.s } });
   };
 
   // ------------------------------------------------------ the dither
@@ -256,7 +276,11 @@ function bind(
       // Drawn here, right before the dither uploads it, while the browser
       // still holds the frame.
       update: (_t, dt) => {
-        if (!alive || !forms.length) return false;
+        if (!alive) return false;
+        if (!forms.length) {
+          follow();
+          return false;
+        }
         frame(dt);
         return true;
       },
@@ -268,18 +292,7 @@ function bind(
       {
         type: "canvas",
         source: src,
-        config: {
-          x: 0,
-          y: 0,
-          width: "100%",
-          height: "100%",
-          xSquares: COLUMNS,
-          ySquares: Math.round(COLUMNS / aspect),
-          // A bright face is a wide run of blossom, a dark side a thin one;
-          // the gaps are left clear so the plum shows between the bars.
-          bgOpacity: 1,
-          fillOpacity: 0,
-        },
+        config: barConfig,
       },
     ],
     { colors: () => colors, defaults: { bgOpacity: 1, fillOpacity: 0 }, fps: 60 },
@@ -302,14 +315,25 @@ function bind(
   // The words are drawn in the page's own fonts, so wait for them (a short
   // while at most; the fallback faces are better than nothing).
   const f0 = fonts();
+  let fontTimer = 0;
   const fontsIn = Promise.race([
     Promise.all([document.fonts.load(`italic 700 100px ${f0.serif}`), document.fonts.load(`700 100px ${f0.sans}`)]).catch(() => undefined),
-    new Promise<void>((resolve) => window.setTimeout(resolve, 2500)),
+    new Promise<void>((resolve) => {
+      fontTimer = window.setTimeout(resolve, 2500);
+    }),
   ]);
+  const safeBuild = (): void => {
+    try {
+      buildForms();
+      repaintStill();
+    } catch {
+      // No words to draw: the stage stays plum and the text stands beside it.
+      forms = [];
+    }
+  };
   void fontsIn.then(() => {
-    if (!alive) return;
-    buildForms();
-    repaintStill();
+    window.clearTimeout(fontTimer);
+    if (alive) safeBuild();
   });
 
   // A new size redraws the words, once the resizing has stopped.
@@ -326,8 +350,7 @@ function bind(
     resizeTimer = window.setTimeout(() => {
       if (!alive) return;
       measure();
-      if (forms.length) buildForms();
-      repaintStill();
+      if (forms.length) safeBuild();
     }, 160);
   });
   sized.observe(stage);
@@ -388,6 +411,7 @@ function bind(
   return () => {
     alive = false;
     window.clearTimeout(resizeTimer);
+    window.clearTimeout(fontTimer);
     sized.disconnect();
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("pointermove", onPointer);

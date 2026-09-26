@@ -101,11 +101,13 @@ varying float vPetal;
 void main() {
   // Flat faces: the normal from how the surface moves across the screen.
   vec3 n = normalize(cross(dFdx(vView), dFdy(vView)));
-  vec3 l = normalize(vec3(-0.5, 0.5, 0.7));
+  // Light from the front and above: faces toward the viewer are bright,
+  // the sides of the letters half, the undersides dark (never black).
+  vec3 l = normalize(vec3(0.0, 0.47, 0.88));
   float d = dot(n, l);
   // A petal is thin and seen from both sides.
   float lit = mix(max(d, 0.0), abs(d), vPetal);
-  float shade = 0.24 + 0.72 * lit;
+  float shade = 0.3 + 0.7 * lit;
   gl_FragColor = vec4(vec3(shade), 1.0);
 }
 `;
