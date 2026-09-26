@@ -8,17 +8,20 @@ import { sectionLinks } from "@/components/siteContent";
 /** Where a section sits in the document, px from the top of the page. */
 type Band = { top: number; bottom: number };
 
-/** The band the header's type sits in, px. The cream swap is measured
- *  against this rather than the viewport top, so it lands as the cream edge
- *  reaches the words rather than a screen early. */
-const HEADER_BAND = 64;
-
 /** How long the layout has to hold still before the section offsets are
  *  re-read, ms. A phone's URL bar collapsing during a scroll gesture fires
  *  resize and body ResizeObserver callbacks every frame for the length of
  *  its animation; measuring on each one would put the forced layout reads
  *  back into the scroll path this file exists to keep them out of. */
 const RELAYOUT_IDLE_MS = 150;
+
+/** How far down the screen the header's own band reaches, in rem, since
+ *  the rem follows the viewport: the bar plus the fade behind it (8rem of
+ *  gradient), rounded up. A section counts as being under the header once
+ *  its top has crossed this. */
+const HEADER_BAND_REM = 8.75;
+const headerBand = () =>
+  HEADER_BAND_REM * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
 
 /** Read once and kept: a MediaQueryList's `matches` stays live, so there is
  *  no need to build a new one in every effect that asks. */
@@ -47,9 +50,6 @@ const prefersReducedMotion = () =>
 export default function SectionHeader() {
   const [active, setActive] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
-  // Contact is a cream block. A fixed header in the page's off-white would
-  // be invisible the moment it crossed into it.
-  const [onLight, setOnLight] = useState(false);
   const frameRef = useRef(0);
   const ruleRef = useRef<HTMLSpanElement | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
@@ -93,22 +93,19 @@ export default function SectionHeader() {
       // late on a long section and early on a short one.
       const line = y + viewH * 0.34;
       let current: string | null = null;
-      let anyOnScreen = false;
+      let underHeader = false;
       for (const link of sectionLinks) {
         const band = bands.get(link.id);
         if (!band) continue;
-        if (band.bottom > y && band.top < y + viewH) anyOnScreen = true;
+        // Not "on screen anywhere": the header's ground is a strip of the
+        // page's near-black, and over the pink band above these sections
+        // that strip is just a dirty edge. It comes out when a section has
+        // actually reached the top of the screen and has type to sit over.
+        if (band.bottom > y && band.top < y + headerBand()) underHeader = true;
         if (band.top <= line) current = link.id;
       }
       setActive(current);
-      setShown(anyOnScreen);
-
-      const contact = bands.get("contact");
-      setOnLight(
-        contact !== undefined &&
-          contact.top <= y + HEADER_BAND &&
-          contact.bottom > y,
-      );
+      setShown(underHeader);
     };
 
     const schedule = () => {
@@ -244,8 +241,8 @@ export default function SectionHeader() {
     <header
       className={
         "fixed inset-x-0 top-0 z-40 flex items-baseline justify-between " +
-        "px-6 py-5 transition-[opacity,color] duration-500 motion-reduce:transition-none sm:px-16 sm:py-7 " +
-        (onLight ? "text-[#0a0a0a] " : "text-[#f0f0f0] ") +
+        "px-6 py-5 transition-opacity duration-500 motion-reduce:transition-none sm:px-16 sm:py-7 " +
+        "text-[#f0f0f0] " +
         (shown ? "opacity-100" : "pointer-events-none opacity-0")
       }
       // Invisible is not the same as gone: without this a keyboard user on
@@ -257,7 +254,8 @@ export default function SectionHeader() {
           them; the reference has the same fixed header but so much empty
           margin at the top of each screen that nothing ever meets it. The
           gradient is invisible over flat areas and only shows up when there
-          is type underneath. It flips with the section, like the text. */}
+          is type underneath. (It used to flip to cream over Contact, with
+          the text; every page is dark now.) */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-32 transition-opacity duration-500"
@@ -266,15 +264,13 @@ export default function SectionHeader() {
           // A gradient that starts falling off immediately was only about
           // half opaque behind the words, so the narration read straight
           // through the bar at heading size.
-          background: onLight
-            ? "linear-gradient(to bottom, #f4ece1 0%, #f4ece1 48%, rgba(244,236,225,0) 100%)"
-            : "linear-gradient(to bottom, #0a0a0a 0%, #0a0a0a 48%, rgba(10,10,10,0) 100%)",
+          background:
+            "linear-gradient(to bottom, #0a0a0a 0%, #0a0a0a 48%, rgba(10,10,10,0) 100%)",
         }}
       />
       {/* The hairline along the bottom edge, in the page's rule weight
           (BranchRule's resting hairline is white at 25%). Inset to the
-          type's margins, like the rules under the work rows. currentColor,
-          so it flips to black over Contact with the words. */}
+          type's margins, like the rules under the work rows. */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute bottom-0 left-6 right-6 block h-px origin-left bg-current opacity-25 sm:left-16 sm:right-16"
