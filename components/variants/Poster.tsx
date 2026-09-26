@@ -34,8 +34,10 @@ function Marquee({ items, reverse = false, seconds = 40 }: { items: { name: stri
   );
   return (
     <div className="marquee flex overflow-hidden border-y py-[1.1rem]" style={{ borderColor: "rgba(10,10,10,0.14)", ["--marquee-s" as string]: `${seconds}s`, ["--marquee-dir" as string]: reverse ? "reverse" : "normal" }}>
-      {row("a")}
-      {row("b")}
+      <div className="flex">
+        {row("a")}
+        {row("b")}
+      </div>
     </div>
   );
 }

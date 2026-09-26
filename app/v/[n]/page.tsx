@@ -30,7 +30,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ n: string }> }): Promise<Metadata> {
   const { n } = await params;
   const v = VARIANTS.find((x) => String(x.n) === n);
-  return { title: v ? `${v.name} — design 0${v.n} — Kevin He` : "Kevin He" };
+  return { title: v ? `${v.name} — design ${String(v.n).padStart(2, "0")} — Kevin He` : "Kevin He" };
 }
 
 /** Slot → design. One file per design under components/variants. */
