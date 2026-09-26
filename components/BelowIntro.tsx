@@ -9,6 +9,7 @@ import SectionHeader from "@/components/SectionHeader";
 import { scrollToSection } from "@/components/SectionLink";
 import { EMAIL, elsewhere, workEntries } from "@/components/siteContent";
 import { useRevealOnScroll } from "@/components/useRevealOnScroll";
+import { BAND, BLOSSOM } from "@/components/bandColours";
 
 
 /**
@@ -20,11 +21,6 @@ import { useRevealOnScroll } from "@/components/useRevealOnScroll";
  * each block lands with a petal or two crossing it (PetalReveal).
  */
 
-/** The band above, whose needles hang into this block. Same value as
- *  StatementSection's BAND and ValleyTransition's BAR_FILL. */
-const BAND = "#2a0d1e";
-/** The blossom: the first screen's ground, and the captions below. */
-const BLOSSOM = "#f9b9dc";
 /** The four lines: one face, one size, four cuts. */
 /** A four-point star, the reference's own mark. */
 function Star(): JSX.Element {

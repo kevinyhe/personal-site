@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type JSX } from "react";
 
+import { BAND, BLOSSOM } from "@/components/bandColours";
 import {
   createBarCanvas,
   hexToRgb,
@@ -25,9 +26,10 @@ import {
  * beside the column for a stem to stand in.
  */
 
-/** The bars and the ground — the only thing changed from the reference. */
-const BAR_FILL = "#f9b9dc";
-const BAR_BG = "#2a0d1e";
+/** The bars and the ground — the only thing changed from the reference:
+ *  the site's shared pair (bandColours), the blossom on the band. */
+const BAR_FILL = BLOSSOM;
+const BAR_BG = BAND;
 
 /** The reference's own breakpoint. */
 const NARROW = 992;
