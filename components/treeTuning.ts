@@ -27,6 +27,11 @@ export type TreeTuning = {
  */
 export const TREE_BASE_SCALE = { x: 0.7, y: 0.8, z: 0.64 } as const;
 
+/**
+ * Seed of the tree the intro grows.
+ */
+export const INTRO_TREE_SEED = 20260705;
+
 export const TREE_TUNING_DEFAULT: TreeTuning = {
   x: 2.0,
   y: 2.25,
