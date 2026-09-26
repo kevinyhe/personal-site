@@ -570,3 +570,14 @@ html::-webkit-scrollbar {
 @media (prefers-reduced-motion: reduce) {
   .blossom-float { animation: none; transform: rotate(var(--r, 0deg)); }
 }
+
+/* Marquee rows (design 05): two copies of the row side by side, the pair
+   slid one row's width and back to the start, so the join never shows. */
+@keyframes marquee-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee > div { animation: marquee-slide var(--marquee-s, 40s) linear infinite; animation-direction: var(--marquee-dir, normal); }
+@media (prefers-reduced-motion: reduce) {
+  .marquee > div { animation: none; }
+}
