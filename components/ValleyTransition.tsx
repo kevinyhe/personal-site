@@ -212,8 +212,15 @@ export default function ValleyTransition() {
       // because what they are measured from is the top of the NEXT section,
       // which is pulled back over this block's tail and so has no edge of
       // its own to key on.
+      //
+      // Measured from the page, not from root.offsetTop: that is relative to
+      // HeroIntro's pin container, and only equals a scroll position while
+      // nothing renders above the hero.
       const statementTop = () =>
-        root.offsetTop + root.offsetHeight - window.innerHeight * (TAIL_VH / 100);
+        root.getBoundingClientRect().top +
+        window.scrollY +
+        root.offsetHeight -
+        window.innerHeight * (TAIL_VH / 100);
       gsap.fromTo(
         stage,
         { autoAlpha: 1 },
