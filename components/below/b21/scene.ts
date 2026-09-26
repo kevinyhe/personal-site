@@ -12,6 +12,7 @@ import {
   FAR,
   FOV,
   heightAt,
+  LANTERN_H,
   LANTERN_PAIR,
   LANTERNS,
   NEAR,
@@ -352,7 +353,7 @@ function assemble(
         const y = k === 0 ? EDGE_Y : EDGE_Y - t * UNDER_DEPTH * (k === RINGS ? 1 : hang);
         // Rock bands, darker further down.
         const band = 0.5 + 0.5 * Math.sin(y * 4.2 + ridge * 5);
-        const s = (0.2 + 0.12 * band + 0.08 * ridge) * (1 - 0.45 * t);
+        const s = (0.32 + 0.14 * band + 0.1 * ridge) * (1 - 0.4 * t);
         row.push({ x: r * sa, y, z: r * ca, s });
       }
       grid.push(row);
@@ -524,12 +525,14 @@ function assemble(
   // --------------------------------------------- the skills' lanterns
   {
     const parts: THREE.BufferGeometry[] = [];
+    // A stone lantern: foot, post, the lit box, a hipped cap. LANTERN_H tall.
+    const k = LANTERN_H / 0.52;
     for (const l of LANTERNS) {
       const y = VILLAGE_PAD;
-      parts.push(tagged(put(new THREE.BoxGeometry(0.16, 0.06, 0.16), l.x, y + 0.03, l.z), 0.4));
-      parts.push(tagged(put(new THREE.BoxGeometry(0.06, 0.2, 0.06), l.x, y + 0.16, l.z), 0.35));
-      parts.push(tagged(put(new THREE.BoxGeometry(0.16, 0.16, 0.16), l.x, y + 0.34, l.z), 0.3, 0.62, l.v));
-      parts.push(tagged(put(new THREE.ConeGeometry(0.15, 0.1, 4), l.x, y + 0.47, l.z, 0, Math.PI / 4, 0), 0.55));
+      parts.push(tagged(put(new THREE.BoxGeometry(0.16 * k, 0.06 * k, 0.16 * k), l.x, y + 0.03 * k, l.z), 0.4));
+      parts.push(tagged(put(new THREE.BoxGeometry(0.06 * k, 0.2 * k, 0.06 * k), l.x, y + 0.16 * k, l.z), 0.35));
+      parts.push(tagged(put(new THREE.BoxGeometry(0.16 * k, 0.16 * k, 0.16 * k), l.x, y + 0.34 * k, l.z), 0.3, 0.62, l.v));
+      parts.push(tagged(put(new THREE.ConeGeometry(0.15 * k, 0.1 * k, 4), l.x, y + 0.47 * k, l.z, 0, Math.PI / 4, 0), 0.55));
     }
     spin.add(new THREE.Mesh(keep(merge(parts)), plainMat));
   }

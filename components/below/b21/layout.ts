@@ -152,7 +152,7 @@ export const VILLAGES: { x: number; z: number; n: number }[] = [
 ];
 export const VILLAGE_PAD = 0.3;
 export const villageRadius = (n: number): number => 0.35 + n * 0.055;
-export const LANTERN_H = 0.55;
+export const LANTERN_H = 0.7;
 
 /** Every lantern's spot, village after village, in skill order. */
 export const LANTERNS: { v: number; x: number; z: number }[] = (() => {
