@@ -9,7 +9,8 @@ const inter = Inter({
   display: "swap",
   subsets: ["latin"],
   variable: "--font-inter",
-  weight: ["300", "400", "500"],
+  // 700 is for the one word the robot sentence sets heavy.
+  weight: ["300", "400", "500", "700"],
 });
 
 // Apparel (Latinotype) — the exact serif from the reference site, loaded

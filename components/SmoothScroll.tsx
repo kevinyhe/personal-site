@@ -63,6 +63,14 @@ export default function SmoothScroll() {
       // a second layer of it fights the platform.
       syncTouch: false,
       smoothWheel: true,
+      // A wheel tick moves the page the same SHARE of it at every width:
+      // the rem follows the viewport (globals.css, 16px at 3840), so a
+      // narrower window is a shorter page in px and the same px a tick
+      // would overshoot. Never below a third of a normal tick.
+      wheelMultiplier: Math.max(
+        0.34,
+        (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) / 16,
+      ),
       // No loop of its own: gsap.ticker pumps it (below), so the page and
       // every scrubbed scene step on the same clock. With autoRaf on there
       // were two requestAnimationFrame loops a frame — Lenis' and gsap's —
@@ -116,9 +124,9 @@ export default function SmoothScroll() {
     // pretends only 33 ms passed, so time-based tweens resume instead of
     // jumping. Kept OFF here, for the whole session, and this is why:
     //
-    // The canvases do not run on gsap's clock. BareThreeCanvas and
-    // ThinkerStage time their own work off performance.now / THREE.Clock,
-    // and the reveal is choreographed across both clocks — the tree rising
+    // The canvases do not run on gsap's clock. BareThreeCanvas times its
+    // own work off performance.now / THREE.Clock, and the reveal is
+    // choreographed across both clocks — the tree rising
     // (a gsap tween on sceneFx.treeDrop) lands on the same frame as the
     // canvas' own two-second orbit-and-bloom. A shader compile in the
     // middle of that is exactly the kind of long frame smoothing acts on;

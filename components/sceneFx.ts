@@ -73,24 +73,36 @@ export const sceneFx = {
    */
   backdropLevel: 1,
   /**
-   * 0..1 over the first 60% of the panel's growth; 1 from there on. The
-   * stage CUTS on the frame this reaches 1 — the statue's shot is swapped
-   * for the tree's (see ThinkerStage). Tweened by the hero timeline
-   * alongside the panel's own growth tween rather than read off the scroll
-   * position, so the cut lands on the frame the box is seen at 60% and not
-   * a third of a second before it: the timeline is scrubbed (0.3), so
-   * under a real scroll the box lags the scroll by about that much.
+   * 0..1, the scroll's way out of the glass: the camera backs straight out
+   * down the screen's normal while its lens opens, until the television is
+   * about 70% of the frame (CRT_OUT_* in BareThreeCanvas). A different road
+   * from `crtProgress`, which swings out to the loading shot's three-quarter
+   * angle; the two are never up together. The whole page, the scrolling
+   * narration included, rides the glass on the way.
    */
-  stageCut: 0,
+  crtOut: 0,
   /**
-   * 0..1 over the tree's break: 0 until a beat after the cut, 1 where the
-   * statue's break ends (see TREE_BREAK in ThinkerStage), linear in the
-   * panel's growth between. Tweened on the same timeline as `stageCut`,
-   * and that is the point: the two share one clock, so on the frame the
-   * cut lands this is exactly 0 and the tree is seen whole. Measured off
-   * the scroll position instead it ran ahead of the scrubbed cut by
-   * however far the scroll had moved in the last third of a second, and a
-   * wheel flick put the tree's first pieces in flight on its first frame.
+   * The hills behind the tree, when the page has them: the /valley scene
+   * (components/valley/hutScene) built bare — terrain and the two ranges,
+   * no hut and no trees — drawn on its own off-screen canvas and handed
+   * over here. The tree scene's backdrop takes it in place of the curtains,
+   * so the tree stands in the valley. null on /crt, which keeps them.
    */
-  treeBreak: 0,
+  backdropScene: null as HTMLCanvasElement | null,
+  /** 0..1 crossfade from the curtains to `backdropScene`. */
+  backdropSceneMix: 0,
+  /**
+   * 0..1 camera pull-back, straight away from the hero target along the
+   * view axis. This is the scroll's own zoom out: the reference shrinks
+   * its hero into a framed picture AND dollies the camera inside that
+   * picture at the same time, so the picture is of a view opening up and
+   * not of the same frame getting smaller. Driven by ValleyTransition.
+   */
+  dolly: 0,
+  /**
+   * True while the black sheet over the stage is shut (the hand-over to
+   * the Work section). The canvas skips its draw for as long as it is: a
+   * full-screen scene nobody can see.
+   */
+  covered: false,
 };

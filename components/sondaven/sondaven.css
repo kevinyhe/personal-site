@@ -1,0 +1,741 @@
+/* The lower half of the page, in the reference's system.
+
+   components/valley/valley.css already carries the reference's tokens, its
+   --vs scale, the type classes (.p3 .p5 .p6 .h5), .grid, .container, .title,
+   .btn, .divider and the theme classes. This file adds only what the LOWER
+   sections need and valley.css does not have: the reference's three other
+   type sizes, the grid placements those sections use, and the card and
+   footer boxes.
+
+   Everything is scoped under .valley, the same as valley.css, and every new
+   class is prefixed sd- so nothing here can ever collide with a class
+   valley.css adds later. Every number is the reference's px value at a 1440
+   wide viewport, written as N * var(--vs). */
+
+.sondaven {
+  /* The reference's remaining type sizes (webflow tokens, :root at L1852).
+     h3 72/88.889%, h4 56/100%, p2 24/116.667%. */
+  --sd-h3-size: calc(72 * var(--vs));
+  --sd-h3-lh: 88.889%;
+  --sd-h4-size: calc(56 * var(--vs));
+  --sd-h4-lh: 100%;
+  --sd-p2-size: calc(24 * var(--vs));
+  --sd-p2-lh: 116.667%;
+}
+
+/* The reference's own mobile sizes for the same three (its 991 block). */
+@media screen and (max-width: 991px) {
+  .sondaven {
+    --sd-h3-size: calc(40 * var(--vs));
+    --sd-h4-size: calc(40 * var(--vs));
+    --sd-p2-size: calc(20 * var(--vs));
+    --sd-p2-lh: 120%;
+  }
+}
+
+/* ------------------------------------------------------------------------
+   Type
+   ------------------------------------------------------------------------ */
+
+.valley .sd-h3 {
+  font-family: var(--v-font-display);
+  font-size: var(--sd-h3-size);
+  line-height: var(--sd-h3-lh);
+  letter-spacing: -0.064em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+.valley .sd-h4 {
+  font-family: var(--v-font-display);
+  font-size: var(--sd-h4-size);
+  line-height: var(--sd-h4-lh);
+  letter-spacing: -0.064em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+.valley .sd-p2 {
+  font-family: var(--v-font-body);
+  font-size: var(--sd-p2-size);
+  line-height: var(--sd-p2-lh);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* The one exception to the uppercase. The reference sets its own address in
+   this class and lets it shout, but an email address is a thing someone has
+   to read back and type, and KEVIN.YUHAN.HE@GMAIL.COM is not what it says.
+   The tracking stays, so it still sits in the same line. */
+.valley .sd-mail {
+  text-transform: none;
+}
+
+/* The reference's .text-gray: the ink at half strength, which is what it
+   sets its small labels in. The narration's "soft" runs use it too. */
+.valley .sd-gray {
+  color: var(--v-base-1000-50);
+}
+
+/* ------------------------------------------------------------------------
+   Spacers valley.css does not carry yet
+   ------------------------------------------------------------------------ */
+
+.valley .sd-u-4 { height: var(--u-4); }
+.valley .sd-u-16 { height: var(--u-16); }
+.valley .sd-u-24 { height: var(--u-24); }
+.valley .sd-u-104 { height: var(--u-104); }
+
+/* ------------------------------------------------------------------------
+   Section shell
+   ------------------------------------------------------------------------ */
+
+/* The reference's .about-s / .dev-s / .fin-s: the content layer, above a
+   section's own background or scene. */
+.valley .sd-s {
+  z-index: 1;
+  position: relative;
+}
+
+/* The reference's .dev-s_lead / .benefits-s_title: the stars title and the
+   display-serif line under it, across the middle eight columns. */
+.valley .sd-lead {
+  grid-area: 1 / 3 / 2 / 11;
+}
+
+/* Its .divider-48: a 48-wide rule under a block's title. */
+.valley .sd-divider-48 {
+  width: var(--u-48);
+}
+
+/* ------------------------------------------------------------------------
+   About: the two supporting cells
+   ------------------------------------------------------------------------ */
+
+/* The reference's .about-s_about (cols 4-7) and .about-s_concept (7-10). */
+.valley .sd-note-a {
+  grid-area: 1 / 4 / 2 / 7;
+}
+.valley .sd-note-b {
+  grid-area: 1 / 7 / 2 / 10;
+}
+
+/* ------------------------------------------------------------------------
+   Selected work: four cards across the grid
+   ------------------------------------------------------------------------ */
+
+/* The reference's .factoid-card: a span-3 cell, four to a row. */
+.valley .sd-card {
+  grid-column: span 3 / span 3;
+  flex-flow: column;
+  display: flex;
+  position: relative;
+}
+.valley .sd-card-top {
+  justify-content: space-between;
+  align-items: baseline;
+  display: flex;
+}
+
+/* Its [hover-divider]: the 2px line fills in from the left over the
+   hairline as the pointer enters the card. */
+.valley .sd-hover-line [hover="line-l"] {
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform var(--dur-m) var(--ease-out);
+}
+.valley .sd-hover-line:hover [hover="line-l"],
+.valley .sd-hover-line:focus-visible [hover="line-l"] {
+  transform: scaleX(1);
+}
+
+/* The copy under a card's title dims until the card is the one being read,
+   which is the reference's own hover on its benefit cards. */
+.valley .sd-card-desc {
+  color: var(--v-base-1000-50);
+  transition: color var(--dur-m) var(--ease-out);
+}
+.valley .sd-hover-line:hover .sd-card-desc {
+  color: var(--v-base-1000);
+}
+
+/* ------------------------------------------------------------------------
+   Contact
+   ------------------------------------------------------------------------ */
+
+/* .footer-s_top_desc (cols 1-4) and .footer-s_top_info (10-13). */
+.valley .sd-foot-l {
+  grid-area: 1 / 1 / 2 / 4;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  display: flex;
+}
+.valley .sd-foot-r {
+  grid-area: 1 / 10 / 2 / 13;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: flex-end;
+  display: flex;
+}
+
+/* Its .contact-cms_list: the big contact line, full width, with the rule
+   the reference hangs under a nav item (.nav-item_line). */
+.valley .sd-mail {
+  display: block;
+  position: relative;
+}
+.valley .sd-mail-line {
+  position: absolute;
+  inset: 100% 0 auto;
+}
+
+/* Its .footer-s_bot: the year on one side, the way back on the other. */
+.valley .sd-foot-bot {
+  justify-content: space-between;
+  align-items: flex-end;
+  display: flex;
+  position: relative;
+}
+
+.valley .sd-link-list {
+  grid-row-gap: var(--u-4);
+  flex-flow: column;
+  align-items: flex-end;
+  display: flex;
+}
+
+/* The reference's .text-link, with the rule at half strength until the
+   pointer is on it. */
+.valley .sd-underline {
+  text-decoration: underline;
+  text-decoration-color: var(--v-base-1000-50);
+  text-underline-offset: 0.35em;
+  transition: text-decoration-color var(--dur-m) var(--ease-out);
+}
+.valley .sd-underline:hover,
+.valley .sd-underline:focus-visible {
+  text-decoration-color: var(--v-base-1000);
+}
+
+/* A <button> that has to read as one of the small links. */
+.valley .sd-plain {
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------------
+   Phone: the reference's 4-column grid, everything full width
+   ------------------------------------------------------------------------ */
+
+@media screen and (max-width: 991px) {
+  .valley .sd-lead {
+    grid-column: 1 / 5;
+  }
+  .valley .sd-note-a {
+    grid-area: 1 / 1 / 2 / 5;
+  }
+  .valley .sd-note-b {
+    grid-area: 2 / 1 / 3 / 5;
+  }
+  /* Its .factoid-card on mobile: one card to a row. */
+  .valley .sd-card {
+    grid-column: span 4 / span 4;
+  }
+  .valley .sd-foot-l {
+    grid-area: 1 / 1 / 2 / 5;
+    justify-content: flex-start;
+    align-items: center;
+    text-align: center;
+  }
+  .valley .sd-foot-r {
+    grid-area: 2 / 1 / 3 / 5;
+    justify-content: flex-start;
+    align-items: center;
+    text-align: center;
+  }
+  .valley .sd-link-list {
+    align-items: center;
+  }
+  .valley .sd-foot-bot {
+    grid-row-gap: var(--u-4);
+    flex-flow: column;
+    align-items: stretch;
+  }
+}
+
+/* The hover fills are decoration; a reader who asked for less motion gets
+   the end state without the tween. */
+@media (prefers-reduced-motion: reduce) {
+  .valley .sd-hover-line [hover="line-l"],
+  .valley .sd-card-desc,
+  .valley .sd-underline {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------------
+   The prologue's scene: a flowering stem at each side of the quote, the way
+   the reference stands two poppies beside its own.
+
+   The boxes are valley.css's — .prolog-w relative, .prolog-s at z 1 and one
+   screen tall, .prolog-w_scene absolute and full bleed behind both — and
+   nothing here overrides them. All this adds is the canvas inside the scene
+   box and the ground the quote is read against.
+   ------------------------------------------------------------------------ */
+
+.valley .prolog-w_scene {
+  pointer-events: none;
+}
+.valley .sd-sprigs {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The reference's prologue is a band of its own colour: it leaves the tan
+   page and the section is dark, which is what the light bars and the light
+   type in it are read against. This page is already dark, and the field
+   behind it (SiteBackground) is what the whole site is set on, so the band
+   here is that field damped rather than replaced — enough ground under a
+   large serif to read it, none of the hard edge a solid band would cut
+   across the landscape above. */
+.valley [data-prolog-band] {
+  position: relative;
+  /* The scene hangs 120 below the section and the parallax moves it another
+     tenth of its height; without this that overhang is scrollable page.
+     valley.css clips the same thing on #prolog, which is the id the
+     standalone page uses — this one's is #prologue. */
+  overflow: clip;
+}
+.valley [data-prolog-band]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    to bottom,
+    rgb(10 10 10 / 0%) 0%,
+    rgb(10 10 10 / 62%) 26%,
+    rgb(10 10 10 / 78%) 100%
+  );
+}
+
+/* ------------------------------------------------------------------------
+   The fixed bar (SondavenHeader). The reference's header_c: one row the
+   height of the page's own header unit, the name at the left, the sections
+   in the middle, the outward links and one pill at the right.
+   ------------------------------------------------------------------------ */
+
+.valley .sd-header {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 889;
+  will-change: transform;
+}
+.valley .sd-header::before {
+  /* A short fade of the ground behind the bar, so a serif line scrolling
+     under it does not collide with the labels. Invisible over flat areas. */
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(var(--header-h) * 2);
+  background-image: linear-gradient(
+    to bottom,
+    var(--v-base-0) 0%,
+    var(--v-base-0) 45%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+.valley .sd-header_c {
+  position: relative;
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--u-32);
+}
+.valley .sd-header_nav {
+  display: flex;
+  align-items: center;
+  gap: var(--u-32);
+}
+.valley .sd-header_right {
+  display: flex;
+  align-items: center;
+  gap: var(--u-32);
+}
+.valley .sd-header_name,
+.valley .sd-header_link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: opacity var(--dur-m) var(--ease-out);
+}
+.valley .sd-header_name {
+  font-family: var(--v-font-display);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: calc(18 * var(--vs));
+}
+.valley .sd-header_link {
+  opacity: 0.55;
+}
+.valley .sd-header_link:hover {
+  opacity: 1;
+}
+
+@media screen and (max-width: 991px) {
+  .valley .sd-header_nav {
+    display: none;
+  }
+}
+
+
+/* ========================================================================
+   The sections after the prologue, copied from the reference's own
+   stylesheet (scratchpad/sonda/webflow.pretty.css). Its tokens map onto
+   valley.css's: --_units---u-N is --u-N, --_special-units---1-c-cell is
+   --u-120, --_colors---base-N is --v-base-N.
+   ======================================================================== */
+
+/* --- type the lower sections need, on valley.css's scale ---------------- */
+.valley {
+  --h1-size: calc(144 * var(--vs));
+  --h1-lh: 90%;
+  --h2-size: calc(96 * var(--vs));
+  --h4-size: calc(56 * var(--vs));
+  --p2-size: calc(28 * var(--vs));
+}
+@media screen and (max-width: 991px) {
+  .valley {
+    --h1-size: calc(96 * var(--vs));
+    --h2-size: calc(56 * var(--vs));
+    --h4-size: calc(40 * var(--vs));
+    --p2-size: calc(22 * var(--vs));
+  }
+}
+.valley .h1 {
+  font-family: var(--v-font-display);
+  font-size: var(--h1-size);
+  line-height: var(--h1-lh);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+.valley .h2 {
+  font-family: var(--v-font-display);
+  font-size: var(--h2-size);
+  line-height: 95%;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  overflow-wrap: break-word;
+  font-weight: 400;
+}
+.valley .h4 {
+  font-family: var(--v-font-display);
+  font-size: var(--h4-size);
+  line-height: 100%;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+.valley .p2 {
+  font-family: var(--v-font-body);
+  font-size: var(--p2-size);
+  line-height: 120%;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+/* A counter or a number set in the display serif would draw the DEMO cut's
+   watermark flower for 4; these run in the body face at the serif's size. */
+.valley .sd-counter {
+  font-family: var(--v-font-body);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+.valley .sd-gray {
+  color: var(--v-base-1000-50);
+}
+.valley .sd-mail {
+  font-family: var(--v-font-body);
+  text-transform: none;
+}
+.valley .sd-underline {
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+.valley .ico-24 {
+  width: var(--u-24);
+  height: var(--u-24);
+  flex: none;
+}
+.valley .divider-48 {
+  width: var(--u-48);
+}
+.valley .divider-full {
+  width: 100%;
+}
+/* valley.css's ink theme collapses BOTH of the reference's themes onto the
+   site's near-black, which is right for the hero and the landscape it runs
+   behind. The sections below the prologue are the reference's alternating
+   BANDS, though — its page goes tan, dark, tan again, and the alternation is
+   as much a part of the design as the grid is. So inside this scope
+   theme_on-light is given its colours back: the blossom page with plum ink,
+   which is the pair the standalone /valley page already runs on. */
+.valley--ink .theme_on-light {
+  --v-base-0: #e8b7d3;
+  --v-base-1000: #180a14;
+  --v-base-1000-50: #180a1480;
+  --v-base-1000-10: #180a141a;
+  --v-base-0-50: #e8b7d380;
+  --v-base-0-10: #e8b7d31a;
+}
+
+.valley .u-104 {
+  height: var(--u-104);
+}
+.valley .u-8 {
+  height: var(--u-8);
+}
+.valley .u-16 {
+  height: var(--u-16);
+}
+.valley .u-24 {
+  height: var(--u-24);
+}
+.valley .u-48 {
+  height: var(--u-48);
+}
+
+/* --- the band between the prologue and About --------------------------- */
+/* The reference's .about-s_transition: a strip three cells tall carrying an
+   SVG of bars that steps the dark section up into the light one, over a
+   solid ground. Ours draws the same step in CSS — a row of bars of dropping
+   height in the light section's own colour. */
+.valley .about-s_transition {
+  pointer-events: none;
+  position: relative;
+  height: calc(var(--u-120) * 2);
+  margin-bottom: -1px;
+}
+.valley .about-s_transition_bg {
+  position: absolute;
+  inset: 55% 0 0;
+  background-color: #e8b7d3;
+}
+.valley .about-s_transition_edge {
+  position: absolute;
+  inset: 0 0 45%;
+  background-image: repeating-linear-gradient(
+    to right,
+    #e8b7d3 0 4px,
+    transparent 4px 9px
+  );
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 100%);
+}
+
+/* --- About ------------------------------------------------------------- */
+.valley .about-w {
+  position: relative;
+}
+.valley .about-s {
+  z-index: 1;
+  position: relative;
+}
+.valley .about-s_title {
+  grid-area: 1 / 1 / 2 / 13;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  display: flex;
+}
+.valley .about-s_title_ {
+  margin-left: calc(var(--u-8) * -1);
+}
+.valley .p3-list {
+  grid-column-gap: var(--u-16);
+  align-items: center;
+  display: flex;
+}
+.valley .about-s_about {
+  grid-area: 1 / 1 / 2 / 6;
+}
+.valley .about-s_concept {
+  grid-area: 1 / 7 / 2 / 13;
+}
+.valley .about-s_about_btn {
+  display: flex;
+}
+.valley .about-s_img {
+  pointer-events: none;
+  height: var(--u-136);
+}
+.valley .about-w_scene {
+  z-index: 0;
+  position: absolute;
+  inset: 0 calc(var(--u-16) * -1);
+}
+.valley .about-w_scene .scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media screen and (max-width: 991px) {
+  .valley .about-s_title,
+  .valley .about-s_about,
+  .valley .about-s_concept {
+    grid-column: 1 / 5;
+  }
+  .valley .about-s_concept .u-136 {
+    height: var(--u-48);
+  }
+  .valley .about-s_title_ {
+    margin-left: calc(var(--u-4) * -1);
+  }
+}
+
+/* --- Selected work, on the reference's factoid grid --------------------- */
+.valley .factoids-w {
+  position: relative;
+}
+.valley .factoids-s {
+  z-index: 1;
+  position: relative;
+}
+.valley .factoid-card {
+  position: relative;
+  grid-column: span 3;
+}
+.valley .factoid-card .factoid-card {
+  grid-column: auto;
+}
+.valley .sd-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.valley .factoid-card_number.b-desk {
+  display: block;
+}
+.valley .mob_factoid-card_line {
+  padding-bottom: var(--u-16);
+}
+@media screen and (max-width: 991px) {
+  .valley .factoid-card {
+    grid-column: 1 / 5;
+  }
+  .valley .factoid-card .factoid-card {
+    justify-content: space-between;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .valley .factoid-card_desc.b-mob {
+    flex: 1;
+  }
+}
+
+/* --- CTA and footer ---------------------------------------------------- */
+.valley .theme_on-color {
+  --v-base-0: #2c1522;
+  --v-base-1000: #f7cfe6;
+  --v-base-1000-50: #f7cfe680;
+  --v-base-1000-10: #f7cfe61a;
+}
+.valley .cta-w {
+  position: relative;
+}
+.valley .cta-s {
+  z-index: 1;
+  min-height: calc(var(--u-120) * 5);
+  flex-flow: column;
+  justify-content: center;
+  display: flex;
+  position: relative;
+}
+.valley .grid-c {
+  grid-column-gap: 0;
+  grid-row-gap: 0;
+  margin-left: calc(var(--u-16) * -1);
+  margin-right: calc(var(--u-16) * -1);
+  grid-template-columns: repeat(12, 1fr);
+  display: grid;
+}
+.valley .cta-s_card-w {
+  grid-column: 5 / 9;
+  background-color: var(--v-base-0);
+  padding: var(--u-32) var(--u-24);
+}
+.valley .cta-s_card {
+  flex-flow: column;
+  align-items: center;
+  display: flex;
+}
+.valley .cta-s_card_top,
+.valley .cta-s_card_center,
+.valley .cta-s_card_bot {
+  width: 100%;
+  flex-flow: column;
+  align-items: center;
+  display: flex;
+}
+.valley .cta-s_card_center {
+  padding: var(--u-48) 0;
+}
+.valley .cta-s_card_bot {
+  align-items: stretch;
+}
+.valley .contact-cms_list {
+  display: flex;
+  flex-flow: column;
+  gap: var(--u-8);
+  align-items: center;
+}
+@media screen and (max-width: 991px) {
+  .valley .grid-c.mob_8-columns {
+    grid-template-columns: repeat(8, 1fr);
+  }
+  .valley .cta-s_card-w {
+    grid-column: 1 / 9;
+  }
+}
+.valley .footer-s {
+  position: relative;
+}
+.valley .footer-s_l {
+  grid-column: 1 / 5;
+}
+.valley .footer-s_r {
+  grid-column: 9 / 13;
+}
+.valley .footer-s_mail {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  word-break: break-all;
+}
+.valley .footer-s_bot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+@media screen and (max-width: 991px) {
+  .valley .footer-s_l,
+  .valley .footer-s_r {
+    grid-column: 1 / 5;
+  }
+}

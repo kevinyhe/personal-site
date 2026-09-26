@@ -44,7 +44,7 @@ export default function WorkPage() {
 
       <section className="mt-16 sm:mt-24">
         <ul className="group/list">
-          {workEntries.map((entry) => {
+          {workEntries.map((entry, index) => {
             const inner = (
               <div
                 className="grid grid-cols-1 gap-1.5 py-7 sm:grid-cols-12 sm:items-baseline sm:gap-8 sm:py-9"
@@ -53,7 +53,8 @@ export default function WorkPage() {
                 <p
                   className={`text-[0.75rem] uppercase tracking-[0.04em] opacity-45 group-hover/list:opacity-30 group-hover/row:translate-x-1 group-hover/row:opacity-70 sm:col-span-2 ${ROW_EASE}`}
                 >
-                  {entry.year}
+                  {/* The reference's counter, not a year: "04" in the sans. */}
+                  {String(index + 1).padStart(2, "0")}
                 </p>
                 <h2
                   className={`text-[1.4rem] font-light leading-tight tracking-[-0.015em] group-hover/list:opacity-40 group-hover/row:translate-x-3 group-hover/row:opacity-100 sm:col-span-4 sm:text-[1.75rem] ${ROW_EASE}`}

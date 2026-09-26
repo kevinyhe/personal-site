@@ -1,8 +1,11 @@
 import { preload } from "react-dom";
 import HeroIntro from "@/components/HeroIntro";
-import HomeSections from "@/components/HomeSections";
+import HeroValley from "@/components/HeroValley";
 import SectionLink from "@/components/SectionLink";
+import StatementSection from "@/components/StatementSection";
+import BelowIntro from "@/components/BelowIntro";
 import TreeTuner from "@/components/TreeTuner";
+import ValleyTransition from "@/components/ValleyTransition";
 import { sectionLinks, socialLinks } from "@/components/siteContent";
 
 /**
@@ -45,12 +48,6 @@ const CRT_ASSETS: { href: string; as: "fetch" | "image" }[] = [
   { href: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp", as: "image" },
   { href: "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp", as: "image" },
-  // Not the Thinker. Its glTF used to be preloaded here too, but the stage
-  // loads the baked cut (/model/thinker/chunks.json + .bin, 4 MB; see
-  // thinkerChunks), not scene.gltf, so those 1.9 MB came down at the
-  // textures' priority and were never read. The chunks are fetched by
-  // the loader at low priority as the page mounts, long before the panel
-  // opens.
 ];
 
 export default function Home() {
@@ -67,7 +64,19 @@ export default function Home() {
       {/* Renders nothing unless the URL carries ?tune. Visit /?tune to place
           the tree, then Freeze to get the lines that bake it in. */}
       <TreeTuner />
-      <HeroIntro>
+      {/* The television's own opening — the veil, the tube powering up, the
+          push-in onto the name — over the valley's hills (HeroValley),
+          which is what the tube is showing and what the push-in lands in.
+          Then, instead of the camera backing out of it with the narration
+          on the glass, sondaven.com's move: the whole stage shrinks into a framed
+          picture while a valley of bars rises around it
+          (ValleyTransition). The sentence and the projects follow on the
+          page proper. The old arrangement is whole at /crt. */}
+      <HeroIntro tail={<ValleyTransition />}>
+        {/* The hills the tree stands in: the /valley scene built bare, drawn
+            off screen and handed to the tree scene's backdrop. Renders no
+            element of its own. */}
+        <HeroValley />
         <h1 className="sr-only">Kevin He — engineer, Toronto</h1>
 
         {/* Solid type; only the large right serif word carries the (subtle)
@@ -171,9 +180,17 @@ export default function Home() {
         </div>
       </HeroIntro>
 
-      {/* Below the hero's sticky stage. Reachable now that the stage lives
-          in its own scroll room and scrolls away at the end of it. */}
-      <HomeSections />
+      {/* The landscape gives way to a flat band of its own colour, with one
+          stem in it and one sentence. Pulled back over the transition's
+          tail: the hero's framed picture is still pinned in the middle of
+          the screen there, and this is what comes up and covers it. */}
+      <div className="relative z-10 -mt-[100vh]">
+        <StatementSection />
+      </div>
+
+      {/* Where the reference copy stops. From the prologue down the page is
+          in the site's own language again — see BelowIntro. */}
+      <BelowIntro />
     </div>
   );
 }

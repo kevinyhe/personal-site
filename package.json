@@ -9,8 +9,6 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "bake:balls": "node scripts/bake-balls.mjs",
-    "bake:cherry": "node scripts/bake-cherry.mjs",
-    "bake:chunks": "node scripts/bake-chunks.mjs",
     "bake:bg": "node scripts/bake-site-bg.mjs"
   },
   "dependencies": {
