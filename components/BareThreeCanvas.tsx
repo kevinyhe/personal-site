@@ -7,14 +7,33 @@ import {
   getViewportMetrics,
   getViewportWidth,
 } from "@/components/viewportMetrics";
-import { TREE_BASE_SCALE, treeTuning } from "@/components/treeTuning";
+import {
+  INTRO_TREE_SEED,
+  TREE_BASE_SCALE,
+  treeTuning,
+} from "@/components/treeTuning";
 import { sceneFx } from "@/components/sceneFx";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
+
+/**
+ * The contact page's spray (WeepingCherryGenerator.generateSpray), in the
+ * generator's local units: the tree's primaries run 5.4-7.95 and its twigs
+ * 1.1-2.25, so this is one long primary's worth of stem with twig-sized
+ * sprigs along it. The stem's base radius is a primary's; solveRadii can
+ * only raise it.
+ */
+const SPRAY_STEM_LENGTH = 7.4;
+const SPRAY_STEM_RADIUS = 0.13;
+const SPRAY_SPRIG_COUNT = 10;
+const SPRAY_SPUR_COUNT = 7;
 // Hero composition: the tree floats alone in a near-black void. The camera
 // target sits on the tree axis (world x ~2.6) so the canopy reads
 // near-centered. The frame's bottom edge at the trunk plane sits at world
@@ -22,9 +41,22 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 // viewport instead of ending mid-air, and the crown keeps ~15% headroom
 // below the top edge.
 const FINAL_CAMERA_POSITION = new THREE.Vector3(2.9, 8.35, 15.6);
-const INTRO_CAMERA_POSITION = new THREE.Vector3(10.4, 12.9, 17.2);
+// Start of the intro orbit: 35 degrees round the hero target from the
+// final pose (was 23; the user wanted half again as much spin), same
+// radius and height.
+const INTRO_CAMERA_POSITION = new THREE.Vector3(13.7, 12.9, 15.27);
 const HERO_CAMERA_TARGET = new THREE.Vector3(2.55, 6.85, 0);
 const HERO_CAMERA_FOV = 42;
+// The CRT room's image-based light at rest; faded as the room goes white.
+const CRT_ENV_INTENSITY = 0.04;
+// How far (world units) the tree group sinks at sceneFx.treeDrop = 1, at
+// treeTuning.scale 1 (the render loop scales it up with the tuner's scale).
+// Sized by measurement so no branch, blossom or loose petal is left in the
+// viewport: the highest branch point sits at world y ~10.5 and needs ~9.2
+// units to pass the frame's bottom edge at its depth; 16 leaves ~6 units
+// of margin for wind sway and the pointer rustle (under 0.2 together) and
+// for the tuner's y range. Re-measure if the tree placement is re-frozen.
+const TREE_DROP_DISTANCE = 16;
 
 // Stage lights. Declared here rather than only at the scene-graph call site
 // because the canopy shader needs the same numbers to compute how much light
@@ -40,12 +72,12 @@ const ROSE_GLOW_COLOR = 0xff4f8b;
 // round dots (ordered dither), like the reference site's dot-matrix render.
 // Cell edge in CSS px — multiplied by the render pixel ratio at runtime, so
 // dots read ~3-5 screen px. "low" quality bumps it one step larger.
-const HALFTONE_CELL_CSS_PX = 4.1;
+export const HALFTONE_CELL_CSS_PX = 4.1;
 // 0..1 mix of dithered over the smooth render; below 1 a hint of the smooth
 // image survives under the dots.
-const HALFTONE_STRENGTH = 0.85;
+export const HALFTONE_STRENGTH = 0.85;
 
-const HALFTONE_VERTEX_SHADER = /* glsl */ `
+export const HALFTONE_VERTEX_SHADER = /* glsl */ `
 precision highp float;
 attribute vec3 position;
 // Single clip-space triangle covering the screen; no matrices needed.
@@ -54,7 +86,7 @@ void main() {
 }
 `;
 
-const HALFTONE_FRAGMENT_SHADER = /* glsl */ `
+export const HALFTONE_FRAGMENT_SHADER = /* glsl */ `
 precision highp float;
 
 uniform sampler2D uScene;
@@ -167,7 +199,7 @@ void main() {
 // linear working space) and the halftone pass applies ACES + sRGB once —
 // same pipeline the old sRGB-texture backdrop went through, no
 // double-brightening.
-const VOID_BACKDROP_VERTEX_SHADER = /* glsl */ `
+export const VOID_BACKDROP_VERTEX_SHADER = /* glsl */ `
 varying vec2 vUv;
 void main() {
   vUv = uv;
@@ -175,10 +207,18 @@ void main() {
 }
 `;
 
-const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
+export const VOID_BACKDROP_FRAGMENT_SHADER = /* glsl */ `
 uniform float uTime;
 uniform vec2 uPointer;
 uniform float uPointerForce;
+// Overall level (1 = the page's look). Pulled down while the scene is
+// the picture on the television, where the full-brightness curtains blow
+// out on the tube.
+uniform float uLevel;
+// 0 = the curtains as they are on the landing page (and on the tube), 1 =
+// the same curtains gone iridescent: the wall of the television's room
+// (see the film functions below and the wall in the CRT stage).
+uniform float uIridescence;
 uniform vec3 uBase;
 uniform vec3 uDeep;
 uniform vec3 uCore;
@@ -186,6 +226,20 @@ uniform vec3 uHot;
 uniform vec3 uViolet;
 uniform vec3 uWarmTint;
 uniform vec3 uCoolTint;
+// The hills behind the curtains: a canvas of the /valley scene drawn off
+// screen, laid over them. uSceneFit maps this plane's uv onto the rectangle
+// the camera can actually see of it, so the picture covers the frame instead
+// of being stretched across a 110x100 billboard.
+uniform sampler2D uScene;
+uniform float uSceneMix;
+uniform vec2 uSceneFit;
+uniform float uSceneGain;
+// How much of the curtain field the frame shows, in the units every constant
+// below is tuned in. The hero passes the plane's own size (1.774 x 1.6129,
+// which is 110 x 100 at p's 62-unit world scale); a full-screen quad with no
+// camera in front of it passes the rectangle the hero's camera would have
+// seen, so the curtains are the same size in both.
+uniform vec2 uFrame;
 varying vec2 vUv;
 
 // One vertical light shaft: a soft horizontal gaussian bump.
@@ -242,6 +296,36 @@ vec3 curtain(vec2 p, float wgt, float cx, float w, float amp, float ph,
   return vec3(i, i * i, i * i * hue);
 }
 
+// ---- Iridescence -----------------------------------------------------
+// The curtains as holographic foil. Thin-film interference: the colour of
+// light off a film a few wavelengths thick cycles through the spectrum
+// with the film's thickness and with the angle it is seen at, which is
+// why oil on water and a soap film run through every hue. Rendered the
+// usual way for real time: a cosine palette (Inigo Quilez) over a phase
+// that is the "thickness" plus a Fresnel term.
+//
+// The thickness here is the curtain's own light plus a slow warped flow,
+// so the bands follow the folds and drift along them. The Fresnel term
+// comes from a fake surface: the flow's gradient is taken as a normal, so
+// where the flow's slope is steep the film reads at a grazing angle and
+// flares with colour, and the flares sweep across the curtains as the flow
+// moves. No bubbles, no refraction: the curtains keep their shape and only
+// their colour changes. At uIridescence 0 none of this runs.
+float filmFlow(vec2 p, float t) {
+  vec2 q = p * 3.2;
+  q += 0.4 * vec2(sin(q.y * 1.3 + t * 0.21), cos(q.x * 1.1 - t * 0.17));
+  float h = sin(q.x * 1.7 + t * 0.3) * sin(q.y * 1.3 - t * 0.23);
+  h += 0.5 * sin(q.x * 3.1 - q.y * 2.2 + t * 0.41);
+  h += 0.25 * sin(q.y * 5.3 + q.x * 1.7 - t * 0.55);
+  return h * 0.5;
+}
+vec3 filmPalette(float phase) {
+  // Held toward magenta, violet, blue and cyan, with green and gold passing
+  // through: the holographic-foil range rather than a flat rainbow.
+  vec3 c = 0.5 + 0.5 * cos(6.2832 * (phase + vec3(0.0, 0.33, 0.67)));
+  return c * vec3(0.95, 0.85, 1.2);
+}
+
 void main() {
   // Plane-local coords corrected for the 110x62 plane aspect so radii are
   // isotropic. The camera sees roughly x in [-0.47, 0.45] and
@@ -249,7 +333,8 @@ void main() {
   // 1.774 = 110/62 and 1.6129 = 100/62: the plane grew to 110x100 for
   // ultrawide coverage, but p keeps the original 62-unit world scale so
   // every tuned constant below is unchanged.
-  vec2 p = vec2((vUv.x - 0.5) * 1.774, (vUv.y - 0.5) * 1.6129);
+  vec2 p = (vUv - 0.5) * uFrame;
+  vec2 plane = p;
   float t = uTime;
 
   // The reference background reads as tall backlit CURTAINS hanging from
@@ -316,7 +401,46 @@ void main() {
 
   // Mild rolloff keeps overlapping peaks luminous but not clipped.
   col = col / (1.0 + 0.35 * col);
-  gl_FragColor = vec4(col, 1.0);
+
+  float film = smoothstep(0.0, 1.0, uIridescence);
+  if (film > 0.001) {
+    float tf = t * 0.333;
+    float flow = filmFlow(p, tf);
+    float e = 0.004;
+    vec2 slope = vec2(
+      filmFlow(p + vec2(e, 0.0), tf) - flow,
+      filmFlow(p + vec2(0.0, e), tf) - flow
+    ) / e;
+    vec3 n = normalize(vec3(-slope * 0.13, 1.0));
+    float fres = pow(1.0 - n.z, 0.7);
+    // Thickness: the curtain's light, the flow, the curtain's own hue lean.
+    float thick = I * 1.3 + flow * 1.1 + hue * 0.25 + fres * 1.6 + tf * 0.02;
+    vec3 sheen = filmPalette(thick);
+    // On the curtains' own light, so the void stays void and the hot top
+    // of a curtain carries the most colour. Part of it everywhere the
+    // curtain is lit (the foil), more where the film is at a grazing angle
+    // (the flares).
+    float lum = dot(col, vec3(0.3, 0.5, 0.2));
+    float lit = smoothstep(0.02, 0.35, I);
+    float amount = film * lit * (0.7 + 0.3 * smoothstep(0.1, 0.7, fres));
+    col = mix(col, sheen * (0.04 + 1.9 * lum), amount * 0.9);
+    // A white gleam where the film catches the light square on.
+    vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
+    float gleam = smoothstep(0.93, 0.995, dot(r, normalize(vec3(-0.45, 0.7, 0.55))));
+    col += vec3(0.95, 0.96, 1.0) * gleam * lum * 0.5 * film;
+  }
+  if (uSceneMix > 0.001) {
+    vec2 su = (vUv - 0.5) * uSceneFit + 0.5;
+    vec3 sc = pow(texture2D(uScene, clamp(su, 0.0, 1.0)).rgb, vec3(2.2)) * uSceneGain;
+    // A shoulder, not a clamp. The valley's sky is already near white where
+    // the sun is, and on the television the tube's own bloom is multiplied
+    // over the top of it — which took that corner to flat white with the
+    // raster streaking through it. This rolls the top end off so nothing in
+    // the picture can reach 1 before the bloom has had it.
+    sc = sc / (1.0 + sc * 0.62);
+    col = mix(col, sc, uSceneMix);
+  }
+  gl_FragColor = vec4(col * uLevel, 1.0);
 }
 `;
 
@@ -373,9 +497,17 @@ type BareThreeCanvasProps = {
   onIntroComplete?: () => void;
   onReady?: () => void;
   onProgress?: (progress: { loaded: number; total: number }) => void;
+  /**
+   * Fired once the monitor model (GLB + textures) is in the scene — or has
+   * failed, leaving the placeholder. The page loads AS the television shot,
+   * so the veil must not lift before this.
+   */
+  onCrtReady?: () => void;
+  /** Progress of the monitor's own assets (GLB + textures), for the veil's bar. */
+  onCrtProgress?: (progress: { loaded: number; total: number }) => void;
 };
 
-export const SCENE_BUILD_MILESTONE_TOTAL = 5;
+export const SCENE_BUILD_MILESTONE_TOTAL = 9;
 
 function makeRng(seed: number) {
   let s = seed >>> 0;
@@ -470,7 +602,7 @@ function fbm2(x: number, z: number, octaves = 5) {
   return total > 0 ? value / total : 0;
 }
 
-function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
+export function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
   if (q !== "auto") return q;
   if (typeof window === "undefined") return "high";
   const w = getViewportWidth();
@@ -480,9 +612,9 @@ function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
   return "high";
 }
 
-type Quality = "auto" | "low" | "medium" | "high";
+export type Quality = "auto" | "low" | "medium" | "high";
 
-type TreeOptions = {
+export type TreeOptions = {
   seed?: number;
   quality?: Quality;
   blossomCount?: number;
@@ -506,8 +638,6 @@ type BlossomPlacement = {
   wind1: [number, number, number, number];
   wind2: [number, number, number, number];
   revealT: number;
-  // Scroll ungrow key (see UNGROW ORDER); flowers go ahead of their twig.
-  growKey: number;
   color: THREE.Color;
   // Per-instance multiplier on the material's emissive lift, so clusters
   // glow unevenly instead of as one flat pink mass.
@@ -519,7 +649,7 @@ type BlossomPlacement = {
   shade: [number, number, number, number];
 };
 
-type BranchFrame = {
+export type BranchFrame = {
   binormal: THREE.Vector3;
   normal: THREE.Vector3;
   point: THREE.Vector3;
@@ -560,7 +690,7 @@ class CanopyLobe {
   }
 }
 
-class Branch {
+export class Branch {
   id: number;
   parent: Branch | null;
   children: Branch[] = [];
@@ -584,10 +714,6 @@ class Branch {
   windTwigLagLocal = 0;
   windFlutterBase = 0;
   windFlutterLocal = 0;
-  // Ungrow order (see computeGrowthOrder): the retract key at t=0 and t=1.
-  // Linear in t because the curve is arc-length parametrised.
-  growKey0 = 0;
-  growKey1 = 0;
 
   constructor({
     id,
@@ -656,18 +782,18 @@ class Branch {
 // vec4s fed to the shaders; any point rigidly attached to a branch
 // (blossoms!) must bake those same vec4s to reproduce the anchor motion.
 // ---------------------------------------------------------------------------
-function getWindRamp(t: number) {
+export function getWindRamp(t: number) {
   return Math.pow(smoothstep(0.06, 1, clamp01(t)), 1.75);
 }
 
-function getWindFlutterRamp(t: number) {
+export function getWindFlutterRamp(t: number) {
   return smoothstep(0.45, 1, clamp01(t));
 }
 
 // CPU mirror of arborGust() in WIND_SHADER_CHUNK — keep the two in sync.
 // Lets CPU-simulated systems (falling petals) surge with the same gust
 // envelope the branch/blossom shaders sample from uWindTime.
-function arborGustEnvelope(t: number, phase: number) {
+export function arborGustEnvelope(t: number, phase: number) {
   const n =
     Math.sin(t * 0.36 + phase * 0.1) +
     0.6 * Math.sin(t * 0.83 + 1.7 + phase * 0.05) +
@@ -675,7 +801,7 @@ function arborGustEnvelope(t: number, phase: number) {
   return 0.2 + 1.02 * smoothstep(-1.9, 1.75, n);
 }
 
-function getLimbWindAmplitude(branch: Branch) {
+export function getLimbWindAmplitude(branch: Branch) {
   const depthAmp =
     branch.depth === 1 ? 0.078 : branch.depth === 2 ? 0.122 : 0.158;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -686,7 +812,7 @@ function getLimbWindAmplitude(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-function getTwigWindAmplitude(branch: Branch) {
+export function getTwigWindAmplitude(branch: Branch) {
   const depthAmp =
     branch.depth === 4 ? 0.175 : branch.depth === 5 ? 0.225 : 0.26;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -697,7 +823,7 @@ function getTwigWindAmplitude(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-function getTwigWindFlutter(branch: Branch) {
+export function getTwigWindFlutter(branch: Branch) {
   const depthAmp =
     branch.depth === 4 ? 0.008 : branch.depth === 5 ? 0.012 : 0.016;
   const radiusFactor = THREE.MathUtils.clamp(
@@ -708,12 +834,12 @@ function getTwigWindFlutter(branch: Branch) {
   return depthAmp * radiusFactor;
 }
 
-type BranchWindVectors = {
+export type BranchWindVectors = {
   wind1: [number, number, number, number];
   wind2: [number, number, number, number];
 };
 
-function getBranchWindVectors(branch: Branch, t: number): BranchWindVectors {
+export function getBranchWindVectors(branch: Branch, t: number): BranchWindVectors {
   const ramp = getWindRamp(t);
   const along = clamp01(t);
   return {
@@ -752,7 +878,9 @@ function getBranchFrame(branch: Branch, t: number): BranchFrame {
 
 class SpatialHash {
   private cellSize: number;
-  private buckets = new Map<string, OccupiedPoint[]>();
+  // Numeric cell keys: the string template key allocated on every lookup,
+  // and twig placement runs hundreds of thousands of lookups.
+  private buckets = new Map<number, OccupiedPoint[]>();
 
   constructor(cellSize: number) {
     this.cellSize = cellSize;
@@ -763,7 +891,8 @@ class SpatialHash {
   }
 
   private keyFromCell(x: number, y: number, z: number) {
-    return `${x},${y},${z}`;
+    // Cells within +-512 of the origin (the tree spans ~30 cells).
+    return ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512);
   }
 
   private cell(v: number) {
@@ -793,8 +922,9 @@ class SpatialHash {
         for (let z = cz - cr; z <= cz + cr; z += 1) {
           const bucket = this.buckets.get(this.keyFromCell(x, y, z));
           if (!bucket) continue;
+          const r2 = radius * radius;
           for (const point of bucket) {
-            if (point.position.distanceTo(position) <= radius)
+            if (point.position.distanceToSquared(position) <= r2)
               results.push(point);
           }
         }
@@ -805,69 +935,25 @@ class SpatialHash {
   }
 }
 
-// ---------------------------------------------------------------------------
-// UNGROW ORDER.
-//
-// The CRT transition takes the tree apart the way it grew, in reverse: every
-// point on every branch carries a scalar key, and a front sweeps from key 1
-// down to key 0, pinching the wood to a point and clipping it past the front.
-// The key is a depth tier plus the path distance from the trunk base, so
-// sub-twigs and blossoms go first (top of the tree, outermost wood), then
-// tertiary/secondary limbs, then the primaries, and the trunk last — each
-// retracting tip-to-base. A child's keys all exceed its parent's key at the
-// attach point (the tier term), so nothing is ever left hanging in the air.
-const UNGROW_DEPTH_WEIGHT = 0.55;
-// Width of the pinch zone ahead of the front, in key units.
-const UNGROW_FEATHER = 0.035;
-// Blossoms start retracting this far ahead of their twig (key units) so the
-// flowers are gone before the wood under them goes.
-const UNGROW_BLOSSOM_LEAD = 0.06;
-// Extra key for flowers high in the canopy (0 at its lowest flower, this at
-// the highest), so the canopy visibly peels from the top down. Flowers are
-// free instances, so unlike wood this needs no continuity at joints: the
-// bias is only ever positive, so a flower still goes before its twig.
-const UNGROW_BLOSSOM_HEIGHT_SPREAD = 0.3;
-const UNGROW_BLOSSOM_JITTER = 0.04;
-// Where the front starts: above the highest possible blossom key plus the
-// width of the blossom shrink ramp, so nothing is retracted at rest.
-const UNGROW_FRONT_START =
-  1 +
-  UNGROW_BLOSSOM_LEAD +
-  UNGROW_BLOSSOM_HEIGHT_SPREAD +
-  UNGROW_BLOSSOM_JITTER +
-  0.08;
-
-function branchGrowKey(branch: Branch, t: number) {
-  return THREE.MathUtils.lerp(branch.growKey0, branch.growKey1, clamp01(t));
-}
-
-// GLSL: the front position for a 0..1 ungrow level. Runs past both ends so
-// the feather fully resolves at 0 and at 1.
-const UNGROW_SHADER_CHUNK = `
-  uniform float uUngrow;
-  float arborGrowFront() {
-    return mix(${UNGROW_FRONT_START.toFixed(3)}, -0.02, uUngrow);
-  }
-`;
-
 class BranchGeometryBuilder {
-  positions: number[] = [];
-  normals: number[] = [];
-  colors: number[] = [];
-  uvs: number[] = [];
-  windParams1: number[] = [];
-  windParams2: number[] = [];
-  // (ungrow key, ring radius) per vertex. The radius lets the vertex shader
-  // recover the ring centre from position - normal * radius and collapse
-  // the tube onto its spine as the front arrives.
-  growParams: number[] = [];
-  indices: number[] = [];
-  private barkColor = new THREE.Color();
+  // Preallocated typed arrays, sized by reserve() from the branch list:
+  // pushing ~400k vertices through number[] (with array spreads for the
+  // wind vec4s) was the single largest slice of the scene build (~0.9 s).
+  positions = new Float32Array(0);
+  normals = new Float32Array(0);
+  colors = new Float32Array(0);
+  uvs = new Float32Array(0);
+  windParams1 = new Float32Array(0);
+  windParams2 = new Float32Array(0);
+  indices = new Uint32Array(0);
+  private vertexCount = 0;
+  private indexCount = 0;
   private center = new THREE.Vector3();
   private tangent = new THREE.Vector3();
   private normal = new THREE.Vector3();
   private binormal = new THREE.Vector3();
   private point = new THREE.Vector3();
+  private scratch = new THREE.Vector3();
 
   private getTubularSegments(branch: Branch) {
     return branch.depth === 0
@@ -903,15 +989,93 @@ class BranchGeometryBuilder {
                 : 3;
   }
 
+  // Exact vertex/index budget for a branch list, so append() never grows.
+  reserve(branches: Branch[]) {
+    let vertices = 0;
+    let indices = 0;
+    for (const branch of branches) {
+      const tubular = this.getTubularSegments(branch);
+      const radial = this.getRadialSegments(branch);
+      vertices += (tubular + 1) * radial;
+      indices += tubular * radial * 6;
+      const caps = (branch.depth === 0 ? 1 : 0) + (branch.terminal ? 1 : 0);
+      vertices += caps * (1 + radial);
+      indices += caps * radial * 3;
+    }
+    this.positions = new Float32Array(vertices * 3);
+    this.normals = new Float32Array(vertices * 3);
+    this.colors = new Float32Array(vertices * 3);
+    this.uvs = new Float32Array(vertices * 2);
+    this.windParams1 = new Float32Array(vertices * 4);
+    this.windParams2 = new Float32Array(vertices * 4);
+    this.indices = new Uint32Array(indices);
+    this.vertexCount = 0;
+    this.indexCount = 0;
+  }
+
+  private pushVertex(
+    px: number,
+    py: number,
+    pz: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    u: number,
+    v: number,
+    wind1: [number, number, number, number],
+    wind2: [number, number, number, number],
+    fade: number,
+  ) {
+    const i = this.vertexCount;
+    const i3 = i * 3;
+    const i4 = i * 4;
+    this.positions[i3] = px;
+    this.positions[i3 + 1] = py;
+    this.positions[i3 + 2] = pz;
+    this.normals[i3] = nx;
+    this.normals[i3 + 1] = ny;
+    this.normals[i3 + 2] = nz;
+    this.uvs[i * 2] = u;
+    this.uvs[i * 2 + 1] = v;
+    this.windParams1[i4] = wind1[0];
+    this.windParams1[i4 + 1] = wind1[1];
+    this.windParams1[i4 + 2] = wind1[2];
+    this.windParams1[i4 + 3] = wind1[3];
+    this.windParams2[i4] = wind2[0];
+    this.windParams2[i4 + 1] = wind2[1];
+    this.windParams2[i4 + 2] = wind2[2];
+    this.windParams2[i4 + 3] = wind2[3];
+    // Vertex color is a multiplier on the bark map: white everywhere
+    // except the last stretch of trunk below the frame's bottom edge
+    // (world y ~0.55, local ~0.52), where it ramps toward black so the
+    // off-screen cut end melts into the void. On screen this reads as
+    // only a subtle darkening right at the frame edge.
+    this.colors[i3] = fade;
+    this.colors[i3 + 1] = fade;
+    this.colors[i3 + 2] = fade;
+    this.vertexCount = i + 1;
+    return i;
+  }
+
+  private pushTriangle(a: number, b: number, c: number) {
+    const k = this.indexCount;
+    this.indices[k] = a;
+    this.indices[k + 1] = b;
+    this.indices[k + 2] = c;
+    this.indexCount = k + 3;
+  }
+
   append(branch: Branch) {
     const depth = branch.depth;
     const tubularSegments = this.getTubularSegments(branch);
     const radialSegments = this.getRadialSegments(branch);
-    const baseIndex = this.positions.length / 3;
+    const baseIndex = this.vertexCount;
     const depthFactor = clamp01(depth / 4);
     const transportedNormal = new THREE.Vector3();
     const previousTangent = new THREE.Vector3();
     let hasTransportedFrame = false;
+    const ridgeA = THREE.MathUtils.lerp(0.1, 0.025, depthFactor);
+    const ridgeB = THREE.MathUtils.lerp(0.036, 0.006, depthFactor);
 
     for (let i = 0; i <= tubularSegments; i += 1) {
       const t = i / tubularSegments;
@@ -934,7 +1098,7 @@ class BranchGeometryBuilder {
 
       if (!hasTransportedFrame) {
         const helper =
-          Math.abs(this.tangent.y) > 0.88 ? new THREE.Vector3(1, 0, 0) : UP;
+          Math.abs(this.tangent.y) > 0.88 ? this.scratch.set(1, 0, 0) : UP;
         this.normal.crossVectors(helper, this.tangent).normalize();
         transportedNormal.copy(this.normal);
         previousTangent.copy(this.tangent);
@@ -947,16 +1111,12 @@ class BranchGeometryBuilder {
         );
         if (tangentAlignment < 0.999) {
           transportedNormal
-            .sub(
-              this.tangent
-                .clone()
-                .multiplyScalar(transportedNormal.dot(this.tangent)),
-            )
+            .addScaledVector(this.tangent, -transportedNormal.dot(this.tangent))
             .normalize();
         }
         if (transportedNormal.lengthSq() < 1e-6) {
           const helper =
-            Math.abs(this.tangent.y) > 0.88 ? new THREE.Vector3(1, 0, 0) : UP;
+            Math.abs(this.tangent.y) > 0.88 ? this.scratch.set(1, 0, 0) : UP;
           transportedNormal.crossVectors(helper, this.tangent).normalize();
         }
         this.normal.copy(transportedNormal);
@@ -967,39 +1127,34 @@ class BranchGeometryBuilder {
       for (let j = 0; j < radialSegments; j += 1) {
         const theta = (j / radialSegments) * TAU;
         const ridge =
-          Math.sin(theta * 7.0 + i * 0.36 + depth * 1.3) *
-            THREE.MathUtils.lerp(0.1, 0.025, depthFactor) +
-          Math.sin(theta * 15.0 + i * 0.71) *
-            THREE.MathUtils.lerp(0.036, 0.006, depthFactor);
+          Math.sin(theta * 7.0 + i * 0.36 + depth * 1.3) * ridgeA +
+          Math.sin(theta * 15.0 + i * 0.71) * ridgeB;
         const ringRadius = radius * (1 + ridge);
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
 
-        const nx =
-          Math.cos(theta) * this.normal.x + Math.sin(theta) * this.binormal.x;
-        const ny =
-          Math.cos(theta) * this.normal.y + Math.sin(theta) * this.binormal.y;
-        const nz =
-          Math.cos(theta) * this.normal.z + Math.sin(theta) * this.binormal.z;
+        const nx = cosT * this.normal.x + sinT * this.binormal.x;
+        const ny = cosT * this.normal.y + sinT * this.binormal.y;
+        const nz = cosT * this.normal.z + sinT * this.binormal.z;
 
         this.point
           .copy(this.center)
-          .addScaledVector(this.normal, Math.cos(theta) * ringRadius)
-          .addScaledVector(this.binormal, Math.sin(theta) * ringRadius);
+          .addScaledVector(this.normal, cosT * ringRadius)
+          .addScaledVector(this.binormal, sinT * ringRadius);
 
-        this.positions.push(this.point.x, this.point.y, this.point.z);
-        this.normals.push(nx, ny, nz);
-        this.uvs.push(j / radialSegments, t);
-        this.windParams1.push(...wind.wind1);
-        this.windParams2.push(...wind.wind2);
-        this.growParams.push(branchGrowKey(branch, t), ringRadius);
-
-        // Vertex color is a multiplier on the bark map: white everywhere
-        // except the last stretch of trunk below the frame's bottom edge
-        // (world y ~0.55, local ~0.52), where it ramps toward black so the
-        // off-screen cut end melts into the void. On screen this reads as
-        // only a subtle darkening right at the frame edge.
-        const baseFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.point.y);
-        this.barkColor.setScalar(baseFade);
-        this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
+        this.pushVertex(
+          this.point.x,
+          this.point.y,
+          this.point.z,
+          nx,
+          ny,
+          nz,
+          j / radialSegments,
+          t,
+          wind.wind1,
+          wind.wind2,
+          0.05 + 0.95 * smoothstep(-0.1, 0.8, this.point.y),
+        );
       }
     }
 
@@ -1010,73 +1165,67 @@ class BranchGeometryBuilder {
         const c = baseIndex + (i + 1) * radialSegments + j;
         const d =
           baseIndex + (i + 1) * radialSegments + ((j + 1) % radialSegments);
-        this.indices.push(a, c, b, b, c, d);
+        this.pushTriangle(a, c, b);
+        this.pushTriangle(b, c, d);
       }
     }
 
     const addCap = (t: 0 | 1) => {
       const ringStart =
         baseIndex + (t === 0 ? 0 : tubularSegments * radialSegments);
-      const centerIndex = this.positions.length / 3;
       branch.curve.getPointAt(t, this.center);
       branch.curve.getTangentAt(t, this.tangent).normalize();
       if (t === 0) this.tangent.multiplyScalar(-1);
-
-      this.positions.push(this.center.x, this.center.y, this.center.z);
-      this.normals.push(this.tangent.x, this.tangent.y, this.tangent.z);
-      this.uvs.push(0.5, t);
       const capWind = getBranchWindVectors(branch, t);
-      this.windParams1.push(...capWind.wind1);
-      this.windParams2.push(...capWind.wind2);
-      // Cap normals are the tangent, not radial: radius 0 so the ungrow
-      // collapse leaves cap vertices where they are (they are clipped with
-      // the ring they belong to).
-      this.growParams.push(branchGrowKey(branch, t), 0);
       // Same void fade as the ring vertices: the trunk's bottom cap sits at
       // y=0, below the frame edge, and reads near-black.
       const capFade = 0.05 + 0.95 * smoothstep(-0.1, 0.8, this.center.y);
-      this.barkColor.setScalar(capFade);
-      this.colors.push(this.barkColor.r, this.barkColor.g, this.barkColor.b);
+      const centerIndex = this.pushVertex(
+        this.center.x,
+        this.center.y,
+        this.center.z,
+        this.tangent.x,
+        this.tangent.y,
+        this.tangent.z,
+        0.5,
+        t,
+        capWind.wind1,
+        capWind.wind2,
+        capFade,
+      );
 
-      const capRingStart = this.positions.length / 3;
+      const capRingStart = this.vertexCount;
+      const w1: [number, number, number, number] = [0, 0, 0, 0];
+      const w2: [number, number, number, number] = [0, 0, 0, 0];
       for (let j = 0; j < radialSegments; j += 1) {
+        // Duplicate the ring vertex with the cap's flat normal.
         const source = ringStart + j;
-        const positionOffset = source * 3;
-        const uvOffset = source * 2;
-        const colorOffset = source * 3;
-        this.positions.push(
-          this.positions[positionOffset],
-          this.positions[positionOffset + 1],
-          this.positions[positionOffset + 2],
+        const p3 = source * 3;
+        const p4 = source * 4;
+        for (let k = 0; k < 4; k += 1) {
+          w1[k] = this.windParams1[p4 + k];
+          w2[k] = this.windParams2[p4 + k];
+        }
+        this.pushVertex(
+          this.positions[p3],
+          this.positions[p3 + 1],
+          this.positions[p3 + 2],
+          this.tangent.x,
+          this.tangent.y,
+          this.tangent.z,
+          this.uvs[source * 2],
+          t,
+          w1,
+          w2,
+          this.colors[p3],
         );
-        this.normals.push(this.tangent.x, this.tangent.y, this.tangent.z);
-        this.uvs.push(this.uvs[uvOffset], t);
-        const windOffset = source * 4;
-        this.windParams1.push(
-          this.windParams1[windOffset],
-          this.windParams1[windOffset + 1],
-          this.windParams1[windOffset + 2],
-          this.windParams1[windOffset + 3],
-        );
-        this.windParams2.push(
-          this.windParams2[windOffset],
-          this.windParams2[windOffset + 1],
-          this.windParams2[windOffset + 2],
-          this.windParams2[windOffset + 3],
-        );
-        this.colors.push(
-          this.colors[colorOffset],
-          this.colors[colorOffset + 1],
-          this.colors[colorOffset + 2],
-        );
-        this.growParams.push(this.growParams[source * 2], 0);
       }
 
       for (let j = 0; j < radialSegments; j += 1) {
         const a = capRingStart + j;
         const b = capRingStart + ((j + 1) % radialSegments);
-        if (t === 0) this.indices.push(centerIndex, b, a);
-        else this.indices.push(centerIndex, a, b);
+        if (t === 0) this.pushTriangle(centerIndex, b, a);
+        else this.pushTriangle(centerIndex, a, b);
       }
     };
 
@@ -1085,39 +1234,34 @@ class BranchGeometryBuilder {
   }
 
   build() {
+    if (this.vertexCount * 3 !== this.positions.length) {
+      throw new Error(
+        `BranchGeometryBuilder: reserved ${this.positions.length / 3} vertices, wrote ${this.vertexCount}`,
+      );
+    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
       "position",
-      new THREE.Float32BufferAttribute(this.positions, 3),
+      new THREE.BufferAttribute(this.positions, 3),
     );
-    geometry.setAttribute(
-      "normal",
-      new THREE.Float32BufferAttribute(this.normals, 3),
-    );
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(this.uvs, 2));
-    geometry.setAttribute(
-      "color",
-      new THREE.Float32BufferAttribute(this.colors, 3),
-    );
+    geometry.setAttribute("normal", new THREE.BufferAttribute(this.normals, 3));
+    geometry.setAttribute("uv", new THREE.BufferAttribute(this.uvs, 2));
+    geometry.setAttribute("color", new THREE.BufferAttribute(this.colors, 3));
     geometry.setAttribute(
       "windParams1",
-      new THREE.Float32BufferAttribute(this.windParams1, 4),
+      new THREE.BufferAttribute(this.windParams1, 4),
     );
     geometry.setAttribute(
       "windParams2",
-      new THREE.Float32BufferAttribute(this.windParams2, 4),
+      new THREE.BufferAttribute(this.windParams2, 4),
     );
-    geometry.setAttribute(
-      "growParams",
-      new THREE.Float32BufferAttribute(this.growParams, 2),
-    );
-    geometry.setIndex(this.indices);
+    geometry.setIndex(new THREE.BufferAttribute(this.indices, 1));
     geometry.computeBoundingSphere();
     return geometry;
   }
 }
 
-type BranchWindUniforms = {
+export type BranchWindUniforms = {
   uWindTime: { value: number };
   uWindStrength: { value: number };
   // Cursor rustle (see arborPointerRustle in WIND_SHADER_CHUNK): smoothed
@@ -1130,9 +1274,6 @@ type BranchWindUniforms = {
   uPointerVel: { value: THREE.Vector3 };
   uPointerStrength: { value: number };
   uPointerRadius: { value: number };
-  // 0..1 scroll ungrow level (see UNGROW ORDER). Shared with the blossom
-  // materials so flowers and wood read one front.
-  uUngrow: { value: number };
 };
 
 // ---------------------------------------------------------------------------
@@ -1298,7 +1439,6 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     uPointerVel: { value: new THREE.Vector3() },
     uPointerStrength: { value: 0 },
     uPointerRadius: { value: 2 },
-    uUngrow: { value: 0 },
   };
 
   material.onBeforeCompile = (shader) => {
@@ -1309,53 +1449,26 @@ function applyBranchWind(material: THREE.MeshStandardMaterial) {
     shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
-    shader.uniforms.uUngrow = uniforms.uUngrow;
     shader.vertexShader =
       `
         attribute vec4 windParams1;
         attribute vec4 windParams2;
-        attribute vec2 growParams;
-        varying float vGrowKey;
       ` +
-      UNGROW_SHADER_CHUNK +
       WIND_SHADER_CHUNK +
       shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
       `#include <begin_vertex>
-      // Ungrow: ahead of the sweeping front the tube pinches onto its
-      // spine (position - normal * ringRadius is the ring centre), so each
-      // branch tapers to a point and retracts instead of fading. Past the
-      // front the fragment stage clips it entirely.
-      vGrowKey = growParams.x;
-      {
-        float front = arborGrowFront();
-        float pinch = smoothstep(
-          front - ${UNGROW_FEATHER.toFixed(3)}, front, growParams.x);
-        transformed -= objectNormal * (growParams.y * pinch);
-      }
       transformed += arborWindOffset(windParams1, windParams2);
       transformed += arborPointerRustle(
         (modelMatrix * vec4(transformed, 1.0)).xyz,
         windParams1, windParams2);
       `,
     );
-
-    shader.fragmentShader =
-      `varying float vGrowKey;
-      ` +
-      UNGROW_SHADER_CHUNK +
-      shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <clipping_planes_fragment>",
-      `#include <clipping_planes_fragment>
-      if (vGrowKey > arborGrowFront()) discard;
-      `,
-    );
   };
 
-  material.customProgramCacheKey = () => "branch-wind-v9";
+  material.customProgramCacheKey = () => "branch-wind-v10";
   return uniforms;
 }
 
@@ -1497,7 +1610,6 @@ function applyBlossomWind(
     shader.uniforms.uPointerVel = uniforms.uPointerVel;
     shader.uniforms.uPointerStrength = uniforms.uPointerStrength;
     shader.uniforms.uPointerRadius = uniforms.uPointerRadius;
-    shader.uniforms.uUngrow = uniforms.uUngrow;
     shader.uniforms.uBlossomGrowth = growthUniform;
     Object.assign(shader.uniforms, shade);
     shader.vertexShader =
@@ -1506,9 +1618,7 @@ function applyBlossomWind(
         attribute vec4 blossomWindParams2;
         attribute float blossomPhase;
         attribute float blossomFlutter;
-        // x = intro reveal stagger, y = scroll ungrow key. Packed: the
-        // instanced blossom already uses 15 of the 16 attribute slots.
-        attribute vec2 blossomGrow;
+        attribute float blossomRevealT;
         attribute float blossomEmissive;
         attribute vec4 blossomShade;
         varying float vBlossomEmissive;
@@ -1518,7 +1628,6 @@ function applyBlossomWind(
         varying float vShadeVar;
         uniform float uBlossomGrowth;
       ` +
-      UNGROW_SHADER_CHUNK +
       WIND_SHADER_CHUNK +
       shader.vertexShader;
 
@@ -1540,14 +1649,9 @@ function applyBlossomWind(
       // Two flowers side by side otherwise carry the identical highlight.
       vShadeVar = fract(sin(blossomPhase * 91.7) * 43758.5453);
       // Intro grow reveal: each flower scales in from its spur point (the
-      // geometry origin sits on the twig), staggered by blossomGrow.x.
+      // geometry origin sits on the twig), staggered by blossomRevealT.
       float blossomReveal =
-        smoothstep(blossomGrow.x, blossomGrow.x + 0.24, uBlossomGrowth);
-      // Scroll ungrow: the flower shrinks back into its spur as the front
-      // sweeps down to its twig, finishing just before the wood under it
-      // is clipped (the key leads the twig's own key).
-      blossomReveal *= smoothstep(
-        blossomGrow.y, blossomGrow.y + 0.07, arborGrowFront());
+        smoothstep(blossomRevealT, blossomRevealT + 0.24, uBlossomGrowth);
       transformed *= blossomReveal;
 
       // Petal-local shimmer, tip-weighted so the pedicel and calyx stay
@@ -1703,18 +1807,18 @@ function applyBlossomWind(
     );
   };
 
-  material.customProgramCacheKey = () => "blossom-wind-v12";
+  material.customProgramCacheKey = () => "blossom-wind-v13";
 }
 
 // Sakura palette shared by attached blossoms and falling petals: cool
 // lavender-pink throughout (matched to the full-bloom Yoshino reference),
 // light petal edges, saturated pink base, and a magenta-crimson flower
 // center / calyx.
-const PETAL_EDGE_COLOR = new THREE.Color("#fdeff8");
-const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
-const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
-const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
-const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
+export const PETAL_EDGE_COLOR = new THREE.Color("#fdeff8");
+export const PETAL_MID_COLOR = new THREE.Color("#f7cfe6");
+export const PETAL_BASE_COLOR = new THREE.Color("#e79cc8");
+export const BLOSSOM_CENTER_COLOR = new THREE.Color("#c22e63");
+export const BLOSSOM_CALYX_COLOR = new THREE.Color("#a13d5d");
 // Pedicels stay in the plum band — no green anywhere in the palette.
 const PEDICEL_BASE_COLOR = new THREE.Color("#5d4150");
 const PEDICEL_TIP_COLOR = new THREE.Color("#7d5560");
@@ -1728,10 +1832,10 @@ const STAMEN_ANTHER_COLOR = new THREE.Color("#edd28c");
 // the baked vertex-color gradient via instanceColor. Build-time only (no
 // per-frame calls); lerpColors/offsetHSL mutate in place, so nothing is
 // allocated.
-const BLOSSOM_TINT_PALE = new THREE.Color("#f7c4e0");
-const BLOSSOM_TINT_SOFT = new THREE.Color("#f1aed6");
-const BLOSSOM_TINT_ROSE = new THREE.Color("#e693c4");
-const BLOSSOM_TINT_BRIGHT = new THREE.Color("#fbdff0");
+export const BLOSSOM_TINT_PALE = new THREE.Color("#f7c4e0");
+export const BLOSSOM_TINT_SOFT = new THREE.Color("#f1aed6");
+export const BLOSSOM_TINT_ROSE = new THREE.Color("#e693c4");
+export const BLOSSOM_TINT_BRIGHT = new THREE.Color("#fbdff0");
 
 function sampleBlossomTint(rng: () => number, target: THREE.Color) {
   // Gentle pow-curve: draws spread across the whole pink band with a mild
@@ -1804,7 +1908,7 @@ const BLOSSOM_PEDICEL_LENGTH = 0.55;
 // `lowDetail` builds a ~3x cheaper variant (2x2-quad petals, no stamens,
 // coarser center disc) used for the smallest/deepest instances so the sleeve
 // coverage model can raise instance counts without ballooning vertex work.
-function createSakuraBlossomGeometry(openness = 1, lowDetail = false) {
+export function createSakuraBlossomGeometry(openness = 1, lowDetail = false) {
   const positions: number[] = [];
   const colors: number[] = [];
   const uvs: number[] = [];
@@ -2240,8 +2344,13 @@ function createPetalDetailTexture() {
 }
 
 function createBarkTextures() {
-  const width = 384;
-  const height = 768;
+  // 256x512, not 384x768: every texel runs ~15 value-noise evaluations
+  // (four wrapped fbm stacks plus the lenticel stroke), which made this
+  // the single largest slice of the scene build (0.79 s at 384x768). The
+  // bark is seen through the halftone at a few hundred px, so half the
+  // resolution is not visible, and the build drops by ~0.45 s.
+  const width = 256;
+  const height = 512;
   const colorCanvas = document.createElement("canvas");
   const bumpCanvas = document.createElement("canvas");
   const roughCanvas = document.createElement("canvas");
@@ -2767,7 +2876,7 @@ function wrapAngle(a: number) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
-class FallingPetalSystem {
+export class FallingPetalSystem {
   // One InstancedMesh per loose-petal shape variant; petal i lives in
   // meshes[i % PETAL_VARIANT_COUNT] at slot (i / PETAL_VARIANT_COUNT) | 0.
   meshes: THREE.InstancedMesh[] = [];
@@ -3122,6 +3231,47 @@ class FallingPetalSystem {
       (fbm2(nx + 37.2, nz - 21.7, 2) - 0.5) * FLOW_LIFT_STRENGTH * strength;
   }
 
+  // Cursor brush, in petal (tree-group) space: falling petals within
+  // `radius` of the pointer are carried along with its motion and shoved
+  // gently outward and up, so a sweep across the canopy scatters them;
+  // held petals inside the brush are shaken loose.
+  applyPointer(
+    pos: THREE.Vector3,
+    vel: THREE.Vector3,
+    strength: number,
+    radius: number,
+    dt: number,
+  ) {
+    if (strength <= 0.001) return;
+    const r2 = radius * radius;
+    const count = this.positions.length;
+    for (let i = 0; i < count; i += 1) {
+      const p = this.positions[i];
+      const dx = p.x - pos.x;
+      const dy = p.y - pos.y;
+      const dz = p.z - pos.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      const fall = (1 - d2 / r2) * strength;
+      if (this.states[i] === PETAL_HELD) {
+        this.timers[i] -= dt * 10 * fall;
+        continue;
+      }
+      const v = this.velocities[i];
+      // Carry: ease toward the pointer's own velocity.
+      const k = Math.min(1, 6 * dt) * fall;
+      v.x += (vel.x * 0.7 - v.x) * k;
+      v.y += (vel.y * 0.7 - v.y) * k;
+      v.z += (vel.z * 0.7 - v.z) * k;
+      // Push: outward from the cursor, with a little lift.
+      const d = Math.sqrt(d2) + 1e-4;
+      const push = 2.5 * fall * dt;
+      v.x += (dx / d) * push;
+      v.y += (dy / d) * push * 0.5 + 1.2 * fall * dt;
+      v.z += (dz / d) * push;
+    }
+  }
+
   update(dt: number, windTime = 0, windStrength = 1) {
     const wind = this.wind;
     const count = this.positions.length;
@@ -3155,7 +3305,9 @@ class FallingPetalSystem {
         // is elsewhere and shed in a sweep as it passes over their anchor.
         // The threshold is most of the way up the envelope, so a shower of
         // petals is visibly the consequence of the canopy being pushed over.
-        const releaseRate = 0.06 + Math.max(0, gustHere - 0.55) * 8;
+        // Gust shedding held well down (was x8 above 0.55): a gust should
+        // loosen a few petals, not empty the canopy.
+        const releaseRate = 0.05 + Math.max(0, gustHere - 0.62) * 2.5;
         this.timers[i] -= dt * releaseRate;
         if (this.timers[i] <= 0) this.release(i, gustHere);
       } else {
@@ -3546,7 +3698,7 @@ class CanopyOcclusion {
   }
 }
 
-class WeepingCherryGenerator {
+export class WeepingCherryGenerator {
   group = new THREE.Group();
   branchMesh: THREE.Mesh | null = null;
   blossomMesh: THREE.InstancedMesh | null = null;
@@ -3570,6 +3722,9 @@ class WeepingCherryGenerator {
   private terminalTwigs: Branch[] = [];
   private lobes: CanopyLobe[] = [];
   private occupied = new SpatialHash(0.72);
+  // Set by generateSpray: the blossom pass dresses a spray as clusters
+  // with wood showing between them, not as the canopy's unbroken sleeves.
+  private sprayMode = false;
 
   private params = {
     trunkHeight: 5.15,
@@ -3584,7 +3739,7 @@ class WeepingCherryGenerator {
   };
 
   constructor(private options: TreeOptions = {}) {
-    this.rng = makeRng(options.seed ?? 20260705);
+    this.rng = makeRng(options.seed ?? INTRO_TREE_SEED);
     this.quality = resolveSceneQuality(options.quality ?? "auto");
   }
 
@@ -3612,7 +3767,18 @@ class WeepingCherryGenerator {
     return radial.normalize();
   }
 
-  generate() {
+  // Phased so the page can draw between the heavy steps: each `await
+  // onPhase()` yields a frame to the loading loop (the television with the
+  // bar) and bumps the progress bar. Phase timings land on
+  // window.__treeBuildTimings for profiling.
+  async generate(onPhase?: () => Promise<void>) {
+    const timings: Record<string, number> = {};
+    let phaseStart = performance.now();
+    const phase = async (name: string) => {
+      timings[name] = Math.round(performance.now() - phaseStart);
+      await onPhase?.();
+      phaseStart = performance.now();
+    };
     this.group.name = "Procedural Weeping Cherry Tree";
     // Frozen placement, chosen live with the ?tune panel. Lifted 2.25u and
     // pushed 4.35u toward the camera, scaled to 0.76x of the original to hold
@@ -3640,15 +3806,20 @@ class WeepingCherryGenerator {
       ...tertiaries,
     ]);
     this.createSubTwigs();
+    await phase("skeleton");
 
     this.solveRadii(trunk);
     this.computeWeights(trunk);
     this.applySagging(trunk);
     this.computeWindChains(trunk);
-    this.computeGrowthOrder(trunk);
+    await phase("radii");
     this.buildBranchMesh();
+    await phase("branchMesh");
     this.buildBlossomMeshes();
+    await phase("blossoms");
     this.buildPetals();
+    timings.petals = Math.round(performance.now() - phaseStart);
+    (window as unknown as Record<string, unknown>).__treeBuildTimings = timings;
 
     if (this.options.showDebugLobes) this.addDebugLobes();
     return {
@@ -3664,6 +3835,227 @@ class WeepingCherryGenerator {
       branches: this.branches,
       lobes: this.lobes,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // One spray instead of a tree.
+  //
+  // The contact page hangs a branch across its right half (see
+  // components/sakuraBough.ts). It used to grow this whole tree and keep
+  // one primary limb of it, which was a piece of a weeping canopy turned
+  // on its side: the twigs all hung one way, the limb kinked where the
+  // canopy had pulled it, and nothing about it read as a branch you could
+  // hold. The shape wanted is the orchid stem lanceyan.com hangs behind its
+  // third page: one long stem coming in from the right, bowing gently
+  // across the frame, with a row of short flowering sprigs standing off
+  // it. This grows exactly that, out of the same parts as the tree: the
+  // same bark builder, the same blossom pass, the same wind chains. Only
+  // the skeleton is designed rather than grown towards a canopy.
+  //
+  // Local frame: the stem starts at the origin (its cut end) and runs
+  // along -x, rising a little and then bowing under the sprigs it carries.
+  // The caller orients, scales and places it. Nothing here is moved by the
+  // hero's baked group transform; the group stays at identity.
+  // -------------------------------------------------------------------------
+
+  async generateSpray(onPhase?: () => Promise<void>) {
+    const timings: Record<string, number> = {};
+    let phaseStart = performance.now();
+    const phase = async (name: string) => {
+      timings[name] = Math.round(performance.now() - phaseStart);
+      await onPhase?.();
+      phaseStart = performance.now();
+    };
+    this.group.name = "Procedural cherry spray";
+    this.sprayMode = true;
+    // One lobe, for the blossom pass: it reads a lobe's density and colour
+    // bias off every branch it dresses, and skips branches that have none.
+    this.lobes = [
+      new CanopyLobe({
+        id: 0,
+        center: new THREE.Vector3(),
+        radius: new THREE.Vector3(1, 1, 1),
+        colorBias: 0.08,
+        density: 1,
+        weight: 1,
+      }),
+    ];
+
+    const stem = this.createSprayStem();
+    this.createSpraySprigs(stem);
+    await phase("skeleton");
+
+    this.solveRadii(stem);
+    this.computeWeights(stem);
+    this.applySagging(stem);
+    this.computeWindChains(stem);
+    await phase("radii");
+    this.buildBranchMesh();
+    await phase("branchMesh");
+    this.buildBlossomMeshes();
+    await phase("blossoms");
+    (window as unknown as Record<string, unknown>).__sprayBuildTimings = timings;
+
+    return {
+      group: this.group,
+      branchMesh: this.branchMesh,
+      blossomMesh: this.blossomMesh,
+      lowBlossomMesh: this.lowBlossomMesh,
+      halfBlossomMesh: this.halfBlossomMesh,
+      budMesh: this.budMesh,
+      branchWindUniforms: this.branchWindUniforms,
+      blossomGrowth: this.blossomGrowth,
+      branches: this.branches,
+      stem,
+    };
+  }
+
+  /**
+   * The stem: SPRAY_STEM_LENGTH units along -x, its height an arc that
+   * rises through the first third and drops away past the middle, the
+   * way a cut branch bows once it is held out by the base. The rise and
+   * the drop are the reference's proportions (its stem climbs about a
+   * tenth of its length and falls about an eighth); the wobble in z and
+   * the jitter are what keep it from reading as a drawn curve.
+   *
+   * No parent: computeWindChains treats a parentless branch as the tree's
+   * root and gives it the trunk's small sway, which is right for the one
+   * thick piece of wood in the frame. The sprigs carry the motion.
+   */
+  private createSprayStem() {
+    const length = SPRAY_STEM_LENGTH;
+    // (t, y, z) — the arc, in stem-length units for y and z.
+    const spine: [number, number, number][] = [
+      [0, 0, 0],
+      [0.125, 0.043, 0.011],
+      [0.25, 0.078, 0.016],
+      [0.375, 0.095, 0.008],
+      [0.5, 0.084, -0.007],
+      [0.625, 0.051, -0.016],
+      [0.75, 0.003, -0.011],
+      [0.875, -0.057, 0.003],
+      [1, -0.122, 0.014],
+    ];
+    const points = spine.map(([t, y, z], i) => {
+      const jitter = i === 0 ? 0 : 0.012;
+      return new THREE.Vector3(
+        -t * length + this.rand(-jitter, jitter) * length,
+        y * length + this.rand(-jitter, jitter) * length,
+        z * length + this.rand(-jitter, jitter) * length,
+      );
+    });
+    const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.42);
+    curve.arcLengthDivisions = 200;
+    return this.createBranch({
+      parent: null,
+      depth: 1,
+      attachT: 0,
+      curve,
+      baseRadius: SPRAY_STEM_RADIUS,
+      tipRadius: SPRAY_STEM_RADIUS * 0.34,
+      lobeId: 0,
+    });
+  }
+
+  /**
+   * The sprigs: SPRAY_SPRIG_COUNT flowering twigs standing off the stem,
+   * alternating sides, leaning towards the tip and arching over, longest
+   * through the middle of the stem and shortest at either end; a finer
+   * drooping twig off some of them; and a handful of short spurs against
+   * the stem itself, so the blossom pass (which dresses depth 4 and up)
+   * puts clusters on the wood and not only out on the sprigs.
+   *
+   * Depth 4 for every leader, as the tree's twigs are: that is the tier
+   * the wind moves most and the tier the blossom walk starts at t=0.02
+   * on, so a sprig is flowered from its base. No collision hash: the
+   * layout is spaced by hand.
+   */
+  private createSpraySprigs(stem: Branch) {
+    const sprigTs = this.attachmentValues(SPRAY_SPRIG_COUNT, 0.1, 0.96);
+    const leaders: Branch[] = [];
+    sprigTs.forEach((attachT, i) => {
+      const start = stem.getPoint(attachT);
+      const tangent = stem.getTangent(attachT);
+      const side = new THREE.Vector3()
+        .crossVectors(UP, tangent)
+        .normalize()
+        .multiplyScalar(i % 2 === 0 ? 1 : -1);
+      const dir = new THREE.Vector3()
+        .addScaledVector(tangent, 0.35)
+        .addScaledVector(UP, this.rand(0.5, 0.9))
+        .addScaledVector(side, this.rand(0.35, 0.65))
+        .addScaledVector(this.randomVector(0.3), 0.12)
+        .normalize();
+      // Longest through the middle: 0.9 at the ends, 1.8 at the centre.
+      const u = SPRAY_SPRIG_COUNT > 1 ? i / (SPRAY_SPRIG_COUNT - 1) : 0.5;
+      const length =
+        (0.9 + 0.9 * Math.sin(Math.PI * u)) * this.rand(0.85, 1.15);
+      const curve = this.generateBranchCurve(
+        start,
+        dir,
+        length,
+        4,
+        this.rand(0.45, 0.85),
+        tangent,
+      );
+      // Thicker than the tree's twigs are against their parents: seen at
+      // this distance a twig-thin sprig is under one halftone cell and
+      // vanishes, leaving its flowers floating.
+      const radius = stem.baseRadius * this.rand(0.2, 0.3);
+      leaders.push(
+        this.createBranch({
+          parent: stem,
+          depth: 4,
+          attachT,
+          curve,
+          baseRadius: radius,
+          tipRadius: radius * 0.1,
+          lobeId: 0,
+          terminal: true,
+        }),
+      );
+    });
+
+    for (const leader of leaders) {
+      if (this.rng() > 0.45) continue;
+      const twig = this.createDroopTwig(leader, 5, this.rand(0.35, 0.8));
+      if (this.rng() < 0.25) this.createDroopTwig(twig, 6, this.rand(0.3, 0.7));
+    }
+
+    const spurTs = this.attachmentValues(SPRAY_SPUR_COUNT, 0.05, 0.92);
+    spurTs.forEach((attachT, i) => {
+      const start = stem.getPoint(attachT);
+      const tangent = stem.getTangent(attachT);
+      const side = new THREE.Vector3()
+        .crossVectors(UP, tangent)
+        .normalize()
+        .multiplyScalar(i % 2 === 0 ? -1 : 1);
+      const dir = new THREE.Vector3()
+        .addScaledVector(tangent, 0.2)
+        .addScaledVector(UP, this.rand(-0.2, 0.5))
+        .addScaledVector(side, this.rand(0.5, 0.9))
+        .addScaledVector(this.randomVector(0.5), 0.15)
+        .normalize();
+      const curve = this.generateBranchCurve(
+        start,
+        dir,
+        this.rand(0.22, 0.42),
+        4,
+        this.rand(0.2, 0.5),
+        tangent,
+      );
+      const radius = stem.baseRadius * this.rand(0.14, 0.2);
+      this.createBranch({
+        parent: stem,
+        depth: 4,
+        attachT,
+        curve,
+        baseRadius: radius,
+        tipRadius: radius * 0.1,
+        lobeId: 0,
+        terminal: true,
+      });
+    });
   }
 
   private createCanopyLobes() {
@@ -4558,9 +4950,12 @@ class WeepingCherryGenerator {
     }
 
     const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.42);
-    // Short fine twigs do not need the default 200 cached arc-length samples;
-    // this keeps generation time flat despite the much larger twig count.
-    if (depth >= 4) curve.arcLengthDivisions = 48;
+    // Arc-length tables sized to the branch: the default 200 samples per
+    // curve, over thousands of short twigs, was ~0.3 s of the build in
+    // getUtoTmapping alone. Short fine twigs are a few segments long and
+    // need far fewer; only the trunk and primaries keep the default.
+    curve.arcLengthDivisions =
+      depth >= 5 ? 20 : depth >= 4 ? 32 : depth >= 2 ? 64 : 200;
     return curve;
   }
 
@@ -4727,50 +5122,6 @@ class WeepingCherryGenerator {
     for (const child of branch.children) this.computeWindChains(child);
   }
 
-  // See UNGROW ORDER: higher flowers get a larger key, so the front (which
-  // sweeps from high keys to low) takes the canopy apart top to bottom.
-  private biasBlossomUngrowByHeight(groups: BlossomPlacement[][]) {
-    let yMin = Infinity;
-    let yMax = -Infinity;
-    for (const group of groups) {
-      for (const placement of group) {
-        yMin = Math.min(yMin, placement.position.y);
-        yMax = Math.max(yMax, placement.position.y);
-      }
-    }
-    const span = Math.max(1e-6, yMax - yMin);
-    for (const group of groups) {
-      for (const placement of group) {
-        const h = (placement.position.y - yMin) / span;
-        placement.growKey += UNGROW_BLOSSOM_HEIGHT_SPREAD * h;
-      }
-    }
-  }
-
-  // See UNGROW ORDER. Path distance uses the curves' cached arc-length
-  // tables (the same ones getPointAt samples with), so the key is exactly
-  // linear in the t the geometry builder walks.
-  private computeGrowthOrder(trunk: Branch) {
-    const reachOf = new Map<Branch, [number, number]>();
-    const walk = (branch: Branch, base: number) => {
-      const length = branch.curve.getLength();
-      reachOf.set(branch, [base, base + length]);
-      for (const child of branch.children) {
-        walk(child, base + length * clamp01(child.attachT));
-      }
-    };
-    walk(trunk, 0);
-    let maxReach = 1e-6;
-    for (const [, span] of reachOf) maxReach = Math.max(maxReach, span[1]);
-    for (const branch of this.branches) {
-      const span = reachOf.get(branch);
-      if (!span) continue;
-      const tier = (UNGROW_DEPTH_WEIGHT * Math.min(branch.depth, 6)) / 6;
-      branch.growKey0 = tier + (1 - UNGROW_DEPTH_WEIGHT) * (span[0] / maxReach);
-      branch.growKey1 = tier + (1 - UNGROW_DEPTH_WEIGHT) * (span[1] / maxReach);
-    }
-  }
-
   private applySagging(branch: Branch) {
     for (const child of branch.children) {
       const length = child.curve.getLength();
@@ -4798,6 +5149,7 @@ class WeepingCherryGenerator {
 
   private buildBranchMesh() {
     const builder = new BranchGeometryBuilder();
+    builder.reserve(this.branches);
     for (const branch of this.branches) builder.append(branch);
     const geometry = builder.build();
     const textures = createBarkTextures();
@@ -4882,8 +5234,12 @@ class WeepingCherryGenerator {
     // the tier budget: high tier stays inside the 0.5-0.8 diameter band
     // (sleeves), lower tiers may stretch further apart instead of leaving
     // whole strands bare.
-    const spacingClamp: [number, number] =
-      this.quality === "low"
+    // A spray is the exception: its spurs sit a cluster's width apart or
+    // more, so each puff reads as a bunch of flowers on visible wood — the
+    // reference stem's row of blooms, not a sleeve.
+    const spacingClamp: [number, number] = this.sprayMode
+      ? [1.0, 1.5]
+      : this.quality === "low"
         ? [0.6, 1.7]
         : this.quality === "medium"
           ? [0.55, 1.15]
@@ -4895,10 +5251,12 @@ class WeepingCherryGenerator {
     );
     // Cluster size range derived from the same budget: at the target
     // spacing each spur needs avgClusterGoal flowers on average.
+    // Cherry spurs carry two to five flowers; the canopy's nine-flower
+    // puffs are a mass seen from far off, and the spray is seen close.
     const avgClusterGoal = THREE.MathUtils.clamp(
       totalTarget / (totalRunLength / spacing),
-      3,
-      9,
+      this.sprayMode ? 2 : 3,
+      this.sprayMode ? 5 : 9,
     );
     const clusterLo = Math.max(2, Math.round(avgClusterGoal - 1.6));
     const clusterHi = Math.min(9, Math.round(avgClusterGoal + 1.9));
@@ -4986,6 +5344,9 @@ class WeepingCherryGenerator {
         // change reads purely as variation.
         const flowerScale =
           0.133 *
+          // Seen close, on one branch, a corolla can be a real flower and
+          // not a dot in a mass.
+          (this.sprayMode ? 1.3 : 1) *
           clusterScaleBias *
           (0.86 + 0.28 * this.rng()) *
           woodMaturity *
@@ -5004,12 +5365,6 @@ class WeepingCherryGenerator {
           wind1: wind.wind1,
           wind2: wind.wind2,
           revealT: clamp01(t * 0.5 + this.rand(0, 0.4)) * 0.7,
-          // Height bias added in buildBlossomMeshes once the canopy's
-          // extent is known.
-          growKey:
-            branchGrowKey(branch, t) +
-            UNGROW_BLOSSOM_LEAD +
-            this.rand(0, UNGROW_BLOSSOM_JITTER),
           color,
           emissive: 1,
           phase: this.rand(0, TAU),
@@ -5097,7 +5452,6 @@ class WeepingCherryGenerator {
     const { flowers, flowersLow, halves, buds } =
       this.createBlossomPlacements();
     this.bakeCanopyOcclusion([flowers, flowersLow, halves, buds]);
-    this.biasBlossomUngrowByHeight([flowers, flowersLow, halves, buds]);
     this.petalDetailTexture = createPetalDetailTexture();
     // Raised emissive lift for the dark void scene: clusters luminesce
     // slightly against the black background instead of relying on skylight.
@@ -5139,7 +5493,7 @@ class WeepingCherryGenerator {
       const windParams2 = new Float32Array(count * 4);
       const phase = new Float32Array(count);
       const flutter = new Float32Array(count);
-      const grow = new Float32Array(count * 2);
+      const revealT = new Float32Array(count);
       const emissive = new Float32Array(count);
       const shade = new Float32Array(count * 4);
 
@@ -5153,8 +5507,7 @@ class WeepingCherryGenerator {
         windParams2.set(placement.wind2, i * 4);
         phase[i] = placement.phase;
         flutter[i] = placement.flutter;
-        grow[i * 2] = placement.revealT;
-        grow[i * 2 + 1] = placement.growKey;
+        revealT[i] = placement.revealT;
         emissive[i] = placement.emissive;
         shade.set(placement.shade, i * 4);
       }
@@ -5176,8 +5529,8 @@ class WeepingCherryGenerator {
         new THREE.InstancedBufferAttribute(flutter, 1),
       );
       geometry.setAttribute(
-        "blossomGrow",
-        new THREE.InstancedBufferAttribute(grow, 2),
+        "blossomRevealT",
+        new THREE.InstancedBufferAttribute(revealT, 1),
       );
       geometry.setAttribute(
         "blossomEmissive",
@@ -5258,22 +5611,36 @@ class WeepingCherryGenerator {
     const colors = geometry?.getAttribute("color");
     const positions = geometry?.getAttribute("position");
     if (!colors || !positions) return;
+    // Raw typed arrays, not getX/setXYZ: ~400k vertices through the
+    // accessor path (with its normalisation checks) was 0.24 s of the
+    // build on its own.
+    const pos = positions.array as Float32Array;
+    const col = colors.array as Float32Array;
     const point = new THREE.Vector3();
     const shade: [number, number, number, number] = [0, 1, 0, 1];
+    const kdx = kx / klen;
+    const kdy = ky / klen;
+    const kdz = kz / klen;
+    // Sampled every third vertex and shared with the next two: ring
+    // neighbours sit within a twig radius of each other, far below the
+    // occlusion grid's cell size, so they see the same value.
+    const stride = 3;
+    let f = 1;
     for (let i = 0; i < colors.count; i += 1) {
-      point.fromBufferAttribute(positions, i);
-      occlusion.sample(point, shade);
-      // Gentler than the blossoms take: bark is already near-black in this
-      // scene and crushing it further just loses the branch structure. The
-      // key-shadow term adds the sun side / shade side split.
-      const keySh = occlusion.keyShadow(point, kx / klen, ky / klen, kz / klen);
-      const f = (0.55 + 0.45 * shade[3]) * (0.78 + 0.22 * keySh);
-      colors.setXYZ(
-        i,
-        colors.getX(i) * f,
-        colors.getY(i) * f,
-        colors.getZ(i) * f,
-      );
+      const i3 = i * 3;
+      if (i % stride === 0) {
+        point.set(pos[i3], pos[i3 + 1], pos[i3 + 2]);
+        occlusion.sample(point, shade);
+        // Gentler than the blossoms take: bark is already near-black in
+        // this scene and crushing it further just loses the branch
+        // structure. The key-shadow term adds the sun side / shade side
+        // split.
+        const keySh = occlusion.keyShadow(point, kdx, kdy, kdz);
+        f = (0.55 + 0.45 * shade[3]) * (0.78 + 0.22 * keySh);
+      }
+      col[i3] *= f;
+      col[i3 + 1] *= f;
+      col[i3 + 2] *= f;
     }
     colors.needsUpdate = true;
   }
@@ -5399,6 +5766,8 @@ function disposeMaterialTextures(
 
 export default function WeepingCherryTreeCanvas({
   introActive = false,
+  onCrtProgress,
+  onCrtReady,
   onIntroComplete,
   onReady,
   onProgress,
@@ -5409,6 +5778,14 @@ export default function WeepingCherryTreeCanvas({
   screenLayerRefStable.current = screenLayerRef;
   const introActiveRef = useRef(introActive);
   const onIntroCompleteRef = useRef(onIntroComplete);
+  const onCrtReadyRef = useRef(onCrtReady);
+  useEffect(() => {
+    onCrtReadyRef.current = onCrtReady;
+  }, [onCrtReady]);
+  const onCrtProgressRef = useRef(onCrtProgress);
+  useEffect(() => {
+    onCrtProgressRef.current = onCrtProgress;
+  }, [onCrtProgress]);
   const onReadyRef = useRef(onReady);
   const onProgressRef = useRef(onProgress);
 
@@ -5488,9 +5865,42 @@ export default function WeepingCherryTreeCanvas({
         prefersReducedMotion ? FINAL_CAMERA_POSITION : INTRO_CAMERA_POSITION,
       );
 
-      const renderer = new THREE.WebGLRenderer({
+      // Opaque canvas. Every path that reaches it clears to voidColor at
+      // alpha 1 and writes alpha 1 (the halftone and backdrop shaders, the
+      // composer's final quad), so alpha: true only had the compositor
+      // blend an opaque layer over the page each frame.
+      //
+      // antialias stays on. The canvas mostly receives fullscreen quads
+      // (the halftone pass, the composer's final pass), but renderCrtPost
+      // draws the CRT scene straight to it while the post ramp is still at
+      // zero, and that is the TV's bezel with real edges. Turning MSAA off
+      // there was not checked on a real GPU (the headless runs use
+      // SwiftShader), so it is left as it was; the composer's own
+      // 4-sample target (crtPostTarget) covers the rest of the chain.
+      //
+      // The context is created here rather than by three: WebGLRenderer
+      // (0.178) always asks the browser for alpha: true and uses its own
+      // `alpha` option only to pick the default clear alpha, so an opaque
+      // drawing buffer has to be requested directly and handed over. The
+      // other attributes are three's own defaults (stencil off since r163).
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("webgl2", {
+        alpha: false,
         antialias: true,
-        alpha: true,
+        depth: true,
+        stencil: false,
+        premultipliedAlpha: true,
+        preserveDrawingBuffer: false,
+        powerPreference: "low-power",
+        failIfMajorPerformanceCaveat: false,
+      });
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        // null only where WebGL2 is missing; three then tries itself and
+        // fails with its own message, as it did before.
+        ...(context ? { context } : {}),
+        antialias: true,
+        alpha: false,
         powerPreference: "low-power",
       });
       renderer.setClearColor(voidColor, 1);
@@ -5563,6 +5973,184 @@ export default function WeepingCherryTreeCanvas({
       const halftoneScene = new THREE.Scene();
       halftoneScene.add(halftoneMesh);
       const halftoneCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      // ---- Overlays on the glass -----------------------------------------
+      // A clip-space quad shared by the overlays composited into
+      // displayTarget after the halftone pass (uRect places it in NDC).
+      const overlayQuadGeometry = new THREE.BufferGeometry();
+      overlayQuadGeometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array([
+            -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0,
+          ]),
+          3,
+        ),
+      );
+
+      // ---- Text on the glass ---------------------------------------------
+      // While the page loads as the television shot the tube shows the
+      // name, set like the site's own lockup (Apparel italic), and under it
+      // (once, the tagline under it). Each is a 2D canvas painted with a
+      // pink phosphor halo, composited into displayTarget so it rides
+      // through the raster, scanlines and bloom like any other picture on
+      // the tube. Opacity from sceneFx (glassName).
+      type GlassTextOptions = {
+        text: string;
+        // CSS custom property holding the next/font family name — or an
+        // explicit family list (for faces loaded by a <link>, not next/font).
+        fontVar?: string;
+        family?: string;
+        fontStyle: string; // e.g. "italic 400"
+        fontPx: number;
+        canvasW: number;
+        pad: number;
+        letterSpacing: string;
+        // Em height as a fraction of the glass height, and the line's
+        // centre as a fraction up the glass.
+        emFrac: number;
+        centerV: number;
+        // Halo: wide bloom alpha, tight halo alpha and blur (in em).
+        bloomAlpha: number;
+        haloAlpha: number;
+        haloBlurEm: number;
+      };
+      const makeGlassText = (o: GlassTextOptions) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = o.canvasW;
+        canvas.height = o.fontPx + o.pad * 2;
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.premultiplyAlpha = true;
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        // NoColorSpace on purpose: displayTarget already holds the
+        // halftone pass's sRGB-encoded output, so the canvas's sRGB bytes
+        // must land next to it untouched — tagging sRGB would decode them
+        // to linear on sample and wash the text out.
+        texture.colorSpace = THREE.NoColorSpace;
+        const uniforms = {
+          uMap: { value: texture },
+          // NDC centre (xy) and half-size (zw) of the quad in displayTarget.
+          uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
+          uOpacity: { value: 0 },
+        };
+        const material = new THREE.RawShaderMaterial({
+          uniforms,
+          vertexShader: /* glsl */ `
+precision highp float;
+attribute vec3 position;
+uniform vec4 uRect;
+varying vec2 vUv;
+void main() {
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(uRect.xy + position.xy * uRect.zw, 0.0, 1.0);
+}
+`,
+          fragmentShader: /* glsl */ `
+precision highp float;
+uniform sampler2D uMap;
+uniform float uOpacity;
+varying vec2 vUv;
+void main() {
+  // Premultiplied in, premultiplied out (One / OneMinusSrcAlpha below).
+  gl_FragColor = texture2D(uMap, vUv) * uOpacity;
+}
+`,
+          transparent: true,
+          blending: THREE.CustomBlending,
+          blendSrc: THREE.OneFactor,
+          blendDst: THREE.OneMinusSrcAlphaFactor,
+          blendSrcAlpha: THREE.OneFactor,
+          blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        });
+        const mesh = new THREE.Mesh(overlayQuadGeometry, material);
+        mesh.frustumCulled = false;
+        const scene = new THREE.Scene();
+        scene.add(mesh);
+        // Paints the line: a wide dim magenta bloom, a tighter pink halo,
+        // then the crisp warm-white glyphs on top, so the phosphor glow is
+        // baked into the texture before the glass shader adds its own
+        // halation.
+        const paint = (family: string) => {
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          const w = canvas.width;
+          const h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+          ctx.font = `${o.fontStyle} ${o.fontPx}px ${family}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          if ("letterSpacing" in ctx) ctx.letterSpacing = o.letterSpacing;
+          const cx = w / 2;
+          const cy = h / 2;
+          ctx.shadowColor = "rgba(214, 60, 120, 0.7)";
+          ctx.shadowBlur = o.pad * 0.5;
+          ctx.fillStyle = `rgba(255, 143, 174, ${o.bloomAlpha})`;
+          ctx.fillText(o.text, cx, cy);
+          ctx.shadowColor = `rgba(255, 143, 174, ${o.haloAlpha})`;
+          ctx.shadowBlur = o.fontPx * o.haloBlurEm;
+          ctx.fillStyle = "#ffd2e3";
+          ctx.fillText(o.text, cx, cy);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+          ctx.fillStyle = "#ffe9f2";
+          ctx.fillText(o.text, cx, cy);
+          texture.needsUpdate = true;
+        };
+        // The site's faces are next/font/local; their generated family
+        // names live in CSS variables. Paint once immediately (the fallback
+        // face if the real one is still loading) and again when it is in.
+        const family =
+          o.family ??
+          (getComputedStyle(document.documentElement)
+            .getPropertyValue(o.fontVar ?? "")
+            .trim() ||
+            (o.fontVar?.includes("serif") ? "serif" : "sans-serif"));
+        paint(family);
+        if (typeof document.fonts?.load === "function") {
+          document.fonts
+            .load(`${o.fontStyle} ${o.fontPx}px ${family}`, o.text)
+            .then(() => {
+              if (!disposed) paint(family);
+            })
+            .catch(() => {});
+        }
+        // Quad placement in displayTarget NDC, from the extended frame's
+        // size (so resizes are covered): the em height is emFrac of the
+        // glass, the canvas's padding scales with it.
+        const updateRect = () => {
+          let halfH = (o.emFrac * canvas.height) / o.fontPx;
+          let halfW =
+            halfH * (canvas.width / canvas.height) * (crtExt.extH / crtExt.extW);
+          if (halfW > 0.98) {
+            halfH *= 0.98 / halfW;
+            halfW = 0.98;
+          }
+          uniforms.uRect.value.set(0, o.centerV * 2 - 1, halfW, halfH);
+        };
+        const dispose = () => {
+          texture.dispose();
+          material.dispose();
+        };
+        return { uniforms, scene, updateRect, dispose };
+      };
+      const glassName = makeGlassText({
+        text: "Kevin He.",
+        fontVar: "--font-instrument-serif",
+        fontStyle: "italic 400",
+        fontPx: 220,
+        canvasW: 1536,
+        pad: 150,
+        letterSpacing: "-0.03em",
+        emFrac: 0.17,
+        centerV: 0.5,
+        bloomAlpha: 0.025,
+        haloAlpha: 0.13,
+        haloBlurEm: 0.04,
+      });
       // ---- CRT stage ----------------------------------------------------
       // The reference scene: a beige Macintosh-style all-in-one on a
       // gradient, three-quarter view, seen slightly from above. The monitor
@@ -5578,19 +6166,56 @@ export default function WeepingCherryTreeCanvas({
         drawingBufferSize.x,
         drawingBufferSize.y,
       );
-      // No mipmaps: regenerating a full chain for this near-viewport-sized
-      // target every frame was a real share of the scroll cost, and at the
-      // final pose the screen still covers most of the frame, so linear
-      // minification holds up without them.
-      displayTarget.texture.generateMipmaps = false;
-      displayTarget.texture.minFilter = THREE.LinearFilter;
+      // Mip chain ON. It was off for scroll cost, but the glass shader now
+      // re-rasterises the page at a low-res virtual tube raster and needs a
+      // box average over each raster cell (5-13 texels wide): an explicit
+      // LOD tap up this chain gives that in ONE tap per channel, where a
+      // tap grid inside the cell needed 9+ and still point-sampled the
+      // 4.1 px halftone dots into crawling moire. The halation blur is two
+      // more taps up the same chain. Net: ~6 taps per glass fragment
+      // instead of 13, over most of the frame at the end pose, against
+      // one ~0.5 Mpx mip regeneration per display render.
+      displayTarget.texture.generateMipmaps = true;
+      displayTarget.texture.minFilter = THREE.LinearMipmapLinearFilter;
 
       renderer.setClearColor(0x000000, 0);
       const crtScene = new THREE.Scene();
-      // Studio backdrop per the reference: dark blue above, pale blue
-      // below. A clip-space triangle with toneMapped:false writes the EXACT
-      // sRGB values — scene.background would push them through ACES and
-      // shift both stops.
+      // Backdrop: a dark room in the site's own palette. Near-black base
+      // with a soft pink pool behind and below the monitor (the screen is
+      // the room's main light source, and this is its spill on the wall),
+      // a cooler violet wash off to the upper left standing in for a
+      // practical out of frame, and a faint pink floor pool so the set sits
+      // in lit space instead of floating in void. A clip-space triangle
+      // with toneMapped:false writes the EXACT sRGB values — scene.background
+      // would push them through ACES and lift the blacks.
+      // Its resolution uniform is its own: halftoneUniforms.uResolution
+      // holds the EXTENDED texture size while the CRT path renders, not the
+      // canvas the backdrop actually covers.
+      // uScreenLight: the tube's light thrown onto the wall behind the set
+      // and the floor in front of it — the one thing in the room that is
+      // allowed to be bright. Driven from updateCrtRig with the tube's
+      // warm-up pulse.
+      // The iridescent wall, set up with the room's backdrop below and
+      // driven from updateCrtRig.
+      let crtWall: {
+        aspect: { value: number };
+        uniforms: { uTime: { value: number }; uLevel: { value: number } };
+      } | null = null;
+      // Its speed, as a fraction of the landing page's aurora.
+      const CRT_WALL_SPEED = 0.2;
+      // How bright it gets: the tube and its bloom are in front of it, and
+      // a wall as bright as the page would take the picture's place.
+      const CRT_WALL_LEVEL = 1.0;
+      const crtBgUniforms = {
+        uScreenLight: { value: 0 },
+        uWhite: { value: 0 },
+        get uResolution() {
+          return crtBgResolution;
+        },
+      };
+      const crtBgResolution = {
+        value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+      };
       {
         const bgGeometry = new THREE.BufferGeometry();
         bgGeometry.setAttribute(
@@ -5601,7 +6226,7 @@ export default function WeepingCherryTreeCanvas({
           ),
         );
         const bgMaterial = new THREE.RawShaderMaterial({
-          uniforms: { uResolution: halftoneUniforms.uResolution },
+          uniforms: crtBgUniforms,
           vertexShader: /* glsl */ `
             precision highp float;
             attribute vec3 position;
@@ -5610,11 +6235,47 @@ export default function WeepingCherryTreeCanvas({
           fragmentShader: /* glsl */ `
             precision highp float;
             uniform vec2 uResolution;
+            // Palette, as sRGB.
+            const vec3 BASE = vec3(0.012); // ~#030303: unlit room
+            // The plum of the loading shot's pink room, or a neutral grey
+            // once the scroll has backed out into the white one.
+            const vec3 DEEP_PINK = vec3(0.4275, 0.1020, 0.2353); // #6d1a3c
+            const vec3 DEEP_WHITE = vec3(0.22, 0.22, 0.26);
+            uniform float uWhite;
+            float hash(vec2 p) {
+              return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+            uniform float uScreenLight;
             void main() {
-              float t = gl_FragCoord.y / uResolution.y; // 0 bottom, 1 top
-              vec3 top = vec3(0.06666, 0.08627, 0.2); // #111633
-              vec3 bottom = vec3(0.82745, 0.81569, 0.89020); // #d3d0e3
-              gl_FragColor = vec4(mix(bottom, top, t), 1.0);
+              vec2 uv = gl_FragCoord.xy / uResolution; // 0 bottom, 1 top
+              float aspect = uResolution.x / uResolution.y;
+              // Aspect-corrected coords so the pools keep their shape on
+              // portrait and landscape alike.
+              vec2 q = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
+              // Main pool: a wide ellipse centred a little below the
+              // monitor, hot in the middle, fading to plum then black with
+              // a steep falloff. Gaussian rather than smoothstep so the
+              // outer edge never shows a visible rim.
+              // Biased to the right, the key light's side, so the wall
+              // reads lit from one direction like the machine.
+              vec2 pp = (q - vec2(0.34, -0.12)) * vec2(1.15, 1.9);
+              float pool = exp(-dot(pp, pp) * 3.4);
+              // The room is pitch black. All that remains of the lamp is a
+              // faint plum trace of its pool on the wall on the key side,
+              // and a barely-there halo of the tube's own light behind the
+              // set — enough that the machine is not floating in a void,
+              // not enough to read as a lit wall.
+              vec2 sp = (q - vec2(0.0, 0.06)) * vec2(1.0, 1.5);
+              float wallLight = exp(-dot(sp, sp) * 9.0);
+              float screenLight = uScreenLight * wallLight;
+              vec3 c = BASE;
+              // Nothing lights the room but the set: the only trace of it
+              // on the wall is the tube's own halo, kept faint.
+              c = mix(c, mix(DEEP_PINK, DEEP_WHITE, uWhite), clamp(screenLight * 0.35, 0.0, 1.0));
+              // An 8-bit sRGB canvas bands on a gradient this slow; half a
+              // code of noise hides the steps.
+              c += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+              gl_FragColor = vec4(c, 1.0);
             }
           `,
           depthWrite: false,
@@ -5624,13 +6285,107 @@ export default function WeepingCherryTreeCanvas({
         bgMesh.frustumCulled = false;
         bgMesh.renderOrder = -10;
         crtScene.add(bgMesh);
+
+        // The wall behind the set, once the scroll has backed the camera
+        // out: the landing page's aurora again, gone iridescent (the film
+        // in the backdrop shader, uIridescence 1), at a fifth of the
+        // page's speed. The same fragment shader as the tree's backdrop
+        // with its own uniforms; the vertex shader maps the screen onto
+        // the window of the plane the hero camera sees, so the curtains
+        // hang at the size they do on the landing page. Added over the
+        // dark room (the mesh above) and brought up by uLevel, so the
+        // loading shot's room stays as black as it was.
+        // The same palette as the tree's backdrop (voidBackdropUniforms,
+        // built later in this function; the values are repeated here).
+        const wallUniforms = {
+          uTime: { value: 0 },
+          uPointer: { value: new THREE.Vector2(0, 0.1) },
+          uPointerForce: { value: 0 },
+          uLevel: { value: 0 },
+          uIridescence: { value: 1 },
+          uBase: { value: new THREE.Color(0x000000) },
+          uDeep: { value: new THREE.Color(0x6d1a3c) },
+          uCore: { value: new THREE.Color(0xd63c78) },
+          uHot: { value: new THREE.Color(0xff8fae) },
+          uViolet: { value: new THREE.Color(0x5c2f7a) },
+          uWarmTint: { value: new THREE.Vector3(1.14, 0.93, 0.86) },
+          uCoolTint: { value: new THREE.Vector3(0.8, 0.85, 1.2) },
+        };
+        const wallAspect = { value: 16 / 9 };
+        const wallMaterial = new THREE.ShaderMaterial({
+          uniforms: { ...wallUniforms, uAspect: wallAspect },
+          vertexShader: /* glsl */ `
+            uniform float uAspect;
+            varying vec2 vUv;
+            void main() {
+              // A wider window on the plane than the hero camera's (which
+              // sees about x in [-0.46, 0.46] of its p-space), so all four
+              // curtains are in it; the height follows the screen's aspect.
+              // p = (vUv - 0.5) * (1.774, 1.6129) in the fragment shader.
+              // Centred a little up the plane, so the curtains' bright tops
+              // sit at the set's height and their dissolve lands at the floor.
+              vUv = vec2(0.52, 0.56) + position.xy * vec2(0.66 / 1.774, 0.66 / uAspect / 1.6129);
+              gl_Position = vec4(position.xy, 0.99999, 1.0);
+            }
+          `,
+          fragmentShader: VOID_BACKDROP_FRAGMENT_SHADER,
+          blending: THREE.AdditiveBlending,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        });
+        const wallMesh = new THREE.Mesh(bgGeometry, wallMaterial);
+        wallMesh.frustumCulled = false;
+        wallMesh.renderOrder = -9;
+        crtScene.add(wallMesh);
+        crtWall = { aspect: wallAspect, uniforms: wallUniforms };
       }
-      // Image-based lighting so the machine's plastic picks up believable
-      // speculars instead of flat lambert fills.
+      // Image-based lighting from a tiny equirect painted in the room's own
+      // palette (same recipe as the tree scene's env below): a bright pink
+      // patch out front where the screen and key live, a violet patch behind
+      // for the rim, plum dome, black floor. RoomEnvironment was a white
+      // studio and read as grey on every specular.
       {
+        const envCanvas = document.createElement("canvas");
+        envCanvas.width = 64;
+        envCanvas.height = 32;
+        const ctx = envCanvas.getContext("2d");
+        if (ctx) {
+          const sky = ctx.createLinearGradient(0, 0, 0, 32);
+          sky.addColorStop(0, "#1c0f24");
+          sky.addColorStop(0.5, "#2a1026");
+          sky.addColorStop(0.7, "#0c050a");
+          sky.addColorStop(1, "#030203");
+          ctx.fillStyle = sky;
+          ctx.fillRect(0, 0, 64, 32);
+          // Equirect u: +z (camera side) is 0.75 → x=48, -z is 0.25 → x=16.
+          // Pink front patch, slightly high-right like the key light.
+          const pink = ctx.createRadialGradient(44, 11, 1, 44, 11, 16);
+          pink.addColorStop(0, "rgba(255,143,174,1)");
+          pink.addColorStop(0.45, "rgba(214,60,120,0.5)");
+          pink.addColorStop(1, "rgba(214,60,120,0)");
+          ctx.fillStyle = pink;
+          ctx.fillRect(0, 0, 64, 32);
+          // Violet rim patch from behind.
+          const vio = ctx.createRadialGradient(16, 8, 1, 16, 8, 12);
+          vio.addColorStop(0, "rgba(150,110,255,0.9)");
+          vio.addColorStop(1, "rgba(92,47,122,0)");
+          ctx.fillStyle = vio;
+          ctx.fillRect(0, 0, 64, 32);
+          // Faint pink floor pool, the wall spill bouncing back up.
+          const floor = ctx.createRadialGradient(48, 30, 1, 48, 30, 14);
+          floor.addColorStop(0, "rgba(109,26,60,0.6)");
+          floor.addColorStop(1, "rgba(109,26,60,0)");
+          ctx.fillStyle = floor;
+          ctx.fillRect(0, 0, 64, 32);
+        }
+        const envTex = new THREE.CanvasTexture(envCanvas);
+        envTex.mapping = THREE.EquirectangularReflectionMapping;
+        envTex.colorSpace = THREE.SRGBColorSpace;
         const pmrem = new THREE.PMREMGenerator(renderer);
-        crtScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-        crtScene.environmentIntensity = 0.55;
+        crtScene.environment = pmrem.fromEquirectangular(envTex).texture;
+        crtScene.environmentIntensity = CRT_ENV_INTENSITY;
+        envTex.dispose();
         pmrem.dispose();
       }
       // Soft real shadow, shaped by the actual model, falling left like the
@@ -5643,9 +6398,21 @@ export default function WeepingCherryTreeCanvas({
       // 2048x2048 of depth every frame — a large share of the scroll jank.
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = true;
+      // A real (very dark, matte) floor rather than a shadow-only one: the
+      // faint fill has to be able to pick it up so the set stands on
+      // something, and the key's shadow falls across it.
       const crtGround = new THREE.Mesh(
         new THREE.PlaneGeometry(60, 60),
-        new THREE.ShadowMaterial({ opacity: 0.28 }),
+        new THREE.MeshStandardMaterial({
+          color: 0x0d0a10,
+          roughness: 0.96,
+          metalness: 0,
+          // Part-clear, so the iridescent wall behind (see the CRT stage's
+          // backdrop) shows through the floor, dimmed, as a floor would
+          // reflect it. It still takes the set's shadow.
+          transparent: true,
+          opacity: 0.6,
+        }),
       );
       crtGround.rotation.x = -Math.PI / 2;
       crtGround.position.y = -1.4; // refined to the model's base on load
@@ -5657,6 +6424,184 @@ export default function WeepingCherryTreeCanvas({
         0.01,
         100,
       );
+
+      // ---- Cinematic post pass on the TV composite ------------------------
+      // Once the camera has pulled back, the room render goes through a
+      // short chain: bloom (the lit glass and the plastic's speculars bleed
+      // into the dark room; the dark body stays under the threshold), then
+      // one shader for film grain, vignette, edge chromatic aberration and a
+      // slight black lift. Every strength is scaled by crtPostRamp(), which
+      // is 0 until crtProgress passes 0.02, and at 0 the frame is a plain
+      // renderer.render — the flat->CRT hand-off at crtProgress 0.002 stays
+      // pixel-identical.
+      //
+      // Colour pipeline: three skips tone mapping and sRGB encoding when it
+      // renders into a target. An OutputPass could redo both for the lit
+      // plastic, but the backdrop triangle and the glass shader are
+      // toneMapped:false and write exact display values, and an OutputPass
+      // would push those through ACES a second time. Flagging the composer's
+      // targets isXRRenderTarget makes three treat them like the screen
+      // (per-material ACES + sRGB, toneMapped:false honoured — see
+      // WebGLPrograms.getParameters), so the composer's input is the direct
+      // render byte for byte and the chain works in display space on top of
+      // it. HalfFloat so the vignette and grain math never quantises.
+      // How far the camera is out of the glass, by either road: the loading
+      // shot's swing out to the reference angle (crtProgress) or the
+      // scroll's straight retreat (crtOut). Never both at once; whichever
+      // is up drives everything that only cares THAT the camera is out.
+      const crtAmount = () =>
+        clamp01(Math.max(sceneFx.crtProgress, sceneFx.crtOut));
+      const crtPostRamp = () => smoothstep(0.02, 0.4, crtAmount());
+      const markDisplaySpaceTarget = (target: THREE.WebGLRenderTarget) => {
+        target.texture.colorSpace = THREE.SRGBColorSpace;
+        (target as THREE.WebGLRenderTarget & { isXRRenderTarget?: boolean })
+          .isXRRenderTarget = true;
+      };
+      // samples: 4 keeps the edge AA the direct path gets from the
+      // antialias:true canvas; without it the TV's silhouette goes jagged
+      // the moment the chain engages. (The clone inherits it.)
+      const crtPostTarget = new THREE.WebGLRenderTarget(
+        drawingBufferSize.x,
+        drawingBufferSize.y,
+        { type: THREE.HalfFloatType, samples: 4 },
+      );
+      const crtComposer = new EffectComposer(renderer, crtPostTarget);
+      // The composer clones the first target for its second buffer; the
+      // clone does not carry the flag.
+      markDisplaySpaceTarget(crtComposer.renderTarget1);
+      markDisplaySpaceTarget(crtComposer.renderTarget2);
+      // Composer sizes are in device px here: the drawing buffer already
+      // includes the pixel ratio.
+      crtComposer.setPixelRatio(1);
+      crtComposer.addPass(new RenderPass(crtScene, crtCamera));
+      // UnrealBloomPass runs its mip chain at half the size it is given, so
+      // passing the full drawing buffer is already the half-res bloom.
+      // Threshold 0.85 on display-space luminance: only near-white passes
+      // — the glass's hot core, the tube text, the plastic's speculars.
+      // Deliberately high: bloom adds strength x value to any area that
+      // passes, so a lower threshold (0.55 was tried) turns every pale
+      // patch of backdrop into a white wash instead of a glow around the
+      // bright bits. Strength is set per frame from the ramp.
+      const CRT_POST_BLOOM_STRENGTH = 0.4;
+      const crtBloomPass = new UnrealBloomPass(
+        new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+        0,
+        0.4,
+        0.85,
+      );
+      crtComposer.addPass(crtBloomPass);
+      const crtPostPass = new ShaderPass({
+        uniforms: {
+          tDiffuse: { value: null },
+          uAmount: { value: 0 },
+          uTime: { value: 0 },
+          uResolution: {
+            value: new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
+          },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          precision highp float;
+          uniform sampler2D tDiffuse;
+          uniform float uAmount;
+          uniform float uTime;
+          uniform vec2 uResolution;
+          varying vec2 vUv;
+
+          // Hash noise instead of a grain texture: no extra sampler, and a
+          // fresh seed per frame gives the grain its film flicker.
+          float hash12(vec2 p) {
+            vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+            p3 += dot(p3, p3.yzx + 33.33);
+            return fract((p3.x + p3.y) * p3.z);
+          }
+
+          void main() {
+            vec2 c = vUv - 0.5;
+            // 0 at the centre, 1 at the side edges, 2 at the corners.
+            float r2 = dot(c, c) * 4.0;
+
+            // Chromatic aberration: red and blue slide apart radially,
+            // nothing at the centre, ~2 px at the corners.
+            vec2 shift = c * r2 * (1.6 * uAmount) / uResolution;
+            vec4 src = texture2D(tDiffuse, vUv);
+            vec3 col = vec3(
+              texture2D(tDiffuse, vUv + shift).r,
+              src.g,
+              texture2D(tDiffuse, vUv - shift).b
+            );
+
+            // Bloom can push the HalfFloat buffer past 1.0; the S-curve
+            // below folds anything above 1.0 back DOWN (1.3 -> 0.68), which
+            // turned blown highlights yellow. Clamp first.
+            col = clamp(col, 0.0, 1.0);
+            // Filmic contrast: a soft S-curve mixed in lightly, then a black
+            // lift so the darkest room pixels sit at ~4/255, not 0.
+            vec3 curve = col * col * (3.0 - 2.0 * col);
+            col = mix(col, curve, 0.12 * uAmount);
+            // No black lift: the room is meant to go to black.
+
+            // Grain: strongest in the shadows and mids, near-silent in the
+            // highlights, like film.
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            vec2 seed = vec2(fract(uTime * 7.31), fract(uTime * 3.17)) * 1024.0;
+            float n = hash12(gl_FragCoord.xy + seed) - 0.5;
+            col += n * (0.05 * uAmount) * (0.3 + 0.7 * (1.0 - lum));
+
+            // Vignette: untouched inside the middle third, ~18% down at the
+            // corners.
+            col *= 1.0 - smoothstep(0.45, 1.7, r2) * (0.18 * uAmount);
+
+            gl_FragColor = vec4(col, src.a);
+          }
+        `,
+      });
+      crtComposer.addPass(crtPostPass);
+      const resizeCrtPost = () => {
+        crtComposer.setSize(drawingBufferSize.x, drawingBufferSize.y);
+        crtPostPass.uniforms.uResolution.value.set(
+          drawingBufferSize.x,
+          drawingBufferSize.y,
+        );
+      };
+      resizeCrtPost();
+      // Final stage of renderComposite's CRT branch. The composer's last
+      // pass renders to the screen, so the renderer is left on the default
+      // framebuffer either way.
+      const renderCrtPost = (elapsed: number) => {
+        const amount = crtPostRamp();
+        if (amount <= 0) {
+          renderer.render(crtScene, crtCamera);
+          return;
+        }
+        crtPostPass.uniforms.uAmount.value = amount;
+        crtPostPass.uniforms.uTime.value = elapsed;
+        // The warming-up tube (sceneFx.screenGlow) blooms harder into the
+        // room, with the same pulse the glass shader breathes with.
+        const glowPulse =
+          1 +
+          clamp01(sceneFx.screenGlow) *
+            (0.3 + 0.15 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
+        // While the tube is the picture (screenGlow up) the bloom opens up
+        // — lower threshold, wider radius — so the bright glass itself
+        // blooms into the bezel and the air: a glow, not a tint. It closes
+        // back to the tight setting as the reveal starts, where the
+        // blossoms would otherwise wash out.
+        const glowLevel =
+          clamp01(sceneFx.screenGlow) *
+          smoothstep(0.3, 0.9, clamp01(sceneFx.screenPower));
+        crtBloomPass.threshold = THREE.MathUtils.lerp(0.85, 0.78, glowLevel);
+        crtBloomPass.radius = THREE.MathUtils.lerp(0.4, 0.7, glowLevel);
+        crtBloomPass.strength =
+          CRT_POST_BLOOM_STRENGTH * amount * glowPulse * (1 + 0.1 * glowLevel);
+        crtComposer.render();
+      };
 
       // Shipped model: "TV , Old TV , Retro TV" by Denys Hroshko (user's
       // Sketchfab pick; see public/models/crt-LICENSE.txt — CC BY-NC). The
@@ -5677,13 +6622,18 @@ export default function WeepingCherryTreeCanvas({
         // read as a sticker.
         screen: { cx: 0, cy: 2.4829, cz: 0.375, w: 1.62, h: 1.35, pitch: 0 },
         yaw: -Math.PI / 2,
+        // WebP re-encodes of the download's 2K PNG set, all four at 1K
+        // (the set is seen ~450 px wide at the end pose, so the 2K colour
+        // map was 16 MB of GPU texture before mips, sampling nothing above
+        // its own mip 2; 1K is 4 MB and matches the normal and roughness
+        // maps. Headless captures at the end pose are unchanged; not
+        // re-checked on a real GPU).
         textures: {
-          map: "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_BaseColor.png",
-          normalMap: "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Normal.png",
-          metalnessMap:
-            "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Metallic.png",
+          map: "/models/tv-old-tv-retro-tv/textures/crt-basecolor.webp",
+          normalMap: "/models/tv-old-tv-retro-tv/textures/crt-normal.webp",
+          metalnessMap: "/models/tv-old-tv-retro-tv/textures/crt-metallic.webp",
           roughnessMap:
-            "/models/tv-old-tv-retro-tv/textures/retro%20tv_1_Roughness.png",
+            "/models/tv-old-tv-retro-tv/textures/crt-roughness.webp",
         },
       };
       // Reference pose: front turned toward the viewer's right, left cheek
@@ -5693,6 +6643,30 @@ export default function WeepingCherryTreeCanvas({
       // Measured off the reference photo: the set spans ~74% of the frame
       // height, centred. 0.72 with a pure-centre target reproduces that.
       const CRT_END_FILL = 0.72;
+      // The scroll's pull-back (sceneFx.crtOut): straight back down the
+      // screen's own normal, no swing, while the lens opens from the rig's
+      // 30 degrees to this. At the end the machine is this much of the
+      // frame's height. On the normal the glass stays a rectangle whatever
+      // the lens does, so the page on it stays square to the viewport.
+      const CRT_OUT_FOV = 52;
+      // The room's two colour sets (see updateCrtRig).
+      const CRT_ROOM_PINK = {
+        base: new THREE.Color(0xa39db8),
+        fill: new THREE.Color(0x7c78ff),
+        glow: new THREE.Color(0xff7fae),
+        key: new THREE.Color(0xffb0c9),
+        kicker: new THREE.Color(0xf26bd6),
+      };
+      const CRT_ROOM_WHITE = new THREE.Color(0xffffff);
+      const CRT_ROOM_WHITE_FILL = new THREE.Color(0xf2f4ff);
+      const CRT_ROOM_WHITE_BASE = new THREE.Color(0xbdbdbd);
+      const CRT_ROOM_WHITE_GLOW = new THREE.Color(0xe8ecff);
+      const CRT_OUT_FILL = 0.7;
+      // On a screen narrower than the machine is at that height (a phone
+      // held upright) the width decides instead: the machine, which is
+      // about 0.95 as wide as it is tall, takes this much of the WIDTH.
+      const CRT_OUT_FILL_WIDE = 0.88;
+      const CRT_MACHINE_ASPECT = 0.95;
 
       const crtRoot = new THREE.Group();
       crtRoot.rotation.y = CRT_YAW;
@@ -5713,7 +6687,11 @@ export default function WeepingCherryTreeCanvas({
       // to the flat render — the old baked 0.15 bulge warped corner content
       // ~11% in a single frame, which was the visible "sudden" pop.
       const buildScreenGeometry = () => {
-        const geo = new THREE.PlaneGeometry(crtScreenState.aspect, 1, 48, 36);
+        // 24x18: the dome is smooth, and every vertex costs a raycast
+        // against the whole model when the GLB lands (no BVH) — 48x36 was
+        // ~0.5 s on the main thread right when the television is about to
+        // appear.
+        const geo = new THREE.PlaneGeometry(crtScreenState.aspect, 1, 24, 18);
         const count = geo.attributes.position.count;
         const heights = new Float32Array(count).fill(0.15);
         const normals = new Float32Array(count * 3);
@@ -5723,15 +6701,61 @@ export default function WeepingCherryTreeCanvas({
         return geo;
       };
 
+      // Virtual raster line count for this viewport: ~1.8 device px per
+      // line at the END pose (the canvas renders at DPR 1), the coarsest
+      // pitch whose scanlines still resolve there. Glass height at the end
+      // pose is drawingBufferSize.y * CRT_END_FILL / monitor height. The
+      // monitor height is a CONSTANT measured off the GLB (2.19 model
+      // units over a 1.35 screen height), deliberately not
+      // crtScreenState.monitorHeight: that is a placeholder until the GLB
+      // lands, and sizing the raster from it re-pitched every line by ~30%
+      // in one frame if the user was already scrolled in.
+      const CRT_MONITOR_H = 1.62;
+      const CRT_PX_PER_LINE = 1.8;
+      const crtRasterLines = () =>
+        THREE.MathUtils.clamp(
+          Math.round(
+            (drawingBufferSize.y * CRT_END_FILL) /
+              (CRT_MONITOR_H * CRT_PX_PER_LINE),
+          ),
+          110,
+          400,
+        );
       const crtScreenUniforms = {
         uMap: { value: displayTarget.texture },
         uFx: { value: 0 },
+        // 0..1 "warming up" glow: the tube runs hot and unsteady while it
+        // shows the name during the load (brighter, with a slow pulse and
+        // irregular flicker), settling as the reveal starts.
+        uGlow: { value: 0 },
+        // 0..1 power-on. 0 = dark glass; the classic tube start: a bright
+        // horizontal line grows across the centre, then opens vertically
+        // into the full (overbright, unsteady) picture, settling at 1.
+        uPower: { value: 1 },
+        // World directions from the glass to the key and fill lights, for
+        // the glossy-glass reflections (set per frame in updateCrtRig).
+        // The room lamp's level, for what the glass reflects of it.
+        uRoomGlass: { value: 1 },
+        // 0 = the loading shot's pink room, 1 = the white room the scroll
+        // backs out into (see the light colours in updateCrtRig).
+        uWhite: { value: 0 },
+        uKeyDir: { value: new THREE.Vector3(1, 0.5, 0.3).normalize() },
+        uFillDir: { value: new THREE.Vector3(-1, 0.6, 0.8).normalize() },
         uTime: { value: 0 },
         uBulgeT: { value: 0 },
         uApexH: { value: 0.15 },
-        // Viewport-aspect sub-rect of the screen carrying the site view
-        // (contain-fit); outside it is dark glass. Values are half-extent
-        // scales relative to the screen rect.
+        // Virtual raster (columns, lines). The display texture is at least
+        // the drawing buffer tall, so log2(buffer px per line) is a floor
+        // for the cell LOD until updateCrtRig knows the extended height.
+        uRaster: {
+          value: new THREE.Vector2(
+            crtRasterLines() * crtScreenState.aspect,
+            crtRasterLines(),
+          ),
+        },
+        uCellLod: {
+          value: Math.log2(drawingBufferSize.y / crtRasterLines()),
+        },
       };
       const crtScreenMaterial = new THREE.ShaderMaterial({
         uniforms: crtScreenUniforms,
@@ -5762,10 +6786,41 @@ export default function WeepingCherryTreeCanvas({
         fragmentShader: /* glsl */ `
           uniform sampler2D uMap;
           uniform float uFx;
+          uniform float uGlow;
+          uniform float uPower;
+          uniform vec3 uKeyDir;
+          uniform vec3 uFillDir;
+          uniform float uRoomGlass;
+          uniform float uWhite;
           uniform float uTime;
+          // Virtual raster (columns, lines): the tube's own resolution, far
+          // below the display texture's. Chosen per viewport so one line
+          // spans ~2.5 device px at the end pose — the coarsest pitch that
+          // still resolves (see crtRasterLines).
+          uniform vec2 uRaster;
+          // log2(display texels per raster cell): the mip level whose
+          // texel is one raster cell.
+          uniform float uCellLod;
           varying vec2 vUv;
           varying vec3 vNormalW;
           varying vec3 vViewW;
+
+          float hash21(vec2 p) {
+            // Wrap first: the sin hash turns large arguments into
+            // structured garbage on low-precision (mobile) GPUs.
+            p = mod(p, 256.0);
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+
+          // RGB triad profile over one period t in [0, 3): soft-edged
+          // stripes, one per channel.
+          vec3 triadMask(float t) {
+            return vec3(
+              1.0 - smoothstep(0.6, 1.4, abs(t - 0.5)),
+              1.0 - smoothstep(0.6, 1.4, abs(t - 1.5)),
+              1.0 - smoothstep(0.6, 1.4, abs(t - 2.5))
+            );
+          }
 
           void main() {
             // Barrel distortion of the raster itself: the beam sweep bows
@@ -5777,7 +6832,12 @@ export default function WeepingCherryTreeCanvas({
             // Contain-fit: map the screen uv into the site-view sub-rect.
             // The display texture is rendered AT the glass ratio (the site
             // view extended upward), so it maps 1:1 — no cropping anywhere.
+            // Power-on: the raster opens vertically from a line at the
+            // centre, so the picture is squashed into the open band while
+            // it grows. (uPower is 1 on the flat path, so this is exact.)
+            float powerOpen = max(smoothstep(0.28, 0.82, uPower), 0.002);
             vec2 ruv = buv;
+            ruv.y = (buv.y - 0.5) / powerOpen + 0.5;
 
             // Rounded raster corners at the GLASS edge — radius and edge
             // softness both ride uFx, so at the path switch the raster is
@@ -5795,59 +6855,113 @@ export default function WeepingCherryTreeCanvas({
             float inRegion =
               1.0 - smoothstep(-soft, soft + 0.02 * uFx, cornerDist);
 
-            // Phosphor bleed: slight horizontal smear plus chromatic
-            // misconvergence of the triads.
-            float fringe = 0.0014 * uFx;
-            vec2 blur = vec2(0.0011 * uFx, 0.0);
-            vec3 col = vec3(
-              texture2D(uMap, ruv + vec2(fringe, 0.0)).r,
-              texture2D(uMap, ruv).g,
-              texture2D(uMap, ruv - vec2(fringe, 0.0)).b
-            );
-            col = mix(
-              col,
-              0.5 * (texture2D(uMap, ruv + blur).rgb +
-                     texture2D(uMap, ruv - blur).rgb),
-              0.45 * uFx
-            );
+            // Scanline footprint in raster units, from screen-space
+            // derivatives. The line profile is box-filtered over the
+            // device pixel (sinc factor below), so where lines shrink
+            // toward one device px the modulation fades out instead of
+            // beating against the pixel grid as moiré rings.
+            vec2 px = 1.0 / uRaster;
+            float lineFw = min(fwidth(ruv.y) * uRaster.y, 1.0);
+            float lineSinc = lineFw < 1e-3
+              ? 1.0
+              : sin(3.14159 * lineFw) / (3.14159 * lineFw);
 
-            // Bloom: bright content halates into its surroundings — a wide
-            // 4-tap spread instead of a mip bias (the target carries no
-            // mip chain any more).
-            vec3 haze = 0.25 * (
-              texture2D(uMap, ruv + vec2(0.012, 0.009)).rgb +
-              texture2D(uMap, ruv + vec2(-0.012, 0.009)).rgb +
-              texture2D(uMap, ruv + vec2(0.012, -0.009)).rgb +
-              texture2D(uMap, ruv + vec2(-0.012, -0.009)).rgb
-            );
-            col += haze * haze * (0.45 * uFx);
+            // Continuous sample: the flat page. EXPLICIT level 0 at the
+            // hand-off (pixel-identical to the flat render, no dependence
+            // on the hardware LOD estimate), easing toward the cell level
+            // with uFx so it pre-filters as the raster blends in.
+            float pageLod = max(uCellLod - 0.5, 0.0) * uFx;
+            vec3 page = texture2DLodEXT(uMap, ruv, pageLod).rgb;
 
-            // The mask stack below (grille, scanlines, vignette, rim)
-            // removes ~20% of average light as it ramps in; compensate so
-            // the tube's apparent brightness stays constant through the
-            // pull-back instead of suddenly dimming.
-            col *= 1.0 + 0.24 * uFx;
+            // Virtual raster: each cell is the display texture box-averaged
+            // over the cell (one tap at the cell-sized mip level, half a
+            // level down so the cell keeps a little edge), sampled at the
+            // cell CENTRE — the page is genuinely re-rasterised at the
+            // tube's resolution (edges step, fine detail drops) and the
+            // 4.1 px halftone dots are averaged out instead of point-
+            // sampled into crawling moiré.
+            // Misconvergence: the R and B guns miss the G spot by a growing
+            // amount toward the edges (0.3 -> ~1.8 virtual px).
+            vec2 cell = floor(ruv * uRaster);
+            vec2 quv = (cell + 0.5) * px;
+            float lod = uCellLod - 0.5;
+            float conv = (0.3 + 3.0 * r2) * px.x * uFx;
+            vec3 tR = texture2DLodEXT(uMap, quv + vec2(conv, 0.0), lod).rgb;
+            vec3 tG = texture2DLodEXT(uMap, quv, lod).rgb;
+            vec3 tB = texture2DLodEXT(uMap, quv - vec2(conv, 0.0), lod).rgb;
+            vec3 tube = vec3(tR.r, tG.g, tB.b);
+            tube = mix(tube, (tR + tG + tB) / 3.0, 0.35);
 
-            // Dark glass outside the raster: unpowered phosphor, grey-green.
-            vec3 glass = vec3(0.016, 0.02, 0.018);
+            // Blend the COLOURS of the flat and re-rasterised samples with
+            // uFx. (Blending the sample coordinate instead sheared every
+            // cell into a sawtooth for the whole ramp: each cell showed
+            // only its central 1-uFx fraction of the content.)
+            vec3 col = mix(page, tube, uFx);
+
+            // Halation: bright content glows into its surroundings through
+            // the glass. Two taps further up the mip chain on the
+            // CONTINUOUS uv (~3 and ~8 cells wide) — the chain's stacked
+            // boxes are a smooth wide blur, no discrete ring copies.
+            // Squared as a soft bright-pass, then SCREENED in (scaled by
+            // the headroom left) so it cannot push bright content past
+            // white on this untonemapped material — the old additive
+            // version clipped the whole pink wash to flat white.
+            vec3 hz1 = texture2DLodEXT(uMap, ruv, uCellLod + 1.5).rgb;
+            vec3 hz2 = texture2DLodEXT(uMap, ruv, uCellLod + 3.0).rgb;
+            vec3 haze = 0.5 * (hz1 * hz1 + hz2 * hz2);
+            col += haze * max(1.0 - col, 0.0) * (0.6 * uFx);
+
+            // The mask stack below is built to be mean-preserving
+            // (scanlines, flicker and noise are all zero-mean), but the
+            // phosphor mask adds ~9% and the rim/vignette take some back;
+            // this gain holds the tube's apparent brightness through the
+            // pull-back. Set by measurement: 12-frame glass means at the
+            // end pose within a few % of the pre-raster shader's.
+            col *= 1.0 + 0.22 * uFx;
+
+            // Dark glass outside the raster: unpowered phosphor, grey-green,
+            // a touch lighter than black so the dark tube reads as glass.
+            // The unpowered tube is dark glass; with the room dark too it
+            // is barely there, not a grey slab in a black room.
+            vec3 glass = vec3(0.05, 0.056, 0.053) * mix(0.06, 1.0, uRoomGlass);
             col = mix(glass, col, inRegion);
 
-            // Slot mask: RGB triads in device pixels with a half-period row
-            // stagger — softer and more tube-like than straight stripes.
+            // Phosphor mask: RGB triads in device pixels with a half-period
+            // row stagger — the finest pattern the canvas can show, fixed
+            // in screen space like a real tube's mask, at a constant
+            // strength so its mean contribution does not drift with the
+            // camera.
             float triad = mod(gl_FragCoord.x +
               3.0 * step(1.0, mod(gl_FragCoord.y / 3.0, 2.0)) * 0.5, 3.0);
-            vec3 mask = vec3(
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 0.5)),
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 1.5)),
-              1.0 - smoothstep(0.6, 1.4, abs(triad - 2.5))
-            );
-            col *= mix(vec3(1.0), mask * 1.6 + 0.55, 0.13 * uFx);
+            col *= mix(vec3(1.0), triadMask(triad) * 1.6 + 0.55, 0.14 * uFx);
 
-            // Scanlines whose depth ADAPTS to brightness: bright phosphor
-            // floods the gap between lines, dark areas keep crisp lines.
+            // Scanlines at the raster pitch: a raised cosine, bright on the
+            // line centre and dark in the gap, ZERO-MEAN so brightness
+            // holds whatever the depth, box-filtered over the device pixel
+            // (the sinc term is the exact average of the cosine across the
+            // footprint). Depth ADAPTS to brightness — bright phosphor
+            // floods the gap, dark UI keeps a visible but shallow texture.
             float luma = dot(col, vec3(0.299, 0.587, 0.114));
-            float scan = 0.5 + 0.5 * sin(buv.y * 640.0 * 3.14159);
-            col *= 1.0 - (0.14 * uFx) * scan * (1.0 - 0.6 * luma);
+            float beam = -lineSinc * cos(6.28318 * fract(ruv.y * uRaster.y));
+            col *= 1.0 + (0.3 * uFx) * (1.0 - 0.65 * luma) * beam;
+
+            // Life: gentle mains-ish flicker (two slow sines, ~4% total)
+            // and a touch of per-cell signal noise, refreshed per frame.
+            float t = mod(uTime, 3600.0);
+            col *= 1.0 + uFx * (0.025 * sin(t * 12.6) + 0.015 * sin(t * 29.0));
+            // Warm-up glow (uGlow): the phosphor runs ~25% hot with a slow
+            // breathing pulse, a faster unsteady flicker, and the odd brief
+            // sag, like a tube that has just been switched on.
+            {
+              float pulse = 0.5 + 0.5 * sin(t * 2.1) * sin(t * 0.7 + 1.3);
+              float unsteady = sin(t * 17.0) * sin(t * 41.0 + 2.0) * sin(t * 5.3);
+              float sag = smoothstep(0.92, 1.0, sin(t * 3.7) * sin(t * 1.9 + 0.4));
+              col *= 1.0 + uGlow * (0.06 + 0.06 * pulse + 0.07 * unsteady - 0.25 * sag);
+            }
+            float noise = hash21(cell + mod(floor(t * 60.0), 64.0) * 7.0)
+              - 0.5;
+            col *= 1.0 + (0.07 * uFx) * noise;
+            col += (0.012 * uFx) * noise * inRegion;
 
             // Slow refresh band rolling down the tube.
             float band = fract(buv.y * 0.5 + uTime * 0.045);
@@ -5862,7 +6976,7 @@ export default function WeepingCherryTreeCanvas({
 
             // Electron-beam falloff: hot centre, dim corners.
             col *= 1.0 + 0.07 * uFx * (1.0 - r2 * 4.0);
-            col *= 1.0 - 0.22 * uFx * smoothstep(0.2, 0.5, r2);
+            col *= 1.0 - 0.26 * uFx * smoothstep(0.2, 0.5, r2);
 
             // Curved-glass sheen: a view-dependent fresnel rim picking up
             // the room, strongest where the tube curves away from the eye.
@@ -5870,7 +6984,76 @@ export default function WeepingCherryTreeCanvas({
               1.0 - clamp(dot(normalize(vNormalW), normalize(vViewW)), 0.0, 1.0),
               3.0
             );
-            col += vec3(0.85, 0.88, 1.0) * fres * (0.22 * uFx);
+            col += vec3(0.85, 0.88, 1.0) * fres * (0.3 * uFx);
+
+            // Power-on, applied last so it gates the whole picture. Phase
+            // one (0..0.28): a dot at the centre stretches into a thin
+            // bright line across the glass. Phase two (0.28..0.82): the line
+            // opens vertically into the picture, overbright and unsteady,
+            // the open band edged with a hot rim. Phase three: the overshoot
+            // decays into the warm-up flicker. Outside the lit area the
+            // glass is dark, as an unpowered tube is.
+            if (uPower < 0.999) {
+              float pw = clamp(uPower, 0.0, 1.0);
+              vec2 pc = buv - 0.5;
+              float lineW = smoothstep(0.0, 0.26, pw);
+              float halfH = 0.5 * powerOpen;
+              float inX = 1.0 - smoothstep(0.5 * lineW, 0.5 * lineW + 0.01, abs(pc.x));
+              // The opening raster's edge softens as the band grows, and
+              // its light spills past the edge into the dark glass. With a
+              // hard 0.004 edge and no spill, the half-open picture was a
+              // razor-edged bright rectangle floating in the tube.
+              float edgeY = 0.004 + 0.1 * powerOpen;
+              float inY = 1.0 - smoothstep(halfH - edgeY, halfH + edgeY, abs(pc.y));
+              float rimFade = 1.0 - smoothstep(0.7, 0.95, pw);
+              float rim = exp(-abs(abs(pc.y) - halfH) * 70.0) * rimFade;
+              float spill = exp(-max(abs(pc.y) - halfH, 0.0) * 14.0) * rimFade;
+              float lineHeat = (1.0 - smoothstep(0.2, 0.4, pw)) * 0.6;
+              float overshoot = 1.0 + 0.45 * (1.0 - smoothstep(0.45, 0.95, pw));
+              float jitter = 1.0 + 0.18 * sin(t * 57.0) * sin(t * 13.0) * (1.0 - smoothstep(0.8, 1.0, pw));
+              vec3 hot = vec3(1.0, 0.78, 0.88);
+              vec3 picture = col * overshoot * jitter * inY * inX;
+              picture += hot * (rim * 0.3 + spill * 0.12) * inX;
+              picture += hot * lineHeat * inX * inY;
+              picture = max(picture, hot * lineHeat * inX * (1.0 - smoothstep(0.0, 0.006, abs(pc.y))));
+              col = mix(glass, picture, smoothstep(0.0, 0.04, pw));
+            }
+
+            // Glossy glass. The room's lights reflected in the curved front:
+            // the key as a tight hotspot with a softer sheen round it, the
+            // fill as a faint cooler one, weighted by Fresnel so the
+            // reflections strengthen toward the glass's edges. Present
+            // whether the tube is lit or dark — and what makes the dark tube
+            // read as a real, glossy monitor rather than a black rectangle.
+            {
+              vec3 nW = normalize(vNormalW);
+              vec3 vW = normalize(vViewW);
+              vec3 rW = reflect(-vW, nW);
+              float kd = max(dot(rW, uKeyDir), 0.0);
+              float fd = max(dot(rW, uFillDir), 0.0);
+              float keySpec = pow(kd, 120.0) * 0.8 + pow(kd, 10.0) * 0.1;
+              float fillSpec = pow(fd, 32.0) * 0.06;
+              float f = pow(1.0 - max(dot(nW, vW), 0.0), 4.0);
+              float fresnel = 0.6 + 0.4 * f;
+              // What the glass sees of the room, in its own uv: the key
+              // lamp as a soft bright patch reflected upper-right, the
+              // faintly lit floor in the lower half, darkness above. The
+              // dome's mirror direction rarely meets the camera exactly, so
+              // this is what actually makes the dark tube read as glass.
+              vec2 kp = (buv - vec2(0.8, 0.2)) * vec2(1.9, 2.6);
+              float lampRefl = exp(-dot(kp, kp) * 2.2);
+              float floorRefl = smoothstep(0.55, 0.05, buv.y) * (0.4 + 0.6 * buv.x);
+              vec3 roomRefl =
+                mix(vec3(1.0, 0.76, 0.85), vec3(1.0), uWhite) * lampRefl * 0.6 +
+                mix(vec3(0.52, 0.38, 0.5), vec3(0.48), uWhite) * floorRefl * 0.16;
+              // The picture itself washes reflections out; the dark tube
+              // shows them in full.
+              float showRefl = mix(1.0, 0.1, smoothstep(0.3, 1.0, uPower));
+              col += uFx * showRefl * fresnel * uRoomGlass * (
+                mix(vec3(1.0, 0.74, 0.83), vec3(1.0), uWhite) * keySpec +
+                mix(vec3(0.6, 0.56, 1.0), vec3(0.92, 0.94, 1.0), uWhite) * fillSpec +
+                roomRefl);
+            }
 
             gl_FragColor = vec4(col, 1.0);
           }
@@ -5883,6 +7066,57 @@ export default function WeepingCherryTreeCanvas({
       );
       crtScreenMesh.rotation.x = -CRT_MODEL.screen.pitch;
       crtRoot.add(crtScreenMesh);
+      // The tube's light in the air around it: an additive quad riding the
+      // screen, 1.5x its size, zero inside the glass rect and falling off
+      // softly outside it, drawn over everything (no depth test) so the
+      // bezel lip and the space just beyond the set pick up a soft pink
+      // halo. Intensity from updateCrtRig, breathing with the warm-up.
+      const crtHaloUniforms = {
+        uGlow: { value: 0 },
+        uColor: { value: new THREE.Color(0xff7fae) },
+        // Half-size of the glass rect in the quad's uv (quad is 1.5x).
+        uInner: { value: new THREE.Vector2(0.5 / 1.5, 0.5 / 1.5) },
+      };
+      const crtHalo = new THREE.Mesh(
+        new THREE.PlaneGeometry(crtScreenState.aspect * 1.5, 1.5),
+        new THREE.ShaderMaterial({
+          uniforms: crtHaloUniforms,
+          vertexShader: /* glsl */ `
+            varying vec2 vUv;
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: /* glsl */ `
+            uniform float uGlow;
+            uniform vec3 uColor;
+            uniform vec2 uInner;
+            varying vec2 vUv;
+            void main() {
+              // Signed distance (in quad uv) outside the glass rect, with
+              // rounded corners like the raster's.
+              vec2 q = abs(vUv - 0.5) - uInner + 0.02;
+              float d = length(max(q, 0.0)) - 0.02;
+              if (d <= 0.0) discard;
+              // Two falloffs: a tight bright rim right at the edge of the
+              // glass, and a wide dim spill that dies before the quad's edge.
+              float glow = 0.35 * exp(-d * 22.0) + 0.65 * exp(-d * 6.5);
+              glow *= 1.0 - smoothstep(0.26, 0.48, d);
+              gl_FragColor = vec4(uColor * glow * uGlow, 1.0);
+            }
+          `,
+          blending: THREE.AdditiveBlending,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      );
+      crtHalo.rotation.x = -CRT_MODEL.screen.pitch;
+      crtHalo.position.z = 0.05;
+      crtHalo.renderOrder = 20;
+      crtRoot.add(crtHalo);
 
       // Placeholder body so the rig is testable before the model loads; the
       // GLB replaces it. Deliberately crude — it should never ship.
@@ -5897,35 +7131,101 @@ export default function WeepingCherryTreeCanvas({
       }
       crtRoot.add(crtPlaceholder);
 
-      // Studio lighting per the reference: bright soft key from the upper
-      // right, cool fill, warm dome; plus a pink glow in front of the
-      // screen so the display visibly lights its own bezel.
-      // Product-photo setup for a DARK body: low neutral ambient so form
-      // shading survives, a strong warm key, a crisp cool rim from behind
-      // to cut the silhouette out of the light backdrop, minimal fill.
-      const crtHemi = new THREE.HemisphereLight(0xffffff, 0x22242c, 0.55);
-      crtScene.add(crtHemi);
-      const crtKey = new THREE.DirectionalLight(0xfff1de, 2.8);
-      crtKey.position.set(2.6, 3.2, 2.4);
+      // Cinematic lighting for a dark room: the screen is the main source,
+      // so the key is pink and comes from the front (high right, so the
+      // baked shadow still falls down-left and grounds the set), a
+      // cool-violet rim from behind cuts the dark body out of the black
+      // backdrop, and a plum practical low on the left keeps the bezel,
+      // buttons and badge readable instead of crushing to black. Dim
+      // violet hemisphere only — form shading must survive.
+      // One-sided. A single motivated source: a strong warm-pink key from
+      // the upper right and in front, raking across the face so the right
+      // cheek and the right of the bezel take the light and the left side
+      // falls away into the shadow it throws toward the back-left (the
+      // ~10 o'clock floor shadow). Everything else is kept far below the
+      // key so the dark side stays dark: no ambient to speak of, a fill
+      // you only notice when it is gone, and a thin rim to cut the dark
+      // edge out of the black.
+      // Why the set looked evenly self-lit: the key was a directional
+      // light (the same irradiance on every lit face, no falloff across
+      // the body), the model cast shadows but did not RECEIVE them (no
+      // self-shadowing in the bezel recess or under the lip), and the
+      // environment map, hemisphere, fill, practical and the screen-spill
+      // point light together lit every face from every side. Now one
+      // motivated source does the work: a spot from the upper right-front
+      // with a soft edge, real falloff across the body, and a shadow the
+      // body casts on itself; the rest is either gone or kept far below
+      // it. (A GTAO pass was tried for contact shading and dropped: it
+      // re-renders the scene with a flat depth override, so the glass —
+      // displaced onto the dome in its own vertex shader — lands inside
+      // the model's tube in the AO depth and reads as fully occluded.)
+      // Raking: well round to the right and only a little in front, so
+      // the front face grades from lit at its right edge to dark at its
+      // left instead of taking the light flat-on, and the bezel relief,
+      // the deck's buttons and the lip all throw shadows across it.
+      // The split is the cone: a tight spot (12.6 degrees, wide penumbra)
+      // aimed at the right half of the set, so the light dies across the
+      // middle of the front and the left half simply is not lit.
+      // Nominal intensities; updateCrtRig scales them by sceneFx.roomLight,
+      // the incandescent switch-on curve (0 -> flare -> settle at 1).
+      // The key sits low enough that the set's own printed labels, lit,
+      // stay below white: the lamp picks the set out of an even base light
+      // (crtBase) rather than carrying it alone.
+      // The room is dark: the set is barely there, picked out of an even,
+      // faint base light (crtBase) by a lamp that is little more than a
+      // suggestion, and the tube is the only real light in the shot.
+      const CRT_KEY_INTENSITY = 140;
+      const CRT_FILL_INTENSITY = 6;
+      const CRT_KICKER_INTENSITY = 12;
+      const crtKey = new THREE.SpotLight(0xffb0c9, CRT_KEY_INTENSITY, 18, 0.26, 0.55, 2);
+      crtKey.position.set(5.6, 2.9, 1.3);
+      crtKey.target.position.set(1.05, 0.1, 0.3);
+      crtScene.add(crtKey.target);
       crtKey.castShadow = true;
       crtKey.shadow.mapSize.set(2048, 2048);
-      crtKey.shadow.camera.near = 0.1;
-      crtKey.shadow.camera.far = 20;
-      crtKey.shadow.camera.left = -4;
-      crtKey.shadow.camera.right = 4;
-      crtKey.shadow.camera.top = 4;
-      crtKey.shadow.camera.bottom = -4;
-      crtKey.shadow.bias = -0.0005;
+      crtKey.shadow.camera.near = 1;
+      crtKey.shadow.camera.far = 16;
+      crtKey.shadow.camera.fov = 70;
+      // Bias pair for self-shadowing on a textured, normal-mapped body:
+      // the normal bias pushes the lookup off the surface along the
+      // normal, which kills acne without the detached-shadow look a large
+      // constant bias gives.
+      crtKey.shadow.bias = -0.00015;
+      crtKey.shadow.normalBias = 0.015;
+      crtKey.shadow.radius = 3;
       crtScene.add(crtKey);
-      const crtFill = new THREE.DirectionalLight(0xbfc4ff, 0.25);
-      crtFill.position.set(-2.4, 0.8, 1.6);
+      // Fill: a wide, fully soft, cool lavender source from the left and
+      // in front, about a twentieth of the key. It never competes — it is
+      // there so the dark half of the set and the floor read as surfaces
+      // in a room rather than holes, and so the key's shadow has
+      // something to fall on. No shadow of its own.
+      const crtFill = new THREE.SpotLight(0x7c78ff, CRT_FILL_INTENSITY, 22, 0.95, 1.0, 2);
+      crtFill.position.set(-5.5, 3.6, 4.8);
+      crtFill.target.position.set(0, -0.6, 0);
+      crtScene.add(crtFill.target);
       crtScene.add(crtFill);
-      const crtRim = new THREE.DirectionalLight(0xeef4ff, 1.5);
-      crtRim.position.set(-1.6, 3.4, -2.6);
-      crtScene.add(crtRim);
-      // Screen spill only — at higher intensities this pink point light
-      // repainted the whole beige machine rose.
-      const crtGlow = new THREE.PointLight(0xff7fae, 0, 4, 2);
+      // Kicker: from the left, a little ahead of the set's face rather
+      // than behind it, in a pink a step off the key's, low — so the dark
+      // side gets a soft pink edge and a hint of its form, not a second
+      // key.
+      const crtKicker = new THREE.SpotLight(0xf26bd6, CRT_KICKER_INTENSITY, 16, 0.5, 0.7, 2);
+      crtKicker.position.set(-4.4, 3.2, 0.9);
+      crtKicker.target.position.set(0.2, 0.3, 0);
+      crtScene.add(crtKicker.target);
+      crtScene.add(crtKicker);
+      // Base: a faint, even, cool light over the whole set, scaled with the
+      // lamp (updateCrtRig), so the half the key does not reach still reads
+      // as a dark television rather than a hole with a screen in it.
+      const CRT_BASE_INTENSITY = 7;
+      // Fraction of the base light left on with the lamp off.
+      const CRT_BASE_DARK = 0.85;
+      const crtBase = new THREE.AmbientLight(0xa39db8, 0);
+      crtScene.add(crtBase);
+      // Screen spill: the display lighting its own bezel. Ramps with the
+      // scene (see updateCrtRig) so it is off while the flat hero shows.
+      // Tight (distance 1.8): it should catch the bezel lip around the
+      // glass, not wash the whole front.
+      const crtGlow = new THREE.PointLight(0xff7fae, 0, 3.2, 2);
       crtGlow.position.set(0, 0, 1.1);
       crtScene.add(crtGlow);
 
@@ -6032,6 +7332,8 @@ export default function WeepingCherryTreeCanvas({
       };
       const updateCrtRig = (elapsed: number) => {
         const p = clamp01(sceneFx.crtProgress);
+        const out = p > 0 ? 0 : clamp01(sceneFx.crtOut);
+        const amount = Math.max(p, out);
         crtCamera.aspect = drawingBufferSize.x / Math.max(1, drawingBufferSize.y);
 
         crtScreenMesh.updateMatrixWorld(true);
@@ -6061,7 +7363,7 @@ export default function WeepingCherryTreeCanvas({
         // the pull-back proceeds. The apex depth is constant by
         // construction (uApexH), so the p=0 framing never shifts, and the
         // model's own dome can never poke through mid-transition.
-        crtScreenUniforms.uBulgeT.value = smoothstep(0.04, 0.45, p);
+        crtScreenUniforms.uBulgeT.value = smoothstep(0.04, 0.45, amount);
         const planeProud = crtScreenUniforms.uApexH.value;
         const d0 = crtExt.bandH / 2 / CRT_FOV_TAN + planeProud;
         const endFrameH = crtScreenState.monitorHeight / CRT_END_FILL;
@@ -6070,7 +7372,29 @@ export default function WeepingCherryTreeCanvas({
         // FACTOR, and a linear lerp across a 10x range spends 1.5x of zoom
         // in the first 6% of scroll then crawls. Constant zoom rate reads
         // as a steady camera pull.
-        const d = d0 * Math.pow(d1 / d0, p);
+        let d = d0 * Math.pow(d1 / d0, p);
+        let fov = 30;
+        if (out > 0) {
+          // The straight road. What is interpolated (geometrically, for
+          // the same constant-zoom reason) is the HEIGHT OF WORLD the frame
+          // shows at the glass, from the viewport band to the machine at
+          // CRT_OUT_FILL; the lens opens alongside, and the distance is
+          // whatever that height needs through that lens. At out = 0 this
+          // is d0 through 30 degrees exactly, the flat page.
+          const frameFrom = crtExt.bandH;
+          const frameTo = Math.max(
+            crtScreenState.monitorHeight / CRT_OUT_FILL,
+            (crtScreenState.monitorHeight * CRT_MACHINE_ASPECT) /
+              CRT_OUT_FILL_WIDE /
+              Math.max(crtCamera.aspect, 0.1),
+          );
+          const frameH = frameFrom * Math.pow(frameTo / frameFrom, out);
+          fov = 30 + (CRT_OUT_FOV - 30) * smoothstep(0, 1, out);
+          d =
+            frameH / 2 / Math.tan((fov * Math.PI) / 180 / 2) +
+            planeProud * (1 - out);
+        }
+        if (Math.abs(crtCamera.fov - fov) > 0.001) crtCamera.fov = fov;
 
         // Target: a DIRECT interpolation between the two poses — the
         // viewport band's centre at p=0 and the machine's centre at p=1.
@@ -6081,7 +7405,7 @@ export default function WeepingCherryTreeCanvas({
         // mid-scroll, which is what made the centre jump around.)
         const bandCenterY = -0.5 + crtExt.bandH / 2;
         const targetY =
-          bandCenterY + (crtScreenState.monitorCenterY - bandCenterY) * p;
+          bandCenterY + (crtScreenState.monitorCenterY - bandCenterY) * amount;
         crtTarget.set(0, targetY, 0);
 
         crtCamera.position.set(
@@ -6161,15 +7485,103 @@ export default function WeepingCherryTreeCanvas({
           }
         }
 
-        const fx = smoothstep(0.08, 0.55, p);
+        const fx = smoothstep(0.08, 0.55, amount);
         crtScreenUniforms.uFx.value = fx;
         crtScreenUniforms.uTime.value = elapsed;
-        crtGlow.intensity = 9 * fx;
+        crtScreenUniforms.uGlow.value = clamp01(sceneFx.screenGlow);
+        crtScreenUniforms.uPower.value = clamp01(sceneFx.screenPower);
+        // The room's lamp: one curve scales every practical in the room,
+        // and what the glass reflects of them.
+        const roomLight = Math.max(0, sceneFx.roomLight);
+        // The room's colour. Pink for the loading shot (Kevin: keep the
+        // intro pink), white once the scroll backs the camera out: every
+        // light, the spill, the halo, what the glass reflects and what the
+        // tube throws on the wall are blended between the two on `out`.
+        // The environment map stays the pink one; it is faded down as the
+        // whites come up so it does not tint them.
+        const white = smoothstep(0.05, 0.6, out);
+        crtKey.color.lerpColors(CRT_ROOM_PINK.key, CRT_ROOM_WHITE, white);
+        crtFill.color.lerpColors(CRT_ROOM_PINK.fill, CRT_ROOM_WHITE_FILL, white);
+        crtKicker.color.lerpColors(CRT_ROOM_PINK.kicker, CRT_ROOM_WHITE, white);
+        crtBase.color.lerpColors(CRT_ROOM_PINK.base, CRT_ROOM_WHITE_BASE, white);
+        crtGlow.color.lerpColors(CRT_ROOM_PINK.glow, CRT_ROOM_WHITE_GLOW, white);
+        crtHaloUniforms.uColor.value.lerpColors(CRT_ROOM_PINK.glow, CRT_ROOM_WHITE_GLOW, white);
+        crtScreenUniforms.uWhite.value = white;
+        crtBgUniforms.uWhite.value = white;
+        if (crtWall) {
+          // 3 is the page aurora's own playback rate (VOID_BACKDROP_SPEED,
+          // declared with it further down).
+          crtWall.uniforms.uTime.value = elapsed * 3 * CRT_WALL_SPEED;
+          crtWall.uniforms.uLevel.value = CRT_WALL_LEVEL * smoothstep(0.03, 0.6, out);
+          crtWall.aspect.value = crtCamera.aspect;
+        }
+        crtScene.environmentIntensity = CRT_ENV_INTENSITY * (1 - 0.7 * white);
+        crtKey.intensity = CRT_KEY_INTENSITY * roomLight;
+        crtFill.intensity = CRT_FILL_INTENSITY * roomLight;
+        crtKicker.intensity = CRT_KICKER_INTENSITY * roomLight;
+        // The base light is mostly the lamp's; a trace of it stays on so
+        // the set is just there in the dark before the lamp comes on.
+        crtBase.intensity = CRT_BASE_INTENSITY * Math.max(roomLight, CRT_BASE_DARK);
+        crtScreenUniforms.uRoomGlass.value = roomLight;
+        crtScreenUniforms.uKeyDir.value.copy(crtKey.position).normalize();
+        crtScreenUniforms.uFillDir.value.copy(crtFill.position).normalize();
+        // Virtual raster (see crtRasterLines) and the mip level whose
+        // texel is one raster cell: the display texture spans the glass
+        // height with crtExt.extH texels.
+        const lines = crtRasterLines();
+        crtScreenUniforms.uRaster.value.set(
+          lines * crtScreenState.aspect,
+          lines,
+        );
+        crtScreenUniforms.uCellLod.value = Math.log2(crtExt.extH / lines);
+        // Spill from the tube: the point light on the bezel and the
+        // painted light on the wall and floor, both breathing with the
+        // warm-up pulse while the television shot holds.
+        const glow = clamp01(sceneFx.screenGlow);
+        const glowPulse =
+          1 + glow * (0.25 + 0.2 * Math.sin(elapsed * 2.1) * Math.sin(elapsed * 0.7 + 1.3));
+        // Everything the tube throws into the room follows its power.
+        const power = smoothstep(0.05, 0.85, clamp01(sceneFx.screenPower));
+        crtGlow.intensity = 2.4 * fx * glowPulse * power;
+        crtHaloUniforms.uGlow.value = fx * (0.07 + 0.05 * glow) * glowPulse * power;
+        crtBgUniforms.uScreenLight.value = fx * (0.26 + 0.12 * glow) * glowPulse;
       };
 
-      // Model load: async, never blocks scene-ready.
+      // Model load: async, never blocks scene-ready. The page loads AS the
+      // television shot, so "the television is ready" means the GLB AND
+      // its four textures are decoded (one LoadingManager queue — the
+      // textures are queued inside the GLB callback, so the manager's
+      // onLoad fires once, after the last of them) AND the loading loop
+      // below has drawn at least one frame of it.
+      let crtAssetsReady = false;
+      let loadingFramesDrawn = 0;
+      let reportedCrtReady = false;
+      const maybeReportCrtReady = () => {
+        if (reportedCrtReady || disposed) return;
+        if (!crtAssetsReady || loadingFramesDrawn === 0) return;
+        reportedCrtReady = true;
+        onCrtReadyRef.current?.();
+      };
       {
-        const loader = new GLTFLoader();
+        const manager = new THREE.LoadingManager();
+        // Progress for the veil's bar: the GLB's own bytes (the bulk of
+        // the download) carry 60%, the four textures 10% each as they
+        // decode. Only the television's assets — the tree is built behind
+        // the television and never shown loading.
+        let glbFraction = 0;
+        let texturesDone = 0;
+        const reportCrtProgress = () => {
+          if (disposed) return;
+          onCrtProgressRef.current?.({
+            loaded: Math.round((0.6 * glbFraction + 0.1 * texturesDone) * 100),
+            total: 100,
+          });
+        };
+        manager.onLoad = () => {
+          crtAssetsReady = true;
+          maybeReportCrtReady();
+        };
+        const loader = new GLTFLoader(manager);
         loader.load(
           CRT_MODEL.url,
           (gltf) => {
@@ -6194,10 +7606,72 @@ export default function WeepingCherryTreeCanvas({
             // The FBX referenced texture files that were not embedded; bind
             // the download's 2K PBR set explicitly. flipY=false is the glTF
             // texture convention GLTFLoader geometry expects.
-            const texLoader = new THREE.TextureLoader();
+            const texLoader = new THREE.TextureLoader(manager);
             const maxAniso = renderer.capabilities.getMaxAnisotropy();
-            const loadTex = (url: string, srgb: boolean) => {
-              const t = texLoader.load(url);
+            // The set's printed labels (channel numerals, the badges) are
+            // pure white in the basecolor: lit, they clip and bloom like
+            // little lamps. Fold the brightest texels down toward mid-grey
+            // so print stays print; everything below the knee is untouched.
+            const softenLabels = (texture: THREE.Texture) => {
+              const image = texture.image as HTMLImageElement | undefined;
+              if (!image || !image.width) return;
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) return;
+              ctx.drawImage(image, 0, 0);
+              const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const data = pixels.data;
+              // The body's own texels sit at 30-60; the print and the
+              // lighter trim from about 90 up, the stickers to 255.
+              const knee = 64;
+              const slope = 0.3;
+              for (let i = 0; i < data.length; i += 4) {
+                const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+                if (lum <= knee) continue;
+                const scale = (knee + (lum - knee) * slope) / lum;
+                data[i] *= scale;
+                data[i + 1] *= scale;
+                data[i + 2] *= scale;
+              }
+              ctx.putImageData(pixels, 0, 0);
+              texture.image = canvas;
+              texture.needsUpdate = true;
+            };
+            // The roughness map is 0 (mirror) over the deck, so every
+            // numeral's face throws a hard white highlight of the lamp.
+            // A floor keeps the plastic's sheen but spreads those out.
+            const ROUGHNESS_FLOOR = 110;
+            const floorRoughness = (texture: THREE.Texture) => {
+              const image = texture.image as HTMLImageElement | undefined;
+              if (!image || !image.width) return;
+              const canvas = document.createElement("canvas");
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) return;
+              ctx.drawImage(image, 0, 0);
+              const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const data = pixels.data;
+              // Roughness is the green channel (glTF packing); the file is
+              // greyscale, so lift all three.
+              for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 1] < ROUGHNESS_FLOOR) {
+                  data[i] = data[i + 1] = data[i + 2] = ROUGHNESS_FLOOR;
+                }
+              }
+              ctx.putImageData(pixels, 0, 0);
+              texture.image = canvas;
+              texture.needsUpdate = true;
+            };
+            const loadTex = (url: string, srgb: boolean, kind: "map" | "roughness" | "other" = "other") => {
+              const t = texLoader.load(url, (texture) => {
+                if (kind === "map") softenLabels(texture);
+                if (kind === "roughness") floorRoughness(texture);
+                texturesDone += 1;
+                reportCrtProgress();
+              });
               t.flipY = false;
               // Oblique sampling is most of what separates "photo of a TV"
               // from "texture on a box" at these grazing camera angles.
@@ -6206,11 +7680,11 @@ export default function WeepingCherryTreeCanvas({
               return t;
             };
             const tvMaterial = new THREE.MeshStandardMaterial({
-              map: loadTex(CRT_MODEL.textures.map, true),
+              map: loadTex(CRT_MODEL.textures.map, true, "map"),
               normalMap: loadTex(CRT_MODEL.textures.normalMap, false),
               metalnessMap: loadTex(CRT_MODEL.textures.metalnessMap, false),
-              roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false),
-              envMapIntensity: 1.35,
+              roughnessMap: loadTex(CRT_MODEL.textures.roughnessMap, false, "roughness"),
+              envMapIntensity: 0.25,
             });
             model.traverse((obj) => {
               if (!(obj as THREE.Mesh).isMesh) return;
@@ -6219,6 +7693,9 @@ export default function WeepingCherryTreeCanvas({
               mesh.material = tvMaterial;
               prev?.dispose();
               mesh.castShadow = true;
+              // Self-shadowing: the bezel recess, the lip over the glass
+              // and the deck under the front all shade themselves.
+              mesh.receiveShadow = true;
             });
 
             const sc = CRT_MODEL.screen;
@@ -6286,8 +7763,8 @@ export default function WeepingCherryTreeCanvas({
               // Normals from the baked height field via central differences
               // on the grid (49 x 37 vertices).
               const nAttr = geo.attributes.aNormal as THREE.BufferAttribute;
-              const cols = 49;
-              const rows = 37;
+              const cols = geo.parameters.widthSegments + 1;
+              const rows = geo.parameters.heightSegments + 1;
               const cellW = crtScreenState.aspect / (cols - 1);
               const cellH = 1 / (rows - 1);
               for (let r = 0; r < rows; r += 1) {
@@ -6313,11 +7790,21 @@ export default function WeepingCherryTreeCanvas({
             const worldBox = new THREE.Box3().setFromObject(crtRoot);
             crtGround.position.y = worldBox.min.y + 0.001;
             renderer.shadowMap.needsUpdate = true;
+            glbFraction = 1;
+            reportCrtProgress();
             updateCrtRegion();
           },
-          undefined,
+          (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              glbFraction = Math.min(1, event.loaded / event.total);
+              reportCrtProgress();
+            }
+          },
           () => {
-            // Keep the placeholder on failure; the scene still works.
+            // Keep the placeholder on failure; the scene still works, and
+            // the page must not wait forever for a model that never comes.
+            crtAssetsReady = true;
+            maybeReportCrtReady();
           },
         );
       }
@@ -6327,7 +7814,7 @@ export default function WeepingCherryTreeCanvas({
       const renderComposite = (elapsed: number) => {
         renderer.setRenderTarget(sceneTarget);
         renderer.render(scene, camera);
-        if (sceneFx.crtProgress <= 0.001) {
+        if (crtAmount() <= 0.001) {
           // Hero path: samples only the viewport band of the extended scene
           // texture — pixel-identical to a plain viewport render.
           applyDomTransform(HOMOGRAPHY_IDENTITY);
@@ -6360,9 +7847,27 @@ export default function WeepingCherryTreeCanvas({
         );
         renderer.setRenderTarget(displayTarget);
         renderer.render(halftoneScene, halftoneCamera);
+        // The name onto the glass, over the display. autoClear would wipe
+        // the site view first; off just for this blend. A slight mains-hum
+        // flicker on the alpha, a few percent, sells the tube without
+        // reading as a glitch.
+        {
+          const hum =
+            0.965 +
+            0.025 * Math.sin(elapsed * 37.0) +
+            0.01 * Math.sin(elapsed * 7.3);
+          const hadAutoClear = renderer.autoClear;
+          renderer.autoClear = false;
+          if (sceneFx.glassName > 0.001) {
+            glassName.updateRect();
+            glassName.uniforms.uOpacity.value = clamp01(sceneFx.glassName) * hum;
+            renderer.render(glassName.scene, halftoneCamera);
+          }
+          renderer.autoClear = hadAutoClear;
+        }
         renderer.setRenderTarget(null);
         updateCrtRig(elapsed);
-        renderer.render(crtScene, crtCamera);
+        renderCrtPost(elapsed);
       };
 
       await reportSceneBuildProgress();
@@ -6447,6 +7952,8 @@ export default function WeepingCherryTreeCanvas({
         uTime: { value: 0 },
         uPointer: { value: new THREE.Vector2(0, 0.1) },
         uPointerForce: { value: 0 },
+        uLevel: { value: 1 },
+        uIridescence: { value: 0 },
         uBase: { value: new THREE.Color(0x0a0a0a) },
         // Curtain ramp: deep rose-maroon -> saturated pink -> warm light
         // pink, the reference's maroon/red/orange ramp shifted to pink.
@@ -6460,7 +7967,63 @@ export default function WeepingCherryTreeCanvas({
         // a 1.14 gain into something else entirely.
         uWarmTint: { value: new THREE.Vector3(1.14, 0.93, 0.86) },
         uCoolTint: { value: new THREE.Vector3(0.8, 0.85, 1.2) },
+        uScene: { value: null as THREE.Texture | null },
+        uSceneMix: { value: 0 },
+        uSceneFit: { value: new THREE.Vector2(1, 1) },
+        // Its canvas is sRGB and already tone mapped, and the halftone pass
+        // tone maps once more on the way out. 0.45 cancels the two almost
+        // exactly (it is 0.6/1.15, the exposure the second ACES pass
+        // applies), but exact is not what this wants: the valley is a dusk
+        // scene seen through a dot matrix behind a tree, and at parity its
+        // lower half — which is most of the ranges — went to black. Lifted.
+        uSceneGain: { value: 0.78 },
+        uFrame: { value: new THREE.Vector2(1.774, 1.6129) },
       };
+      // A 1x1 black stands in until a page hands a canvas over, so the
+      // sampler is never left unbound (some drivers draw undefined then).
+      const blankScene = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+      blankScene.needsUpdate = true;
+      voidBackdropUniforms.uScene.value = blankScene;
+      let sceneTexture: THREE.CanvasTexture | null = null;
+      let sceneTextureFor: HTMLCanvasElement | null = null;
+      /**
+       * Hands the backdrop whatever off-screen scene the page has set on
+       * sceneFx, and works out the slice of this billboard the camera can
+       * see so the picture is mapped onto exactly that.
+       */
+      const updateBackdropFrame = () => {
+        const wanted = sceneFx.backdropScene;
+        const mix = clamp01(sceneFx.backdropSceneMix);
+        if (wanted !== sceneTextureFor) {
+          sceneTexture?.dispose();
+          sceneTexture = null;
+          sceneTextureFor = wanted;
+          if (wanted) {
+            sceneTexture = new THREE.CanvasTexture(wanted);
+            sceneTexture.colorSpace = THREE.NoColorSpace;
+            sceneTexture.minFilter = THREE.LinearFilter;
+            sceneTexture.magFilter = THREE.LinearFilter;
+            sceneTexture.generateMipmaps = false;
+            sceneTexture.wrapS = THREE.ClampToEdgeWrapping;
+            sceneTexture.wrapT = THREE.ClampToEdgeWrapping;
+          }
+        }
+        const on = mix > 0.001 && sceneTexture != null && (wanted?.width ?? 0) > 1;
+        voidBackdropUniforms.uSceneMix.value = on ? mix : 0;
+        if (!on) return;
+        voidBackdropUniforms.uScene.value = sceneTexture;
+        sceneTexture!.needsUpdate = true;
+        // What the camera sees of the plane at its fixed distance, in the
+        // plane's own units. The backdrop is a billboard on the view axis,
+        // so the visible rectangle is centred on it.
+        const visibleH =
+          2 * VOID_BACKDROP_DISTANCE * Math.tan((camera.fov * Math.PI) / 360);
+        voidBackdropUniforms.uSceneFit.value.set(
+          110 / Math.max(1e-3, visibleH * camera.aspect),
+          100 / Math.max(1e-3, visibleH),
+        );
+      };
+
       const createVoidBackdrop = () => {
         const backdrop = new THREE.Mesh(
           // 100 tall (was 62): the upward-extended render's top ray
@@ -6485,18 +8048,75 @@ export default function WeepingCherryTreeCanvas({
       };
       // Added to the scene (not worldGroup) so the backdrop never inherits
       // any world transform.
-      scene.add(createVoidBackdrop());
+      const voidBackdrop = createVoidBackdrop();
+      scene.add(voidBackdrop);
+      // The backdrop rides with the camera: a fixed distance straight down
+      // the view axis, facing it. As a world-fixed plane the intro orbit's
+      // side-on start looked past the pink curtains to the plane's dark
+      // left half (a "gap" on the tube that filled as the camera swung
+      // round); as a billboard the gradient frames the same way from every
+      // camera pose, and the extended (taller) render is covered too.
+      const VOID_BACKDROP_DISTANCE = 41.6; // FINAL camera z 15.6 -> plane z -26
+      // Playback rate of the backdrop's curtain motion (3x the original).
+      const VOID_BACKDROP_SPEED = 3;
+      const backdropForward = new THREE.Vector3();
+      const backdropHit = new THREE.Vector3();
+      const placeVoidBackdrop = () => {
+        camera.getWorldDirection(backdropForward);
+        voidBackdrop.position
+          .copy(camera.position)
+          .addScaledVector(backdropForward, VOID_BACKDROP_DISTANCE);
+        voidBackdrop.quaternion.copy(camera.quaternion);
+      };
+
+      // Loading loop. From here on the television can be drawn — the CRT
+      // stage, the glass, the post pass and the void backdrop all exist —
+      // while the tree is still being built. The build is chunked (see
+      // generate()), and each chunk boundary yields a frame, so this loop
+      // gets one frame per phase: the bar on the glass moves with the
+      // build exactly as the DOM bar does. The main loop replaces it.
+      let loadingRaf = 0;
+      let loadingLoopActive = true;
+      const loadingClock = new THREE.Clock();
+      const loadingLoop = () => {
+        if (disposed || !loadingLoopActive) return;
+        loadingRaf = requestAnimationFrame(loadingLoop);
+        const elapsed = loadingClock.getElapsedTime();
+        voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
+        voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
+        updateBackdropFrame();
+        camera.position.copy(INTRO_CAMERA_POSITION);
+        camera.lookAt(HERO_CAMERA_TARGET);
+        placeVoidBackdrop();
+        renderComposite(elapsed);
+        loadingFramesDrawn += 1;
+        maybeReportCrtReady();
+      };
+      loadingLoop();
+      const stopLoadingLoop = () => {
+        loadingLoopActive = false;
+        cancelAnimationFrame(loadingRaf);
+      };
       await reportSceneBuildProgress();
 
       const generator = new WeepingCherryGenerator({
-        seed: 20260705,
+        seed: INTRO_TREE_SEED,
         quality: sceneQuality,
         showDebugLobes: false,
       });
-      const tree = generator.generate();
+      const tree = await generator.generate(reportSceneBuildProgress);
       await reportSceneBuildProgress();
 
       worldGroup.add(tree.group);
+      // Petal brush: pointer position and velocity carried into the tree
+      // group's local space (the petal sim lives there).
+      const petalPointerPos = new THREE.Vector3();
+      const petalPointerVel = new THREE.Vector3();
+      const petalGroupInverse = new THREE.Matrix4();
+      const petalGroupInverse3 = new THREE.Matrix3();
+      // World-space reach of the brush; the group is scaled ~0.7, so this
+      // is divided by the scale on the way in.
+      const PETAL_BRUSH_RADIUS = 2.6;
       await reportSceneBuildProgress();
 
       const finePointerQuery = window.matchMedia("(pointer: fine)");
@@ -6632,13 +8252,73 @@ export default function WeepingCherryTreeCanvas({
       let frame = 0;
       let reportedReady = false;
       let reportedIntroComplete = false;
-      const introDuration = 2.7;
+      // The reveal is two seconds, automatic: the orbit from the side and
+      // the blossom bloom run over the same window as the page's push-in.
+      const introDuration = 2.0;
       let introElapsed = prefersReducedMotion ? introDuration : 0;
       let introComplete = prefersReducedMotion;
       let lastRenderedAt = 0;
       const idleFrameInterval = 1000 / 30;
       const activeFrameWindow = 260;
 
+      // Scroll-driven orbit (sceneFx.orbit, radians about the hero target's
+      // vertical axis; positive is counter-clockwise seen from above, the
+      // opposite sense to the intro's sweep in from the side).
+      const applyScrollOrbit = () => {
+        if (sceneFx.orbit === 0) return;
+        camera.position
+          .sub(HERO_CAMERA_TARGET)
+          .applyAxisAngle(UP, sceneFx.orbit)
+          .add(HERO_CAMERA_TARGET);
+      };
+      // Scroll-driven pull-back (sceneFx.dolly): the camera slides straight
+      // away from the hero target down its own view axis. The reference
+      // shrinks its hero into a framed picture and dollies the camera inside
+      // that picture at the same time; without this half the page just gets
+      // a smaller copy of the same frame, which is a window closing rather
+      // than a view opening.
+      // The scroll dollies the camera FORWARD, down its own view axis toward
+      // the hero target, and opens the lens as it goes. It used to back away
+      // on a long lens, which shrank the tree neatly but flattened
+      // everything: a pull-back on a narrow field is the one camera move
+      // that REMOVES parallax. Going the other way is what puts it back —
+      // the nearer a thing is the faster it sweeps out of frame, so the
+      // hillsides at the edges pass you and the ranges behind them barely
+      // move, and the shot reads as going somewhere.
+      //
+      // 13 units, from a standing distance of about 17: the camera goes INTO
+      // the canopy and out the far side of it. The tree is at the hero
+      // target, so this is the move that takes you past it — the branches
+      // sweep out of frame while the valley behind opens up, and the picture
+      // is fading over the same stretch, so what you are left looking at is
+      // the country rather than a close-up of bark.
+      const DOLLY_IN = 13;
+      const DOLLY_FOV = 52;
+      /**
+       * And UP, by this much, over the same travel. Straight down the view
+       * axis the camera arrives at the hero target, which is the trunk — you
+       * fly into the wood. Lifted, the same path passes through the canopy
+       * instead, which is where the blossom is. The look-at is raised with it
+       * so the shot stays level rather than tipping to keep the trunk in
+       * frame; that is what makes it read as going through rather than as
+       * craning over.
+       */
+      const DOLLY_RISE = 4.2;
+      const dollyAxis = new THREE.Vector3();
+      const applyScrollDolly = (aim: THREE.Vector3) => {
+        const amount = sceneFx.dolly;
+        if (amount <= 0) return;
+        dollyAxis.copy(camera.position).sub(HERO_CAMERA_TARGET);
+        const distance = dollyAxis.length();
+        if (distance < 1e-4) return;
+        const moved = Math.max(2.5, distance - DOLLY_IN * amount);
+        camera.position
+          .copy(HERO_CAMERA_TARGET)
+          .addScaledVector(dollyAxis, moved / distance);
+        camera.position.y += DOLLY_RISE * amount;
+        aim.y += DOLLY_RISE * amount * 0.72;
+        setCameraFov(HERO_CAMERA_FOV + (DOLLY_FOV - HERO_CAMERA_FOV) * amount);
+      };
       const setCameraFov = (fov: number) => {
         if (Math.abs(camera.fov - fov) < 0.01) return;
         camera.fov = fov;
@@ -6663,6 +8343,8 @@ export default function WeepingCherryTreeCanvas({
         // Keep the halftone target and its uniforms in step with the
         // drawing buffer (setSize x pixel ratio).
         renderer.getDrawingBufferSize(drawingBufferSize);
+        crtBgResolution.value.set(drawingBufferSize.x, drawingBufferSize.y);
+        resizeCrtPost();
         updateCrtRegion();
         halftoneUniforms.uResolution.value.set(
           drawingBufferSize.x,
@@ -6670,13 +8352,79 @@ export default function WeepingCherryTreeCanvas({
         );
         halftoneUniforms.uCellSize.value =
           halftoneCellCssPx * getRenderPixelRatio();
+        // setSize cleared the drawing buffer. While the loop is parked
+        // nothing would refill it, so the stage would come back on screen
+        // showing an empty canvas for the frame or two it takes the
+        // IntersectionObserver to wake the loop — a phone rotating, or the
+        // address bar collapsing, at the work sections. Draw exactly one
+        // frame; it parks itself again immediately after.
+        if (parked && !document.hidden) {
+          forceOneFrame = true;
+          parked = false;
+          frame = requestAnimationFrame(animate);
+        }
       };
       const removeViewportResize = addViewportChangeListener(onResize);
+
+      // Park the loop when nothing it draws can be seen. Two gates, read
+      // before each re-schedule: the mount on screen (an IntersectionObserver
+      // on it — the stage is sticky through the hero and the narration, then
+      // scrolls off at the work sections, where SakuraStage, HalftoneField
+      // and PetalDrift run their own loops) and the tab visible
+      // (document.hidden, read live so a tab hidden from the first paint is
+      // caught too). Until this the loop only dropped to the 30fps idle rate
+      // and kept rendering the tree scene and the halftone pass four screens
+      // down and in hidden tabs. A frame that finds a gate shut does not
+      // re-schedule; the gate's rising edge schedules one again. Nothing
+      // else changes, so the idle throttle, the intro clock and reduced
+      // motion behave as before. The very first frame always draws (the
+      // gates are checked after reportedReady), so onReady fires as it did.
+      let mountOnScreen = true;
+      let parked = false;
+      /** One frame owed off screen, to refill a buffer a resize cleared. */
+      let forceOneFrame = false;
+      const wakeLoop = () => {
+        if (!parked || disposed || !mountOnScreen || document.hidden) return;
+        parked = false;
+        // The first frame back runs at full rate (see recentlyActive): the
+        // scroll position reached while parked is on screen at once.
+        markInteraction();
+        frame = requestAnimationFrame(animate);
+      };
+      document.addEventListener("visibilitychange", wakeLoop);
+      // intersectionRatio > 0 as well as isIntersecting: a stage whose
+      // bottom edge sits exactly on the viewport's top (the work sections'
+      // first pixel) is edge-adjacent, which isIntersecting alone counts as
+      // visible. A zero-size mount inside the viewport reports ratio 1, so
+      // this cannot park a canvas that has not been laid out yet.
+      const mountObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+          mountOnScreen = entry.isIntersecting && entry.intersectionRatio > 0;
+          wakeLoop();
+        },
+        { threshold: 0 },
+      );
+      mountObserver.observe(mount);
 
       const animate = () => {
         if (disposed) return;
         const now = performance.now();
+        if (
+          reportedReady &&
+          !forceOneFrame &&
+          (!mountOnScreen || document.hidden)
+        ) {
+          parked = true;
+          frame = 0;
+          return;
+        }
+        forceOneFrame = false;
         frame = requestAnimationFrame(animate);
+        // The black sheet is shut over the stage (the hand-over to the Work
+        // section): nothing drawn here could be seen. The loop keeps
+        // ticking so the first frame after the sheet opens is immediate.
+        if (reportedReady && sceneFx.covered) return;
         const parallaxMoving =
           !prefersReducedMotion &&
           (Math.abs(pointerParallaxTarget.x - pointerParallaxSmooth.x) >
@@ -6706,7 +8454,9 @@ export default function WeepingCherryTreeCanvas({
         lastRenderedAt = now;
         const dt = Math.min(0.033, clock.getDelta());
         const elapsed = clock.elapsedTime;
-        voidBackdropUniforms.uTime.value = elapsed;
+        voidBackdropUniforms.uTime.value = elapsed * VOID_BACKDROP_SPEED;
+        voidBackdropUniforms.uLevel.value = clamp01(sceneFx.backdropLevel);
+        updateBackdropFrame();
         // Scroll-driven halftone level: the dot-matrix pass fades out as the
         // site view shrinks into the CRT, leaving the smooth render behind
         // the monitor glass. Written every frame; sceneFx is scrubbed by the
@@ -6727,43 +8477,38 @@ export default function WeepingCherryTreeCanvas({
           TREE_BASE_SCALE.y * treeTuning.scale,
           TREE_BASE_SCALE.z * treeTuning.scale,
         );
-        // Physical ungrow on scroll (see UNGROW ORDER): one front sweeps
-        // the tree from the outermost twigs down to the trunk base; the
-        // shaders pinch and clip wood and flowers behind it. Nothing
-        // fades — the loose falling petals (already translucent) are the
-        // one exception, thinning out with the canopy they fell from.
-        const hide = clamp01(sceneFx.treeGrow);
-        if (tree.branchWindUniforms) {
-          tree.branchWindUniforms.uUngrow.value = hide;
-        }
-        if (tree.petals) {
-          const petalMat = tree.petals.meshes[0]
-            ?.material as THREE.MeshStandardMaterial | undefined;
-          if (petalMat) petalMat.opacity = 0.78 * (1 - smoothstep(0, 0.5, hide));
-        }
-        // Skip the draw calls once everything is behind the front.
-        const treeGone = hide >= 0.999;
-        if (tree.branchMesh) tree.branchMesh.visible = !treeGone;
-        for (const mesh of [
-          tree.blossomMesh,
-          tree.lowBlossomMesh,
-          tree.halfBlossomMesh,
-          tree.budMesh,
-        ]) {
-          if (mesh) mesh.visible = !treeGone;
-        }
-        // Project the pointer ray onto the backdrop plane (z = -26) and map
-        // the hit into the shader's aspect-corrected p-space, so the flame
-        // field bends around where the cursor visually sits on the backdrop.
+        // Tree drop on scroll: the whole tree (wood, flowers, loose petals
+        // — all children of the group) slides straight down out of the
+        // frame, faster than the page text leaves. Pure translation: no
+        // scaling, fading or shader work, so it reads as the tree sinking
+        // out of shot rather than dissolving.
+        const drop = clamp01(sceneFx.treeDrop);
+        tree.group.position.y =
+          treeTuning.y -
+          drop * TREE_DROP_DISTANCE * Math.max(1, treeTuning.scale);
+        // Skip the draw calls once it is fully below the frame. The branch
+        // mesh, the four blossom meshes and the loose-petal meshes are all
+        // direct children of the group, so one flag covers them.
+        const treeGone = drop >= 1;
+        tree.group.visible = !treeGone;
+        // Project the pointer ray onto the backdrop plane (which faces the
+        // camera, see placeVoidBackdrop) and map the hit into the shader's
+        // aspect-corrected p-space, so the flame field bends around where
+        // the cursor visually sits on the backdrop.
         if (tree.branchWindUniforms) {
           const rayDir = tree.branchWindUniforms.uPointerRayDir.value;
-          if (rayDir.z < -1e-4) {
-            const rayT = (-26 - camera.position.z) / rayDir.z;
-            const hitX = camera.position.x + rayDir.x * rayT;
-            const hitY = camera.position.y + rayDir.y * rayT;
+          const along = rayDir.dot(backdropForward);
+          if (along > 1e-4) {
+            const rayT =
+              backdropHit
+                .copy(voidBackdrop.position)
+                .sub(camera.position)
+                .dot(backdropForward) / along;
+            backdropHit.copy(camera.position).addScaledVector(rayDir, rayT);
+            voidBackdrop.worldToLocal(backdropHit);
             voidBackdropUniforms.uPointer.value.set(
-              ((hitX - 2.6) / 110) * 1.774,
-              (hitY - 5.4) / 62,
+              (backdropHit.x / 110) * 1.774,
+              backdropHit.y / 62,
             );
           }
           // Presence, not velocity. pointerRustleStrength decays to zero
@@ -6780,11 +8525,29 @@ export default function WeepingCherryTreeCanvas({
             );
           }
         }
-        tree.petals?.update(
-          dt,
-          elapsed,
-          tree.branchWindUniforms?.uWindStrength.value ?? 1,
-        );
+        // No petal physics while the tree is dropped out of frame (the
+        // loop still runs at display rate on pointer moves over the CRT
+        // page). Petals resume from where they paused when it comes back.
+        if (!treeGone) {
+          tree.petals?.update(
+            dt,
+            elapsed,
+            tree.branchWindUniforms?.uWindStrength.value ?? 1,
+          );
+          if (tree.petals && pointerRustleStrength > 0.02) {
+            petalGroupInverse.copy(tree.group.matrixWorld).invert();
+            petalGroupInverse3.setFromMatrix4(petalGroupInverse);
+            petalPointerPos.copy(pointerWorldSmooth).applyMatrix4(petalGroupInverse);
+            petalPointerVel.copy(pointerWorldVel).applyMatrix3(petalGroupInverse3);
+            tree.petals.applyPointer(
+              petalPointerPos,
+              petalPointerVel,
+              pointerRustleStrength,
+              PETAL_BRUSH_RADIUS / Math.max(0.1, tree.group.scale.x),
+              dt,
+            );
+          }
+        }
 
         if (prefersReducedMotion) resetPointerParallax();
 
@@ -6885,6 +8648,8 @@ export default function WeepingCherryTreeCanvas({
               camera.position.copy(FINAL_CAMERA_POSITION);
               reportIntroComplete();
             }
+            applyScrollOrbit();
+            applyScrollDolly(lookTarget);
           } else {
             camera.position.copy(INTRO_CAMERA_POSITION);
             lookTarget.copy(HERO_CAMERA_TARGET);
@@ -6895,9 +8660,11 @@ export default function WeepingCherryTreeCanvas({
           camera.position.copy(FINAL_CAMERA_POSITION);
           lookTarget.copy(HERO_CAMERA_TARGET);
           setCameraFov(HERO_CAMERA_FOV);
+          applyScrollOrbit();
+          applyScrollDolly(lookTarget);
         }
         // Blossoms bloom out of their spur points during the intro dolly.
-        // (The scroll ungrow is a separate front — uUngrow above — so the
+        // (The scroll-driven tree drop above is a group translation, so the
         // two never fight.)
         tree.blossomGrowth.value =
           prefersReducedMotion || introComplete
@@ -6909,13 +8676,15 @@ export default function WeepingCherryTreeCanvas({
           // picture around inside a fixed bezel — the screen content looked
           // unanchored — so it eases out over the first half of the
           // pull-back.
-          const parallaxGain = 1 - smoothstep(0, 0.5, clamp01(sceneFx.crtProgress));
-          camera.position.x += pointerParallaxSmooth.x * 0.32 * parallaxGain;
-          camera.position.y += pointerParallaxSmooth.y * 0.18 * parallaxGain;
-          lookTarget.x += pointerParallaxSmooth.x * 0.16 * parallaxGain;
-          lookTarget.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
+          const parallaxGain = 1 - smoothstep(0, 0.5, crtAmount());
+          // Half the original travel (0.32 / 0.18 / 0.16 / 0.09).
+          camera.position.x += pointerParallaxSmooth.x * 0.16 * parallaxGain;
+          camera.position.y += pointerParallaxSmooth.y * 0.09 * parallaxGain;
+          lookTarget.x += pointerParallaxSmooth.x * 0.08 * parallaxGain;
+          lookTarget.y += pointerParallaxSmooth.y * 0.045 * parallaxGain;
         }
         camera.lookAt(lookTarget);
+        placeVoidBackdrop();
         renderComposite(elapsed);
         if (!reportedReady) {
           reportedReady = true;
@@ -6925,10 +8694,14 @@ export default function WeepingCherryTreeCanvas({
           });
         }
       };
+      stopLoadingLoop();
       animate();
 
       cleanup = () => {
+        stopLoadingLoop();
         cancelAnimationFrame(frame);
+        mountObserver.disconnect();
+        document.removeEventListener("visibilitychange", wakeLoop);
         removeViewportResize();
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("scroll", markInteraction);
@@ -6942,7 +8715,19 @@ export default function WeepingCherryTreeCanvas({
         // traversal below never reaches it — dispose it explicitly.
         sceneTarget.dispose();
         displayTarget.dispose();
+        sceneTexture?.dispose();
+        sceneTexture = null;
+        blankScene.dispose();
+
+        glassName.dispose();
+        overlayQuadGeometry.dispose();
+        // Post chain: composer buffers, bloom mip targets, grain material.
+        crtComposer.dispose();
+        crtBloomPass.dispose();
+        crtPostPass.dispose();
         crtScreenMaterial.dispose();
+        crtHalo.geometry.dispose();
+        (crtHalo.material as THREE.Material).dispose();
         crtScreenMesh.geometry.dispose();
         // The CRT scene holds GPU allocations of its own (GLB textures, the
         // PMREM environment, shadow map ground, gradient backdrop); walk and
@@ -7004,11 +8789,13 @@ export default function WeepingCherryTreeCanvas({
     <div
       ref={mountRef}
       style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "var(--arbor-screen-w, 100dvw)",
-        height: "var(--arbor-screen-h, 100dvh)",
+        // Absolute inside the hero's sticky stage, which is itself exactly
+        // the viewport. It was fixed against the viewport directly, which
+        // held the tree on screen after the stage had scrolled away.
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
         overflow: "hidden",
         pointerEvents: "none",
         zIndex: 0,

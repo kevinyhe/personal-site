@@ -1,131 +1,112 @@
 import type { Metadata } from "next";
+import FractureText from "@/components/FractureText";
 import SubpageShell from "@/components/SubpageShell";
+import { elsewhere, EMAIL } from "@/components/siteContent";
 
 export const metadata: Metadata = {
   title: "Contact — Kevin He",
   description:
-    "Get in touch with Kevin He — email, GitHub, LinkedIn, X, and Instagram.",
+    "Reach Kevin He by email, or find him on GitHub, LinkedIn, X and Instagram.",
 };
 
-const elsewhere = [
-  {
-    handle: "@kevinyhe",
-    href: "https://github.com/kevinyhe",
-    label: "GitHub",
-  },
-  {
-    handle: "/in/kevinyhe",
-    href: "https://www.linkedin.com/in/kevinyhe",
-    label: "LinkedIn",
-  },
-  {
-    handle: "@thekevinlab",
-    href: "https://x.com/thekevinlab",
-    label: "X",
-  },
-  {
-    handle: "@kevin.h_3",
-    href: "https://instagram.com/kevin.h_3",
-    label: "Instagram",
-  },
-];
-
-const facts = [
-  { label: "Based in", value: "Greater Toronto, Canada" },
-  { label: "Status", value: "Student, open to collaborations" },
-];
+/** Same curve and dimming as the /work and /info rows; see app/work/page.tsx. */
+const ROW_EASE =
+  "transition-[opacity,transform] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:group-hover/row:translate-x-0";
 
 export default function ContactPage() {
   return (
     <SubpageShell current="contact">
       <section className="pt-24 sm:pt-36">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-50"
-          data-reveal
-        >
-          Contact
+        {/* Every caption here keeps its opacity on an inner span: the
+            reveal ends with inline `opacity: 1` on the [data-reveal]
+            element, which would beat the class for good. */}
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Contact</span>
         </p>
         <h1
-          className="mt-5 max-w-[14ch] text-[clamp(2.4rem,7vw,5.5rem)] font-light leading-[1.04] tracking-[-0.03em]"
+          className="mt-5 max-w-[12ch] text-[clamp(2.4rem,6.5vw,5rem)] font-light leading-[1.04] tracking-[-0.03em]"
           data-reveal
         >
-          Bring me a{" "}
-          <em className="font-serif-display italic tracking-[-0.02em]">
-            hard
-          </em>{" "}
-          problem.
+          Get in touch.
         </h1>
-        <p
-          className="mt-8 max-w-[32rem] text-[0.9rem] leading-[1.8] opacity-70"
-          data-reveal
-        >
-          Robots, web, control theory, or something stranger — if it is
-          interesting, I want to hear about it. The fastest way to reach me is
-          email.
+        <p className="mt-8 text-[0.95rem] leading-[1.75]" data-reveal>
+          <span className="opacity-70">Email is fastest.</span>
         </p>
       </section>
 
-      <section className="mt-16 sm:mt-24" data-reveal>
-        <p className="text-[0.7rem] uppercase tracking-[0.25em] opacity-50">
-          Write to
+      <section className="mt-16 sm:mt-24">
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Write to</span>
         </p>
-        <a
-          className="mt-4 inline-block break-all border-b border-white/30 pb-2 text-[clamp(1.3rem,3.6vw,2.8rem)] font-light tracking-[-0.02em] transition-opacity duration-200 hover:opacity-60"
-          href="mailto:kevin.yuhan.he@gmail.com"
-        >
-          kevin.yuhan.he@gmail.com
-        </a>
-      </section>
-
-      <section className="mt-20 border-t border-white/15 pt-10 sm:mt-28">
-        <p
-          className="text-[0.7rem] uppercase tracking-[0.25em] opacity-50"
-          data-reveal
-        >
-          Elsewhere
-        </p>
-        <ul className="mt-8 max-w-[36rem]">
-          {elsewhere.map((social) => (
-            <li
-              className="border-b border-white/10 first:border-t first:border-white/10"
-              data-reveal
-              key={social.label}
+        <div className="mt-5 inline-flex max-w-full flex-col">
+          {/* The same address as the home page, breaking the same way
+              (FractureText): each character is a piece and hovering the
+              line releases them. Sans, not the serif — the demo cut draws
+              its watermark for "@". The aria-label is there because the
+              split puts every letter in its own span. */}
+          <span className="inline-block" data-reveal>
+            <a
+              aria-label={`Email ${EMAIL}`}
+              className={`inline-block text-[clamp(1.05rem,3.4vw,2.6rem)] font-light leading-none tracking-[-0.02em] transition-opacity duration-300 hover:opacity-70 motion-reduce:transition-none`}
+              href={`mailto:${EMAIL}`}
             >
+              <FractureText className="max-w-full" text={EMAIL} />
+            </a>
+          </span>
+          {/* The underline draws itself under the address rather than
+              arriving with it (was a border-b on the link). */}
+          <span
+            aria-hidden="true"
+            className="mt-3 h-px w-full bg-white/25"
+            data-reveal
+            data-rule
+          />
+        </div>
+      </section>
+
+      <section className="mt-20 sm:mt-28">
+        <p className="text-[0.7rem] uppercase tracking-[0.25em]" data-reveal>
+          <span className="opacity-45">Elsewhere</span>
+        </p>
+        <div
+          aria-hidden="true"
+          className="mt-7 h-px w-full bg-white/10"
+          data-reveal
+          data-rule
+        />
+        <ul className="group/list">
+          {elsewhere.map((social) => (
+            <li className="group/row relative" key={social.label}>
               <a
-                className="group flex items-baseline justify-between gap-6 py-5"
+                className={`grid grid-cols-1 gap-1 py-4 sm:grid-cols-12 sm:items-baseline sm:gap-8`}
+                data-reveal
                 href={social.href}
                 rel="noreferrer"
                 target="_blank"
               >
-                <span className="text-[1.05rem] font-light transition-transform duration-300 group-hover:translate-x-2">
+                <span
+                  className={`text-[0.7rem] uppercase tracking-[0.2em] opacity-40 group-hover/list:opacity-25 group-hover/row:opacity-70 sm:col-span-3 ${ROW_EASE}`}
+                >
                   {social.label}
                 </span>
-                <span className="text-[0.85rem] opacity-50 transition-opacity duration-300 group-hover:opacity-90">
-                  {social.handle}{" "}
-                  <span aria-hidden="true" className="ml-1 inline-block">
+                <span
+                  className={`text-[0.9rem] opacity-80 group-hover/list:opacity-40 group-hover/row:translate-x-1.5 group-hover/row:opacity-100 sm:col-span-9 ${ROW_EASE}`}
+                >
+                  {social.handle}
+                  <span
+                    aria-hidden="true"
+                    className="ml-2 inline-block opacity-0 transition-opacity duration-300 group-hover/row:opacity-60 motion-reduce:transition-none"
+                  >
                     {"↗"}
                   </span>
                 </span>
               </a>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mt-20 border-t border-white/15 pt-10 sm:mt-28">
-        <ul className="max-w-[36rem]">
-          {facts.map((fact) => (
-            <li
-              className="flex items-baseline justify-between gap-6 border-b border-white/10 py-4"
-              data-reveal
-              key={fact.label}
-            >
-              <p className="text-[0.7rem] uppercase tracking-[0.2em] opacity-40">
-                {fact.label}
-              </p>
-              <p className="text-right text-[0.9rem] opacity-80">
-                {fact.value}
-              </p>
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 bottom-0 h-px bg-white/10"
+                data-reveal
+                data-rule
+              />
             </li>
           ))}
         </ul>
