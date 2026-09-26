@@ -13,7 +13,7 @@ export default function VariantIndex() {
         {VARIANTS.map((v) => (
           <li className="border-b border-white/15" key={v.n}>
             <Link className="grid grid-cols-[6rem_1fr_1fr] items-baseline gap-[2vw] py-[1.6rem] transition-opacity hover:opacity-60" href={`/v/${v.n}`}>
-              <span className="text-[0.8rem] tabular-nums opacity-50">0{v.n}</span>
+              <span className="text-[0.8rem] tabular-nums opacity-50">{String(v.n).padStart(2, "0")}</span>
               <span className="font-serif-display text-[2.4rem] leading-none">{v.name}</span>
               <span className="text-[0.95rem] opacity-70">{v.note}</span>
             </Link>

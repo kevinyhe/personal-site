@@ -375,7 +375,7 @@ export default function StatementSection(): JSX.Element {
     //                left, filling the right half of the width and the
     //                bottom three quarters of the height, cut off by the
     //                edges. The words keep the top and the left.
-    //   0.72 - 1.00  the two lines come in, then the introduction, on the
+    //   0.80 - 1.00  the two lines come in, then the introduction, on the
     //                left, in the room it has left.
     // The turn runs from the moment it starts to rise until the section
     // has scrolled off the top, which is past the end of the pin: one full
@@ -412,7 +412,9 @@ export default function StatementSection(): JSX.Element {
       // Both pairs, top then bottom, one line after another.
       for (const [i, el] of lines.entries()) {
         // After the push-in has taken the robot out from under them.
-        const q = soft(clamp01((p - 0.84 - i * 0.04) / 0.12));
+        // Three lines, 0.04 apart, 0.12 long: the last one ends at 1.00,
+        // where p stops, so it reaches full opacity.
+        const q = soft(clamp01((p - 0.8 - i * 0.04) / 0.12));
         el.style.opacity = String(q);
         el.style.transform = `translateY(${(1 - q) * 28}px)`;
       }
