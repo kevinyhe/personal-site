@@ -184,7 +184,7 @@ uniform float uHaze;
 varying vec3 vDir;
 void main() {
   float e = normalize(vDir).y;
-  float sky = mix(0.88, 0.95, smoothstep(0.0, 0.5, e));
+  float sky = mix(0.8, 0.93, smoothstep(0.0, 0.6, e));
   float t = mix(uHaze, sky, smoothstep(-0.04, 0.02, e));
   gl_FragColor = vec4(vec3(t), 1.0);
 }

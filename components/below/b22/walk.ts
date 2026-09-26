@@ -114,13 +114,15 @@ export function startWalk(root: HTMLElement, mode: Mode): () => void {
     });
     const sk = still ? 0 : skillsAt(s);
     scrims.forEach((el) => {
+      if (el.dataset.scrim === "groups") {
+        set(el, "opacity", sk.toFixed(3));
+        return;
+      }
       const side = el.dataset.scrim === "right" ? 1 : -1;
       let v = 0;
       STOPS.forEach((_, k) => {
         if (SIDES[k] === side) v = Math.max(v, cardAt(k, s));
       });
-      // The group names sit on the left while the rack is up.
-      if (side < 0) v = Math.max(v, sk * 0.85);
       set(el, "opacity", v.toFixed(3));
     });
     set(skillsLayer, "opacity", sk.toFixed(3));

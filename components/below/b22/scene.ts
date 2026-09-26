@@ -483,9 +483,9 @@ function assemble(
     const phase: number[] = [];
     for (let b = 0; b < 7; b += 1) {
       const d = 80 + r() * 40;
-      const l = d * (0.12 + r() * 0.3);
-      // About 40% down the screen: under the words, over the hills.
-      const y = 1.6 + d * (0.075 + r() * 0.035);
+      // Off to the right of the words and the links, a third of the way down.
+      const l = d * (0.48 + r() * 0.24);
+      const y = 1.6 + d * (0.08 + r() * 0.08);
       const cx = TERRACE.x + tf.x * d + tr.x * l;
       const cz = TERRACE.z + tf.z * d + tr.z * l;
       const span = 1.6 + r() * 0.5;
