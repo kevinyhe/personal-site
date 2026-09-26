@@ -15,7 +15,7 @@ import {
   S_END,
   skillsAt,
   starsAt,
-  STILL_POSE,
+  stillPose,
   STOPS,
   TEXT_BOX,
 } from "./layout";
@@ -141,7 +141,7 @@ export function startGlobe(root: HTMLElement, mode: Mode): () => void {
   };
 
   let s = 0;
-  let pose: Pose = still ? STILL_POSE : poseAt(0, aspect());
+  let pose: Pose = still ? stillPose(aspect()) : poseAt(0, aspect());
   let time = 0;
 
   const placeWords = (): void => {
@@ -255,6 +255,7 @@ export function startGlobe(root: HTMLElement, mode: Mode): () => void {
     planet.resize(aspect());
     config.ySquares = Math.round(X_SQUARES / aspect());
     if (still) {
+      pose = stillPose(aspect());
       drawAt();
       bar.redraw();
     }

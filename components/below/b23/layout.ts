@@ -207,7 +207,13 @@ export function poseAt(s: number, aspect: number): Pose {
 }
 
 /** The still frame, for reduced motion and narrow screens: the first pin, the planet in the middle. */
-export const STILL_POSE: Pose = { ...stopPose(0), sx: 0, sy: -0.06, scale: 0.9 };
+export const stillPose = (aspect: number): Pose => ({
+  ...stopPose(0),
+  sx: 0,
+  sy: -0.06,
+  // On an upright phone the planet, pins and all, keeps inside the width.
+  scale: Math.min(0.9, 0.85 * aspect),
+});
 
 // ------------------------------------------------------ what shows when
 /** How much pin k stands out at s: it grows and brightens at its stop. */
