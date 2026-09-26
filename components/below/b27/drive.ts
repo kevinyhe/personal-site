@@ -102,6 +102,7 @@ export function startPond(root: HTMLElement, mode: Mode): () => void {
   let dropAt = 0;
   let splashAt = -1;
   let reboundDone = false;
+  let lastDrip = 0;
   let stoneY: number | null = null;
   let emailShow = 0;
   // Small drops now and then, so the pond is never quite still.
@@ -200,6 +201,12 @@ export function startPond(root: HTMLElement, mode: Mode): () => void {
       // The water that the stone pushed down jumps back up in the middle.
       reboundDone = true;
       pond.drop(CONTACT_AT.x, CONTACT_AT.z, 0.35, 0.22);
+    }
+    // While the email is up, a drip falls on the same spot now and then so
+    // there are always a few rings round it.
+    if (splashAt >= 0 && contactAt(s) > 0.5 && time - lastDrip > 3.2 && time - splashAt > 2.5) {
+      lastDrip = time;
+      pond.drop(CONTACT_AT.x, CONTACT_AT.z, 0.3, 0.2);
     }
     const ready = splashAt >= 0 ? smooth((time - splashAt - 0.3) / 0.9) : 0;
     emailShow = contactAt(s) * ready;

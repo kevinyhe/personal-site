@@ -17,14 +17,16 @@ void main() {
 
 /**
  * One step of the ripple simulation. Red holds the height now, green the
- * height one step ago. The new height is half the sum of the four
- * neighbours less the old height, then damped: the classic height field
- * wave. A pointer stroke (a short segment) or a stone adds a soft bump.
+ * height one step ago. Each texel is pulled toward the average of its four
+ * neighbours and keeps its speed from the last step, then damped: the wave
+ * equation on a grid. uC2 sets the wave speed (at most 0.5, or it blows
+ * up). A pointer stroke (a short segment) or a stone adds a soft bump.
  */
 export const SIM_FRAG = /* glsl */ `
 uniform sampler2D uPrev;
 uniform vec2 uTexel;
 uniform float uDamp;
+uniform float uC2;
 uniform vec4 uDomain;
 uniform vec4 uSeg;
 uniform float uSegStrength;
@@ -36,7 +38,7 @@ void main() {
     + texture2D(uPrev, vUv - vec2(uTexel.x, 0.0)).r
     + texture2D(uPrev, vUv + vec2(0.0, uTexel.y)).r
     + texture2D(uPrev, vUv - vec2(0.0, uTexel.y)).r;
-  float h = (n * 0.5 - c.g) * uDamp;
+  float h = (2.0 * c.r - c.g + uC2 * (n - 4.0 * c.r)) * uDamp;
   vec2 w = uDomain.xy + vUv * uDomain.zw;
   vec2 pa = w - uSeg.xy;
   vec2 ba = uSeg.zw - uSeg.xy;
