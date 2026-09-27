@@ -286,7 +286,15 @@ export function buildMap(): MapScene {
   const riverGeo = new THREE.BufferGeometry();
   riverGeo.setAttribute("position", new THREE.Float32BufferAttribute(riverPos, 3));
   riverGeo.setIndex(riverIdx);
-  riverGeo.computeVertexNormals();
+  // Straight up, whatever way round the triangles were wound: water lit
+  // from above is the palest thing on the map and draws no bar at all.
+  riverGeo.setAttribute(
+    "normal",
+    new THREE.Float32BufferAttribute(
+      riverPos.map((_, i) => (i % 3 === 1 ? 1 : 0)),
+      3,
+    ),
+  );
   scene.add(new THREE.Mesh(riverGeo, toneMaterial(1.0, { side: THREE.DoubleSide })));
 
   // ------------------------------------------------------------- the walk
