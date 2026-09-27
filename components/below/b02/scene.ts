@@ -139,7 +139,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
   const rand = seeded(20260926);
   const sheen = new THREE.Color(BLOSSOM);
 
-  pieces.forEach((p, i) => {
+  pieces.forEach((p) => {
     const face = document.createElement("canvas");
     drawFace(face, p, o.fontFamily);
     const tex = new THREE.CanvasTexture(face);
@@ -286,7 +286,6 @@ export function createCluster(o: ClusterOpts): Cluster | null {
   }
 
   const euler = new THREE.Euler();
-  const quat = new THREE.Quaternion();
   const vec = new THREE.Vector3();
 
   /** The cards' places, read off the page. */
@@ -580,7 +579,6 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     renderer.render(scene, camera);
   }
 
-  (window as unknown as Record<string, unknown>).__b02 = { bodies, world, get s() { return sNow; }, get mode() { return mode; }, get view() { return [W, H, viewW, viewH, pointerIn, pointerX, pointerY]; } };
   // Start: size it, then let the knot form before the first frame.
   resize();
   sNow = readScroll();
