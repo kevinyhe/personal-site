@@ -80,7 +80,9 @@ export type Pond = {
 
 const RENDER_W = 960;
 /** How much of the wave survives each step. */
-const DAMP = 0.988;
+const DAMP = 0.99;
+/** Wave speed squared, in texels a step: about 2.4 world units a second at 60 steps. */
+const C2 = 0.3;
 
 export function buildPond(canvas: HTMLCanvasElement, opts: { animated: boolean; monoFamily: string; update?: (time: number, dt: number) => void }): Pond {
   // The context is asked for here, before three.js sees the canvas, so a
@@ -149,6 +151,7 @@ function assemble(
     uPrev: { value: null as THREE.Texture | null },
     uTexel: { value: texel },
     uDamp: { value: DAMP },
+    uC2: { value: C2 },
     uDomain: { value: domain },
     uSeg: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSegStrength: { value: 0 },

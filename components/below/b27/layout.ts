@@ -52,7 +52,7 @@ export const SIDES = [-1, 1, -1, 1, -1] as const;
 /** Where the pad's centre lands across the screen at its stop. */
 export const PAD_SHARE = { left: 0.28, right: 0.72 } as const;
 /** How high the tallest object on a pad reaches. */
-export const OBJECT_TOP = 0.42;
+export const OBJECT_TOP = 0.5;
 
 /**
  * Small pads round each project pad, on its outer side, so the pad reads as
@@ -209,7 +209,9 @@ export function unproject(pose: Pose, sx: number, sy: number, planeY: number, as
 export function ringSpot(g: number, j: number, count: number, aspect: number): { x: number; z: number } {
   const c = unproject(SKILLS_POSE, RING_SHARE_X[g], RING_SHARE_Y, LANTERN_Y, aspect);
   const a = -Math.PI / 2 + (j / count) * Math.PI * 2;
-  return { x: c.x + Math.cos(a) * RING_R, z: c.z + Math.sin(a) * RING_R };
+  // A screen narrower than 1920 by 1038 has less room across: the rings shrink to keep apart.
+  const r = RING_R * Math.min(1, aspect / 1.85);
+  return { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
 }
 
 /** A seeded generator, so the pond is the same on every visit. */
