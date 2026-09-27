@@ -144,7 +144,9 @@ export function floorTexture(): THREE.CanvasTexture {
 export function wallTexture(): THREE.CanvasTexture {
   const { canvas, ctx } = sheet(256, 256);
   const rand = seeded(31);
-  ctx.fillStyle = "#8a4a74";
+  // Plum, not pink: at #8a4a74 under the sky light the walls came out
+  // hot magenta in the browser.
+  ctx.fillStyle = "#4b2140";
   ctx.fillRect(0, 0, 256, 256);
   for (let x = 0; x < 256; x += 32) {
     ctx.globalAlpha = 0.1;

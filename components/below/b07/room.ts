@@ -229,7 +229,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
         roughness: 0.9,
         emissive: "#ffffff",
         emissiveMap: keep(wallPoolsTexture()),
-        emissiveIntensity: 0.42,
+        emissiveIntensity: 0.24,
       }),
     ),
   );
