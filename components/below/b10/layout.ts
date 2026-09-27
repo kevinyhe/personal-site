@@ -28,7 +28,7 @@ export const CENTRE: readonly [number, number, number] = [
 ];
 export const WHEEL_RADIUS = 0.03925;
 /** How far outside the box the dimension lines of the drawing stand. */
-export const DIM_GAP = 0.045;
+export const DIM_GAP = 0.03;
 
 export const STEPS = 7;
 export const WORK_STEPS = 5;
@@ -296,3 +296,72 @@ export function leader(block: Rect, side: "left" | "right", ruleY: number, dot: 
 }
 
 export const overlaps = (a: Rect, b: Rect): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+// ------------------------------------------------- the dimension lines
+
+/** How wide the type of a measurement is, metres. It is a quarter as tall. */
+export const LABEL_WIDTH = 0.09;
+
+export type Dimensions = {
+  /** Two ends for each line, six numbers a line, in the robot's own axes. */
+  lines: number[];
+  /** The same, for the centre lines, which are drawn dashed. */
+  dashed: number[];
+  /** The three measurements and where the middle of each stands. */
+  labels: { text: string; at: [number, number, number] }[];
+};
+
+/** The dimension lines of the drawing, placed from the robot's box. */
+export function dimensionLines(): Dimensions {
+  const [x0, y0, z0] = BOX_MIN;
+  const [x1, y1, z1] = BOX_MAX;
+  const g = DIM_GAP;
+  const over = g * 1.35;
+  const t = 0.012;
+  const s: number[] = [];
+  const seg = (ax: number, ay: number, az: number, bx: number, by: number, bz: number): void => {
+    s.push(ax, ay, az, bx, by, bz);
+  };
+  // Each dimension has two lines out from the corners, the measured line
+  // between them, and a slash at each end. Which edge of the box each
+  // stands on was chosen by trying all of them at every step (scratch
+  // script dims.mjs) and keeping the ones that stay clear of the text.
+  // Length, on the floor beside the left side.
+  seg(x0, y0, z0 - g, x1, y0, z0 - g);
+  seg(x0, y0, z0, x0, y0, z0 - over);
+  seg(x1, y0, z0, x1, y0, z0 - over);
+  seg(x0 - t, y0, z0 - g - t, x0 + t, y0, z0 - g + t);
+  seg(x1 - t, y0, z0 - g - t, x1 + t, y0, z0 - g + t);
+  // Width, level with the top, ahead of the front.
+  seg(x1 + g, y1, z0, x1 + g, y1, z1);
+  seg(x1, y1, z0, x1 + over, y1, z0);
+  seg(x1, y1, z1, x1 + over, y1, z1);
+  seg(x1 + g - t, y1, z0 - t, x1 + g + t, y1, z0 + t);
+  seg(x1 + g - t, y1, z1 - t, x1 + g + t, y1, z1 + t);
+  // Height, behind the rear right corner.
+  seg(x0 - g, y0, z1, x0 - g, y1, z1);
+  seg(x0, y0, z1, x0 - over, y0, z1);
+  seg(x0, y1, z1, x0 - over, y1, z1);
+  seg(x0 - g - t, y0 - t, z1, x0 - g + t, y0 + t, z1);
+  seg(x0 - g - t, y1 - t, z1, x0 - g + t, y1 + t, z1);
+  // The footprint on the floor.
+  seg(x0, y0, z0, x1, y0, z0);
+  seg(x1, y0, z0, x1, y0, z1);
+  seg(x1, y0, z1, x0, y0, z1);
+  seg(x0, y0, z1, x0, y0, z0);
+
+  // Centre lines: along the robot through the middle of the drivetrain,
+  // and across it. The drivetrain is centred on the origin.
+  const dashed = [x0 - 0.03, y0, 0, x1 + 0.03, y0, 0, 0, y0, z0 - 0.03, 0, y0, z1 + 0.03];
+
+  const mm = (metres: number): string => `${Math.round(metres * 1000)} mm`;
+  return {
+    lines: s,
+    dashed,
+    labels: [
+      { text: mm(x1 - x0), at: [(x0 + x1) / 2, y0, z0 - g - 0.03] },
+      { text: mm(z1 - z0), at: [x1 + g + 0.03, y1, (z0 + z1) / 2] },
+      { text: mm(y1 - y0), at: [x0 - g - 0.045, (y0 + y1) / 2, z1] },
+    ],
+  };
+}

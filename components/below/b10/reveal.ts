@@ -194,7 +194,7 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
   const last = { x: 0.5, y: 0.5 };
   const lean = { x: 0, y: 0 };
   const leanTo = { x: 0, y: 0 };
-  let radius = 0.08;
+  let radius = 0.12;
   // Long enough that the wandering point starts at once on a page
   // nobody has touched yet.
   let idleFor = IDLE_AFTER + 1;
@@ -232,7 +232,7 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
       }
       const distance = Math.hypot((cursor.x - last.x) * aspect, cursor.y - last.y);
       const speed = distance / Math.max(dt, 1 / 240);
-      const wanted = L.clamp(0.065 + speed * 0.045, 0.065, 0.16);
+      const wanted = L.clamp(0.11 + speed * 0.06, 0.11, 0.24);
       radius += (wanted - radius) * (1 - Math.exp(-dt * 8));
       own.ax = last.x;
       own.ay = last.y;
@@ -254,7 +254,7 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
     wander = L.clamp(wander + (idleFor > IDLE_AFTER ? dt / 1.5 : -dt / 0.4), 0, 1);
     const cx = L.clamp(centreX, 0.25, 0.75);
     const cy = L.clamp(centreY, 0.3, 0.7);
-    const wx = cx + (0.3 * Math.sin(0.31 * time + 1) + 0.08 * Math.sin(0.83 * time)) / aspect;
+    const wx = cx + (0.34 * Math.sin(0.31 * time + 1) + 0.08 * Math.sin(0.83 * time)) / aspect;
     const wy = cy + 0.22 * Math.sin(0.47 * time) + 0.05 * Math.sin(1.1 * time + 2);
     if (!wanderAt.set) {
       wanderAt.x = wx;
@@ -266,7 +266,7 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
     roam.ay = wanderAt.y;
     roam.bx = wx;
     roam.by = wy;
-    roam.radius = 0.115 + 0.025 * Math.sin(0.9 * time);
+    roam.radius = 0.2 + 0.03 * Math.sin(0.9 * time);
     roam.strength = wander;
     wanderAt.x = wx;
     wanderAt.y = wy;
@@ -290,6 +290,8 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
 
   // -------------------------------------------------------- the frame
   let shownStep = -1;
+  let shownSkills = 0;
+  let shownHint = true;
 
   const paintCallout = (c: Callout, i: number): void => {
     L.project(L.ANCHORS[i], pose, aspect, spot);
@@ -364,13 +366,20 @@ function bind(root: HTMLElement, stage: HTMLElement, scene: Reveal, monoFamily: 
       }
     }
 
-    if (skillsLayer) skillsLayer.style.opacity = skills.toFixed(3);
-    if (ticker) {
-      ticker.style.visibility = skills > 0 ? "visible" : "hidden";
-      // The rows only run while they can be seen.
-      ticker.style.setProperty("--b10-run", skills > 0 ? "running" : "paused");
+    if (skills !== shownSkills) {
+      // The rows of large type only run while they can be seen.
+      if (ticker && (skills > 0) !== (shownSkills > 0)) {
+        ticker.style.visibility = skills > 0 ? "visible" : "hidden";
+        ticker.style.setProperty("--b10-run", skills > 0 ? "running" : "paused");
+      }
+      if (skillsLayer) skillsLayer.style.opacity = skills.toFixed(3);
+      shownSkills = skills;
     }
-    if (hint) hint.style.opacity = u < 6.9 ? "0.7" : "0";
+    const hinted = u < 6.9;
+    if (hint && hinted !== shownHint) {
+      hint.style.opacity = hinted ? "0.7" : "0";
+      shownHint = hinted;
+    }
 
     const step = L.stepNumber(u);
     if (step !== shownStep) {
