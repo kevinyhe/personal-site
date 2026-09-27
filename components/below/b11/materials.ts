@@ -98,12 +98,13 @@ export function sky(top = 0.86, low = 0.7): THREE.Mesh {
   return m;
 }
 
+// The floor's own coordinates, not the world's: the field turns with its
+// walls, so its tile seams must turn too.
 const GROUND_VERT = /* glsl */ `
-varying vec3 vW;
+varying vec3 vP;
 void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vW = w.xyz;
-  gl_Position = projectionMatrix * viewMatrix * w;
+  vP = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
@@ -113,11 +114,11 @@ uniform float uFar;
 uniform float uReach;
 uniform float uTile;
 uniform float uTileHalf;
-varying vec3 vW;
+varying vec3 vP;
 void main() {
-  float g = mix(uNear, uFar, smoothstep(uReach * 0.2, uReach, length(vW.xz)));
-  if (uTile > 0.0 && abs(vW.x) < uTileHalf && abs(vW.z) < uTileHalf) {
-    vec2 f = abs(fract(vW.xz / uTile + 0.5) - 0.5);
+  float g = mix(uNear, uFar, smoothstep(uReach * 0.2, uReach, length(vP.xz)));
+  if (uTile > 0.0 && abs(vP.x) < uTileHalf && abs(vP.z) < uTileHalf) {
+    vec2 f = abs(fract(vP.xz / uTile + 0.5) - 0.5);
     float seam = step(0.47, max(f.x, f.y));
     g = mix(0.6, 0.22, seam);
   }
