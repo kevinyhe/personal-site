@@ -35,6 +35,22 @@ export const SMALL_X = 2.9;
 export const SMALL_Z0 = 11;
 export const SMALL_STEP = 6;
 export const SMALL_END = -88;
+/**
+ * The small lanterns, both sides, every SMALL_STEP metres. The pairs just
+ * before and just after a project lantern are left out: the big lantern
+ * stands alone in a clearing, not behind a nearer small one, and the
+ * nearest lit thing on the far side is not right behind the words.
+ */
+export const SMALL_LANTERNS: { x: number; z: number }[] = (() => {
+  const out: { x: number; z: number }[] = [];
+  for (let z = SMALL_Z0; z >= SMALL_END; z -= SMALL_STEP) {
+    for (const side of [-1, 1]) {
+      if (LANTERN_Z.some((lz) => Math.abs(z - lz) < 3.5)) continue;
+      out.push({ x: side * SMALL_X, z });
+    }
+  }
+  return out;
+})();
 /** The lit window of a lantern, as a share of its height from the ground. */
 export const WINDOW_AT = 0.7;
 

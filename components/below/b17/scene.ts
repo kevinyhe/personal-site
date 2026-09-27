@@ -25,11 +25,8 @@ import {
   RACK_Z,
   rackRowY,
   SIDES,
-  SMALL_END,
   SMALL_H,
-  SMALL_STEP,
-  SMALL_X,
-  SMALL_Z0,
+  SMALL_LANTERNS,
   TREES,
   WINDOW_AT,
 } from "./path";
@@ -118,6 +115,21 @@ export function buildNight(
   });
   if (!gl) throw new Error("b17: no WebGL2 context");
   const renderer = new THREE.WebGLRenderer({ canvas, context: gl });
+  try {
+    return assemble(renderer, canvas, opts);
+  } catch (error) {
+    // Half a scene is no scene: hand the context back and let the page fall back.
+    renderer.dispose();
+    renderer.forceContextLoss();
+    throw error;
+  }
+}
+
+function assemble(
+  renderer: THREE.WebGLRenderer,
+  canvas: HTMLCanvasElement,
+  opts: { animated: boolean; sansFamily: string; update?: (time: number, dt: number) => void },
+): Night {
   // An off-screen buffer of a fixed small size; the screen's pixel ratio
   // does not apply to it.
   renderer.setPixelRatio(1);
@@ -200,13 +212,11 @@ export function buildNight(
     const aspect = cards.lantern.aspect;
     const smallGeo = cardGeo(SMALL_H * aspect, SMALL_H);
     const smallMat = cardMat(cards.lantern, 0.85);
-    for (let z = SMALL_Z0; z >= SMALL_END; z -= SMALL_STEP) {
-      for (const side of [-1, 1]) {
-        const l = new THREE.Mesh(smallGeo, smallMat);
-        l.position.set(side * SMALL_X, 0, z);
-        scene.add(l);
-        facing.push(l);
-      }
+    for (const at of SMALL_LANTERNS) {
+      const l = new THREE.Mesh(smallGeo, smallMat);
+      l.position.set(at.x, 0, at.z);
+      scene.add(l);
+      facing.push(l);
     }
     const bigGeo = cardGeo(BIG_H * aspect, BIG_H);
     LANTERN_Z.forEach((z, k) => {
