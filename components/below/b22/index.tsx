@@ -136,6 +136,13 @@ function Journey(): JSX.Element {
           data-scrim="right"
           style={{ opacity: 0, background: "linear-gradient(270deg, rgba(26, 8, 18, 0.82) 0%, rgba(26, 8, 18, 0.55) 60%, rgba(26, 8, 18, 0) 100%)" }}
         />
+        {/* Behind the group names while the rack is up; narrow, so the tablets keep their light. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-[27vw]"
+          data-scrim="groups"
+          style={{ opacity: 0, background: "linear-gradient(90deg, rgba(26, 8, 18, 0.85) 0%, rgba(26, 8, 18, 0.7) 70%, rgba(26, 8, 18, 0) 100%)" }}
+        />
         <p className={`absolute bottom-[4vh] left-1/2 -translate-x-1/2 whitespace-nowrap ${LABEL}`} data-hint style={{ opacity: 0.75 }}>
           Scroll to walk through the gates. The cursor turns your head.
         </p>

@@ -171,12 +171,12 @@ export const LAYOUT: Layout = (() => {
 
 // ------------------------------------------------------------ the curve
 
-/** Past this point the path runs straight, so the terrace looks one way. */
+/** Before the entrance and past the exit the path runs straight, so the first view looks square into the tunnel and the terrace looks one way. */
 const STRAIGHT_FROM = LAYOUT.exitU;
 const rawHeading = (u: number): number => 0.34 * Math.sin(u / 23) + 0.14 * Math.sin(u / 9.1 + 0.7);
 const H0 = rawHeading(0);
 /** Which way the path runs at u, in radians (0 is -z, positive turns left). */
-export const headingAt = (u: number): number => rawHeading(Math.min(u, STRAIGHT_FROM)) - H0;
+export const headingAt = (u: number): number => rawHeading(Math.max(0, Math.min(u, STRAIGHT_FROM))) - H0;
 
 const U_MIN = -30;
 const U_MAX = LAYOUT.edgeU + 40;
