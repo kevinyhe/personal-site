@@ -415,7 +415,6 @@ export function createFlight(canvas: HTMLCanvasElement, stage: HTMLElement, opts
     return { group, title: null, material: null, floaters: [], corner: new THREE.Vector3(), side, built: false };
   });
   const titleGeo = keep(new THREE.PlaneGeometry(1, 1));
-  const titleSize = { w: new Float32Array(projects.length), h: new Float32Array(projects.length) };
 
   const buildStops = (family: string): void => {
     const maxTex = Math.min(renderer.capabilities.maxTextureSize, 2048);
@@ -428,8 +427,6 @@ export function createFlight(canvas: HTMLCanvasElement, stage: HTMLElement, opts
       const fit = Math.min(1, 8.6 / w);
       w *= fit;
       h *= fit;
-      titleSize.w[i] = w;
-      titleSize.h[i] = h;
       const material = keep(
         new THREE.ShaderMaterial({
           vertexShader: titleVert,
@@ -613,12 +610,16 @@ export function createFlight(canvas: HTMLCanvasElement, stage: HTMLElement, opts
     for (let i = 0; i < stops.length; i += 1) {
       const stop = stops[i];
       const d = p - STOP_P[i];
-      const showTitle = span(d, -0.062, -0.026, 0.016, 0.034);
+      // The still frame is sky and dart only: the titles are in the text under it.
+      const showTitle = opts.still ? 0 : span(d, -0.062, -0.026, 0.016, 0.034);
       const showText = span(d, -0.03, -0.008, 0.012, 0.028);
       stop.group.visible = stop.built && showTitle > 0.001;
       view.stops[i * 3 + 2] = 0;
       if (!stop.group.visible || !stop.material) continue;
-      stop.material.uniforms.uOpacity.value = showTitle;
+      // Lost in the haze until it is near. Without this a title showed
+      // faintly through the cloud the camera was still inside.
+      const away = camera.position.distanceTo(stop.group.position);
+      stop.material.uniforms.uOpacity.value = showTitle * (1 - smooth(26, 40, away));
       for (const f of stop.floaters) {
         f.group.position.copy(f.home);
         f.group.position.y += Math.sin(time * 0.7 + f.phase) * f.bob;
