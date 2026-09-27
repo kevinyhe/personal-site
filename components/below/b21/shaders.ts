@@ -75,7 +75,7 @@ export const WATER_FRAG = /* glsl */ `
 uniform float uTime;
 varying vec2 vUv;
 void main() {
-  float w = sin(vUv.y * 90.0 - uTime * 2.4 + sin(vUv.x * 9.0 + uTime) * 1.2);
+  float w = sin(vUv.y * 40.0 - uTime * 2.4 + sin(vUv.x * 9.0 + uTime) * 1.2);
   float t = 0.76 + 0.18 * w * sin(vUv.x * 3.14159);
   gl_FragColor = vec4(vec3(t), 1.0);
 }
@@ -126,7 +126,7 @@ void main() {
     cos(uTime * 0.6 + aPhase * 13.0) * 0.4
   );
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_PointSize = clamp(uSize / max(0.5, -mv.z), 4.0, 16.0);
+  gl_PointSize = clamp(uSize / max(0.5, -mv.z), 4.0, 12.0);
   vLife = life;
   gl_Position = projectionMatrix * mv;
 }
