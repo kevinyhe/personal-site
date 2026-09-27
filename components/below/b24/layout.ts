@@ -74,7 +74,7 @@ export function breakLines(text: string, max = 11): string[] {
 
 /** Which side the word of each project stands on. Its text takes the other. */
 export const WORD_SIDE: readonly ("left" | "right")[] = ["left", "right", "left", "right", "left"];
-const WORK_BOX = { left: { x0: 0.07, y0: 0.2, x1: 0.56, y1: 0.8 }, right: { x0: 0.44, y0: 0.2, x1: 0.93, y1: 0.8 } } as const;
+const WORK_BOX = { left: { x0: 0.04, y0: 0.2, x1: 0.56, y1: 0.8 }, right: { x0: 0.44, y0: 0.2, x1: 0.96, y1: 0.8 } } as const;
 /** The project text blocks, as shares of the stage (CSS: 31vw wide, left 63vw or 6vw, centred on the middle). */
 export const TEXT_X = { left: [0.63, 0.94], right: [0.06, 0.37] } as const;
 export const TEXT_Y: readonly [number, number] = [0.26, 0.74];
@@ -94,7 +94,9 @@ export const FORMS: readonly FormSpec[] = [
       lines: breakLines(p.title),
       sans: hasDigit(p.title),
       box: WORK_BOX[side],
-      yaw: side === "left" ? 0.3 : -0.3,
+      // Turned so the end nearer the middle of the page comes forward: the
+      // sides of the letters then face the camera and show as shade.
+      yaw: side === "left" ? -0.3 : 0.3,
       align: side === "left" ? "left" : "right",
       section: "work",
       index: i,
