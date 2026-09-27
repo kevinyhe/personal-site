@@ -526,8 +526,3 @@ export function createPainter(groups: SkillGroup[]): Painter {
     dots.paint(ctx, grid, (_c, _r, k) => Math.pow(values[k], 0.8), colours, { round: true, maxRadius: CELL * 0.62 });
   }
 }
-
-/** For the Node check and the dev handle: where the marks sit on the skills face, as fractions. */
-export function skillMarkBoxes(groups: SkillGroup[]): { name: string; x0: number; y0: number; x1: number; y1: number }[] {
-  return skillGrid(groups).map((m) => ({ name: m.skill.name, x0: m.x / TEX_W, y0: m.y / TEX_H, x1: (m.x + m.size) / TEX_W, y1: (m.y + m.size) / TEX_H }));
-}

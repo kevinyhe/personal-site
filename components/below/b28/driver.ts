@@ -49,11 +49,21 @@ function monoIn(root: HTMLElement): Promise<string> {
   return Promise.race([load, new Promise<void>((done) => setTimeout(done, 1500))]).then(() => family);
 }
 
-/** Paints the faces and builds the room. Paints nothing and throws if WebGL cannot start. */
-function begin(canvas: HTMLCanvasElement): { painter: Painter; room: Room } {
+/**
+ * Makes a fresh canvas in the slot, builds the room on it, and readies
+ * the paintings. A new canvas each time: a canvas whose context was given
+ * back cannot be used again, and in development React starts every
+ * effect twice. Throws, having added nothing, if WebGL cannot start.
+ */
+function begin(slot: HTMLElement): { painter: Painter; room: Room; canvas: HTMLCanvasElement } {
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("aria-hidden", "true");
+  canvas.style.cssText = "display:block;width:100%;height:100%";
   const painter = createPainter(skillGroups);
   try {
-    return { painter, room: buildRoom(canvas, painter.faces, painter.back) };
+    const room = buildRoom(canvas, painter.faces, painter.back);
+    slot.appendChild(canvas);
+    return { painter, room, canvas };
   } catch (error) {
     painter.dispose();
     throw error;
@@ -85,8 +95,8 @@ function panelsOnStage(pose: L.Pose, cam: L.Cam, aspect: number): DevState["pane
 
 export function startStill(root: HTMLElement): () => void {
   const stage = need<HTMLElement>(root, "[data-stage]");
-  const canvas = need<HTMLCanvasElement>(stage, "canvas[data-gl]");
-  const { painter, room } = begin(canvas);
+  const fontsIn = monoIn(root);
+  const { painter, room, canvas } = begin(need<HTMLElement>(stage, "[data-gl]"));
   let alive = true;
   let aspect = 1.85;
   const light: Light = { x: -0.7, y: 0.5, z: 0.6 };
@@ -100,7 +110,7 @@ export function startStill(root: HTMLElement): () => void {
     const m = (pose.points[0].x + pose.points[L.PANELS].x) / 2;
     room.draw(pose, cam, light, m);
   };
-  void monoIn(root).then((mono) => {
+  void fontsIn.then((mono) => {
     if (!alive) return;
     painter.paint(mono);
     room.refresh();
@@ -114,6 +124,7 @@ export function startStill(root: HTMLElement): () => void {
     sized.disconnect();
     room.dispose();
     painter.dispose();
+    canvas.remove();
   };
 }
 
@@ -122,14 +133,15 @@ export function startStill(root: HTMLElement): () => void {
 export function startJourney(root: HTMLElement): () => void {
   const journey = need<HTMLElement>(root, "[data-journey]");
   const stage = need<HTMLElement>(journey, "[data-stage]");
-  const canvas = need<HTMLCanvasElement>(stage, "canvas[data-gl]");
   const scrim = stage.querySelector<HTMLElement>("[data-scrim]");
   const hint = stage.querySelector<HTMLElement>("[data-hint]");
   const words: HTMLElement[] = [];
   root.querySelectorAll<HTMLElement>("[data-words]").forEach((el) => {
     words[Number(el.dataset.words)] = el;
   });
-  const { painter, room } = begin(canvas);
+  // Asked before anything is built, so a missing piece throws with nothing to undo.
+  const fontsIn = monoIn(root);
+  const { painter, room, canvas } = begin(need<HTMLElement>(stage, "[data-gl]"));
 
   let alive = true;
   let painted = false;
@@ -149,7 +161,7 @@ export function startJourney(root: HTMLElement): () => void {
   const lean = { x: 0, y: 0 };
   const shown: number[] = [];
 
-  void monoIn(root).then((mono) => {
+  void fontsIn.then((mono) => {
     if (!alive) return;
     painter.paint(mono);
     room.refresh();
@@ -298,5 +310,6 @@ export function startJourney(root: HTMLElement): () => void {
     if (handle && host.__b28 === handle) delete host.__b28;
     room.dispose();
     painter.dispose();
+    canvas.remove();
   };
 }
