@@ -205,7 +205,7 @@ export type Spot = { x: number; y: number };
 
 /** A point of a sheet, given in the sheet's own units from its centre,
  *  as a place in the world. */
-function worldOf(p: Pose, lx: number, ly: number): [number, number, number] {
+export function worldOf(p: Pose, lx: number, ly: number): [number, number, number] {
   // About z.
   const cz = Math.cos(p.rz);
   const sz = Math.sin(p.rz);
@@ -360,6 +360,9 @@ export type Look = {
   card: number;
   /** 1 is the flat colour of the ground. */
   flat: number;
+  /** Where the cursor is on the sheet, 0 to 1 each way. Rings spread
+   *  from there on the ground. */
+  at: [number, number];
   cropFrom: [number, number, number];
   cropTo: [number, number, number];
 };
@@ -379,6 +382,9 @@ const isCard = (step: number): number => (step >= FAN ? 1 : 0);
 const tiltAt = (step: number): number => (step === FLAT ? 0 : step === FAN ? 0.5 : 1);
 const driftAt = (step: number): number => (step === FLAT ? 0 : step === FAN ? 0.3 : 1);
 
+/** Height of the wave: a share of the sheet's width, and the most it may be. World units. */
+export const WAVE_SHARE = 0.085;
+export const WAVE_MOST = 0.45;
 /** World units a sheet moves up for one screen of scroll. */
 export const RATE = [0.12, 0.9, 0.6, 0.4, 0.12];
 const TILT_SHARE = [1, 0.7, 0.55, 0.4, 1];
@@ -431,11 +437,12 @@ export function sceneAt(v: View): Scene {
       mix: swapping ? ek : 1,
       dir,
       edge: dir > 0 ? 1.15 - 1.3 * ek : -0.15 + 1.3 * ek,
-      wave: Math.min(0.3, 0.045 * pose.w) * Math.sin(Math.PI * pk),
+      wave: Math.min(WAVE_MOST, WAVE_SHARE * pose.w) * Math.sin(Math.PI * pk),
       phase: pk * 9 * dir,
       idle: k === 0 ? 0.05 * mix(isFlat(v.from), isFlat(v.to), e) : 0,
       card: mix(isCard(v.from), isCard(v.to), smooth(0.15, 0.7, pk)),
       flat: mix(isFlat(v.from), isFlat(v.to), smooth(0.45, 0.95, pk)),
+      at: [(v.tiltX * 0.5 * VIEW_H * v.aspect) / pose.w + 0.5, (-v.tiltY * 0.5 * VIEW_H) / pose.h + 0.5],
       cropFrom: cropOf(v.artFrom, k),
       cropTo: cropOf(v.artTo, k),
     });

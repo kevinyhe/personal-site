@@ -12,6 +12,7 @@ import {
   FAN,
   mix,
   type Pose,
+  PROJECTS,
   restPoses,
   sceneAt,
   SHEETS,
@@ -120,6 +121,7 @@ function bind(root: HTMLElement, stage: HTMLElement, tilt: Tilt, endScene: () =>
     skills: need<HTMLElement>(root, '[data-layer="skills"]'),
     contact: need<HTMLElement>(root, '[data-layer="contact"]'),
   };
+  const workLabel = need<HTMLElement>(root, "[data-work-label]");
   const marks = Array.from(root.querySelectorAll<HTMLElement>("[data-mark]"));
   const groups = Array.from(root.querySelectorAll<HTMLElement>("[data-group]"));
   const titles = Array.from(root.querySelectorAll<HTMLElement>("[data-title]"));
@@ -183,6 +185,9 @@ function bind(root: HTMLElement, stage: HTMLElement, tilt: Tilt, endScene: () =>
     });
   };
   const setMarks = (i: number): void => {
+    // The work layer follows the stage to the end. Its heading must not
+    // stand over the skills' or the contact's.
+    workLabel.style.opacity = i < PROJECTS ? "1" : "0";
     marks.forEach((m, n) => {
       const ink = m.firstElementChild as HTMLElement | null;
       if (!ink) return;
@@ -577,6 +582,7 @@ function bind(root: HTMLElement, stage: HTMLElement, tilt: Tilt, endScene: () =>
     for (const off of overGroups) off();
     gsap.killTweensOf(everything);
     for (const s of splits) s.revert();
+    for (const t of titles) t.style.fontSize = t.dataset.size ? `${t.dataset.size}vw` : "";
     if (host.__b09) delete host.__b09;
     root.style.removeProperty("--b09-ink");
     stage.style.cursor = "";
