@@ -240,6 +240,9 @@ export default function Desktop({ controls }: { controls: RefObject<DeskControls
 
   return (
     <div className={`${styles.screen} font-mono`} data-desktop>
+      <div className={styles.picture}>
+        <div aria-hidden className={`${styles.fx} ${styles.cornersSlight}`} />
+      </div>
       <div className={styles.safe} data-safe ref={areaRef}>
         <header className="absolute inset-x-0 top-0 flex h-[4.4rem] items-center justify-between bg-[#f9b9dc] pl-[2rem] text-[1.5rem] uppercase tracking-[0.14em] text-[#1a0812]">
           <p>
@@ -323,8 +326,6 @@ export default function Desktop({ controls }: { controls: RefObject<DeskControls
             </div>
           </section>
         ))}
-
-        <div aria-hidden className={`${styles.fx} ${styles.cornersSlight}`} style={{ zIndex: 100000 }} />
       </div>
 
       <div aria-hidden className={`${styles.fx} ${styles.corners}`} />

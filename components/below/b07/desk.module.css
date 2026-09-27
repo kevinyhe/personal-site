@@ -9,12 +9,26 @@
   inset: 0;
   overflow: hidden;
   color: #f9b9dc;
+  /* The set is nearly square and the window is wide, so the picture is
+     shown as a wide film is on an old set: a dark band above and below. */
+  background-color: #1a0812;
+}
+
+/* The picture. A little larger than the part in view, so when the camera
+   leans there is still picture at the edge and not the dark band. */
+.picture {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--b07-safe-w, 100%) + 6rem);
+  height: calc(var(--b07-safe-h, 100%) + 6rem);
+  transform: translate(-50%, -50%);
   background-color: #6b2c55;
   /* Pale in the middle so the set glows pink from across the room. Dots
      over it, the same halftone as the rest of the site. */
   background-image:
     radial-gradient(circle at center, rgba(26, 8, 18, 0.2) 0, rgba(26, 8, 18, 0.2) 22%, rgba(26, 8, 18, 0) 24%),
-    radial-gradient(ellipse 70% 60% at 50% 46%, #f9b9dc 0%, #d48cb8 38%, #8a4a74 72%, #4a1c3c 100%);
+    radial-gradient(ellipse 70% 70% at 50% 46%, #f9b9dc 0%, #d48cb8 38%, #8a4a74 72%, #4a1c3c 100%);
   background-size:
     2.4rem 2.4rem,
     100% 100%;

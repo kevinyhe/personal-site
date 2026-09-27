@@ -70,6 +70,9 @@ export type Room = {
   corners(): Spot[];
   /** Settles when the television is in, or has failed and the stand-in stays. */
   ready: Promise<void>;
+  /** Goes up each time a model or one of its pictures lands, so the page
+   *  knows a frame it drew before is out of date. */
+  version(): number;
   dispose(): void;
 };
 
@@ -122,6 +125,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
   const scene = new THREE.Scene();
   const camera = makeCamera(1.85);
   let alive = true;
+  let landed = 0;
 
   const owned: { dispose(): void }[] = [];
   const keep = <T extends { dispose(): void }>(thing: T): T => {
@@ -225,7 +229,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
         roughness: 0.9,
         emissive: "#ffffff",
         emissiveMap: keep(wallPoolsTexture()),
-        emissiveIntensity: 0.32,
+        emissiveIntensity: 0.42,
       }),
     ),
   );
@@ -687,7 +691,9 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
     const pictures = new THREE.TextureLoader();
     const grab = (url: string, colour: boolean, after?: (t: THREE.Texture) => void): THREE.Texture => {
       const t = pictures.load(url, (got) => {
-        if (alive && after) after(got);
+        if (!alive) return;
+        if (after) after(got);
+        landed += 1;
       });
       // The model's own texture layout: not flipped.
       t.flipY = false;
@@ -773,6 +779,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
     set.position.set(TV_AT.x, TV_AT.y, TV_AT.z);
     scene.remove(standIn);
     scene.add(set);
+    landed += 1;
   })().catch(() => {
     // The stand-in stays.
   });
@@ -815,6 +822,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
     });
     loaded.push({ dispose: () => dropObject(gltf.scene) });
     turner.add(gltf.scene);
+    landed += 1;
   })().catch(() => {
     // No robot. The stand is left empty.
   });
@@ -882,6 +890,7 @@ export function buildRoom(canvas: HTMLCanvasElement, stillOnly: boolean): Room {
     still,
     corners: () => screenCorners(camera),
     ready: television,
+    version: () => landed,
     dispose,
   };
 }

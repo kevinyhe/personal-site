@@ -116,9 +116,9 @@ export const LAMP = {
 
 /** What the lights are, so the check can work out how bright things get. */
 export const LIGHTS = {
-  lamp: { colour: "#ffc994", candela: 4.2, angle: 1.02, penumbra: 0.75 },
+  lamp: { colour: "#ffc994", candela: 5, angle: 1.02, penumbra: 0.75 },
   glow: { colour: "#f9b9dc", candela: 0.34, at: [0, SCREEN.cy, SCREEN.lipZ + 0.2] },
-  sky: { above: "#e8c4da", below: "#4a1c3c", level: 1.7 },
+  sky: { above: "#e8c4da", below: "#4a1c3c", level: 2.1 },
 } as const;
 
 /** Things the camera must stay out of. Boxes, a little generous. */
@@ -194,10 +194,12 @@ export const MOVE = {
 
 export const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 const mix = (a: number, b: number, k: number): number => a + (b - a) * k;
-/** Starts and stops with no jolt. */
+/** Slow to start and slow to arrive, but never still: a quarter of it
+ *  is a straight line, so the first and last of the scroll still move
+ *  the camera. */
 export const ease = (v: number): number => {
   const c = clamp(v, 0, 1);
-  return c * c * c * (c * (c * 6 - 15) + 10);
+  return 0.25 * c + 0.75 * c * c * (3 - 2 * c);
 };
 
 /** How far back the camera starts. A narrow window needs more room to

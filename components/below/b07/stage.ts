@@ -111,6 +111,8 @@ export function startMoveIn(root: HTMLElement, host: HTMLElement, controls: () =
     room.resize(stageW, stageH);
     css.setSize(stageW, stageH);
     // Sized so that, seated, one of its pixels is one of the window's.
+    // These four are in pixels because they are measured from the
+    // window, not designed.
     const size = panelSize(stageW, stageH);
     host.style.width = `${size.w.toFixed(2)}px`;
     host.style.height = `${size.h.toFixed(2)}px`;
@@ -128,22 +130,29 @@ export function startMoveIn(root: HTMLElement, host: HTMLElement, controls: () =
   let wantX = 0;
   let wantY = 0;
   let hintShown = true;
+  let restingOn = -1;
 
-  const frame = (dt: number): void => {
+  const frame = (dt: number, redraw = false): void => {
     time += dt;
     screens = -track.getBoundingClientRect().top / stageH;
     t = clamp(screens / MOVE_SCREENS, 0, 1);
     const ease = 1 - Math.exp(-dt * 4);
     leanX += (wantX - leanX) * ease;
     leanY += (wantY - leanY) * ease;
-    room.frame(t, time, dt, leanX, leanY);
-    css.render(cssScene, room.camera);
+    // Seated, with the cursor still, the screen covers the whole view and
+    // nothing drawn changes. Stop drawing until something does.
+    const resting = t >= 1 && Math.abs(wantX - leanX) < 0.002 && Math.abs(wantY - leanY) < 0.002;
+    if (redraw || !resting || restingOn !== room.version()) {
+      room.frame(t, time, dt, leanX, leanY);
+      css.render(cssScene, room.camera);
+      restingOn = resting ? room.version() : -1;
+    }
 
     const seated = t >= 1;
     if (seated !== live) setLive(seated);
 
-    // Each window opens by itself the first time the page passes its
-    // place, going down. Closing one by hand is not undone.
+    // Each window opens by itself when the page passes its place going
+    // down. It is asked once per pass, so closing one by hand holds.
     const desk = controls();
     if (desk) {
       for (const name of ["work", "skills", "contact"] as const) {
@@ -192,7 +201,7 @@ export function startMoveIn(root: HTMLElement, host: HTMLElement, controls: () =
   // Changing the canvas's size empties it. Draw at once.
   const sized = new ResizeObserver(() => {
     measure();
-    frame(0);
+    frame(0, true);
   });
   sized.observe(stage);
   measure();
@@ -224,7 +233,7 @@ export function startMoveIn(root: HTMLElement, host: HTMLElement, controls: () =
       goTo: (to: number): void => {
         const top = window.scrollY + track.getBoundingClientRect().top;
         scrollPage(top + clamp(to, 0, 1) * MOVE_SCREENS * stageH);
-        frame(0);
+        frame(0, true);
       },
       open: (name: string): void => controls()?.open(name, false),
       get state() {
@@ -237,7 +246,7 @@ export function startMoveIn(root: HTMLElement, host: HTMLElement, controls: () =
 
   // One frame now, so the stage is never an empty canvas while it waits
   // for the observer to say it is on screen.
-  frame(0);
+  frame(0, true);
 
   return () => {
     alive = false;
