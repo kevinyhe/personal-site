@@ -324,7 +324,7 @@ export type Timeline = {
 };
 
 /** Stop for each goTo(i): the five projects painted, the skills, the email. */
-export const STOPS: readonly number[] = [0.55, 1.55, 2.55, 3.55, 4.55, 6.45, 8];
+export const STOPS: readonly number[] = [0.55, 1.55, 2.55, 3.55, 4.55, 6.7, 8];
 
 const stepEase = (x: number): number => {
   if (x <= 0) return 0;
