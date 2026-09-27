@@ -247,7 +247,12 @@ export function startJourney(root: HTMLElement): () => void {
   const frame = (): void => {
     u = -journey.getBoundingClientRect().top / stageH;
     // A still page is drawn once, not sixty times a second.
-    if (u === lastU && !dirty) return;
+    if (u === lastU && !dirty) {
+      // Use the still time to print the pages a turn will need, so the
+      // turn itself does not stop to print them.
+      if (ready) paper.prefetch();
+      return;
+    }
     lastU = u;
     dirty = false;
     turns = L.turnsAt(u);

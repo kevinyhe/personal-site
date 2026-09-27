@@ -29,6 +29,8 @@ export type PaperScene = {
   frame(turns: number, cam: Cam): void;
   /** Throw away every printed face; they are printed again as they are needed. Used once the fonts are in. */
   reprint(): void;
+  /** Prints one face the next or last turn will need, if one is missing. Called while nothing moves. */
+  prefetch(): void;
   /** Faces printed and on the card now. */
   resident(): string[];
   dispose(): void;
@@ -126,7 +128,10 @@ export function buildPaper(
   const gl = canvas.getContext("webgl2", attributes);
   if (!gl) throw new Error("b14: no WebGL2 context");
   const renderer = new THREE.WebGLRenderer({ canvas, context: gl, ...attributes });
-  renderer.setClearColor(BAND, 1);
+  // Set as raw numbers: a hex string would be converted for a colour
+  // pipeline this renderer does not use, and come out darker.
+  const band = rgb(BAND);
+  renderer.setClearColor(new THREE.Color().setRGB(band.x, band.y, band.z, THREE.LinearSRGBColorSpace), 1);
   // Colours pass through untouched: what the canvas prints is what shows.
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
@@ -264,6 +269,24 @@ export function buildPaper(
 
   let width = 1;
   let height = 1;
+  let lastK = 0;
+  /**
+   * The first face a turn either way from sheet k would show that is not
+   * printed yet. The ones that are printed are marked as used, so the
+   * pool never throws one of them out to make room. With the two in view
+   * these are eight faces, the size of the pool.
+   */
+  const missingNear = (k: number): string | null => {
+    let missing: string | null = null;
+    for (const key of [`b${k}`, `f${k + 1}`, `f${k - 1}`, `b${k - 2}`, `b${k + 1}`, `f${k + 2}`]) {
+      const j = Number(key.slice(1));
+      if (j < 0 || j >= SHEETS - (key[0] === "b" ? 1 : 0)) continue;
+      const have = find(key);
+      if (have) have.used = clock;
+      else if (!missing) missing = key;
+    }
+    return missing;
+  };
 
   return {
     resize(w, h) {
@@ -297,11 +320,9 @@ export function buildPaper(
         if (have) have.used = clock;
       });
       need.forEach((key) => ensure(key));
-      const next = [`b${k}`, `f${k + 1}`, `f${k - 1}`, `b${k - 2}`].filter((key) => {
-        const j = Number(key.slice(1));
-        return j >= 0 && j < SHEETS - (key[0] === "b" ? 1 : 0) && !find(key);
-      });
-      if (next.length) ensure(next[0]);
+      lastK = k;
+      const next = missingNear(k);
+      if (next) ensure(next);
 
       cast.set(0, 0, 0, 0);
       for (let j = 0; j < SHEETS; j += 1) {
@@ -332,6 +353,11 @@ export function buildPaper(
       camera.position.set(cam.pos.x, cam.pos.y, cam.pos.z);
       camera.lookAt(cam.target.x, cam.target.y, cam.target.z);
       renderer.render(scene, camera);
+    },
+
+    prefetch() {
+      const next = missingNear(lastK);
+      if (next) ensure(next);
     },
 
     reprint() {
