@@ -3,12 +3,18 @@ import HeroIntro from "@/components/HeroIntro";
 import HeroValley from "@/components/HeroValley";
 import StatementSection from "@/components/StatementSection";
 import BelowIntro from "@/components/BelowIntro";
+import BelowSwitch from "@/components/below/BelowSwitch";
+import { BELOWS } from "@/components/below/list";
 import TreeTuner from "@/components/TreeTuner";
 import ValleyTransition from "@/components/ValleyTransition";
 import { preloadCrtAssets } from "@/components/crtAssets";
 
-export default function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ below?: string }> }) {
   preloadCrtAssets();
+  // /?below=3 puts design 3 of components/below under the statement band
+  // in place of the page's own. Nothing else about the page changes.
+  const { below } = await searchParams;
+  const pick = BELOWS.find((b) => String(b.n) === below)?.n;
   return (
     // No data-home-lock any more: the home page scrolls now (the CRT scene
     // lives on scroll). HeroIntro still blocks wheel/touch during the intro.
@@ -43,7 +49,13 @@ export default function Home() {
 
       {/* Where the reference copy stops. From the prologue down the page is
           in the site's own language again — see BelowIntro. */}
-      <BelowIntro />
+      {pick ? (
+        <div className="relative z-10">
+          <BelowSwitch base="/?below=" n={pick} />
+        </div>
+      ) : (
+        <BelowIntro />
+      )}
     </div>
   );
 }
