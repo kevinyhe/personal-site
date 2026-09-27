@@ -109,11 +109,11 @@ export const SCENES: SceneSpec[] = [
   // 4 Saturn: a ringed planet among clouds.
   { name: "planet", box: { min: [-2.3, -1.35, -1.2], max: [2.3, 1.35, 1.2] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.12, dist: 9.4 },
   // 5..9 the skill groups: marks floating in a loose block.
-  { name: "skills", box: { min: [-2.3, -1.25, -0.9], max: [2.3, 1.25, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
-  { name: "skills", box: { min: [-2.3, -1.25, -0.9], max: [2.3, 1.25, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
-  { name: "skills", box: { min: [-2.3, -1.25, -0.9], max: [2.3, 1.25, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
-  { name: "skills", box: { min: [-2.3, -1.25, -0.9], max: [2.3, 1.25, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
-  { name: "skills", box: { min: [-2.3, -1.25, -0.9], max: [2.3, 1.25, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
+  { name: "skills", box: { min: [-2.4, -1.45, -0.9], max: [2.4, 1.45, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
+  { name: "skills", box: { min: [-2.4, -1.45, -0.9], max: [2.4, 1.45, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
+  { name: "skills", box: { min: [-2.4, -1.45, -0.9], max: [2.4, 1.45, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
+  { name: "skills", box: { min: [-2.4, -1.45, -0.9], max: [2.4, 1.45, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
+  { name: "skills", box: { min: [-2.4, -1.45, -0.9], max: [2.4, 1.45, 0.9] }, target: [0, 0, 0], yaw: 0.0, pitch: 0.05, dist: 9.2 },
   // 10 contact: the robot turning on a low plinth.
   { name: "robot", box: { min: [-1.05, -0.75, -1.05], max: [1.05, 0.75, 1.05] }, target: [0, 0, 0], yaw: 0.3, pitch: 0.2, dist: 6.6 },
 ];
@@ -139,12 +139,12 @@ export function markPositions(n: number, seed: number): Vec3[] {
     const inRow = r === rows - 1 ? n - r * cols : cols;
     const cx = c - (inRow - 1) / 2;
     const x = cols > 1 ? (cx / Math.max(1, (cols - 1) / 2)) * 1.85 : 0;
-    const y = rows > 1 ? (((rows - 1) / 2 - r) / Math.max(1, (rows - 1) / 2)) * 0.85 : 0;
-    out.push([x + (rand() - 0.5) * 0.35, y + (rand() - 0.5) * 0.3, (rand() - 0.5) * 1.5]);
+    const y = rows > 1 ? (((rows - 1) / 2 - r) / Math.max(1, (rows - 1) / 2)) * 1.0 : 0;
+    out.push([x + (rand() - 0.5) * 0.2, y + (rand() - 0.5) * 0.12, (rand() - 0.5) * 1.5]);
   }
   return out;
 }
-export const MARK_SIZE = 0.62;
+export const MARK_SIZE = 0.72;
 
 /** Camera position for a scene and a drift (-1..1 each way). */
 export function cameraPos(spec: SceneSpec, dx = 0, dy = 0): Vec3 {

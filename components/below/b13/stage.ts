@@ -52,7 +52,7 @@ export type Stage = {
 /** How bright the bars are with nothing hovered. */
 const IDLE_LEVEL = 0.42;
 /** Bar columns across the screen. */
-const COLUMNS = 150;
+const COLUMNS = 170;
 /** Source pixels per bar column. */
 const TEXELS_PER_COLUMN = 4;
 
@@ -254,7 +254,15 @@ export function startStage(host: HTMLElement, barEl: HTMLCanvasElement, opts: { 
     aim.y = (e.clientY / Math.max(1, window.innerHeight)) * 2 - 1;
   };
   if (!opts.still) window.addEventListener("pointermove", onPointer, { passive: true });
-  window.addEventListener("resize", resize);
+  // A still page has no loop to pick up the new size, so it redraws here.
+  const onResize = (): void => {
+    resize();
+    if (opts.still) {
+      renderFrame();
+      bars.redraw();
+    }
+  };
+  window.addEventListener("resize", onResize);
 
   return {
     setTarget: (i: number) => {
@@ -273,7 +281,7 @@ export function startStage(host: HTMLElement, barEl: HTMLCanvasElement, opts: { 
     destroy: () => {
       destroyed = true;
       window.removeEventListener("pointermove", onPointer);
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", onResize);
       bars.destroy();
       scene.clear();
       bag.dispose();
