@@ -61,7 +61,7 @@ export type Stone = {
 /** Five stones, one per project, nine units apart. Each a different shape. */
 export const STONES: readonly Stone[] = [
   { shape: "upright", x: 0, z: -1, halfW: 0.55, halfD: 0.5, h: 1.55, moss: 1.05, side: "left", seed: 11 },
-  { shape: "leaning", x: 9, z: -0.7, halfW: 0.95, halfD: 0.5, h: 1.2, moss: 1.1, side: "right", seed: 23 },
+  { shape: "leaning", x: 9, z: -0.7, halfW: 0.95, halfD: 0.5, h: 1.15, moss: 1.1, side: "right", seed: 23 },
   { shape: "boulder", x: 18, z: -1.2, halfW: 0.85, halfD: 0.8, h: 0.62, moss: 1.2, side: "left", seed: 37 },
   { shape: "slab", x: 27, z: -0.8, halfW: 1.3, halfD: 0.72, h: 0.4, moss: 1.5, side: "right", seed: 41 },
   { shape: "pair", x: 36, z: -1, halfW: 1.3, halfD: 0.6, h: 0.9, moss: 1.45, side: "left", seed: 53 },

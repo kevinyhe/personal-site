@@ -84,7 +84,8 @@ function blob(sx: number, sy: number, sz: number, taper: number, tilt: number, s
     pos.setXYZ(k, x * sx * narrow, up, z * sz * narrow);
   }
   g.rotateZ(tilt);
-  g.translate(ox, 0, oz);
+  // Tipping a stone lifts one side of its foot out of the sand; sink it back.
+  g.translate(ox, -Math.abs(Math.sin(tilt)) * sx, oz);
   g.computeVertexNormals();
   return g;
 }
@@ -94,7 +95,7 @@ function stoneGeometry(st: L.Stone): THREE.BufferGeometry {
     case "upright":
       return blob(0.5, 1.5, 0.45, 0.25, 0.06, st.seed, 0, 0);
     case "leaning":
-      return blob(0.46, 1.32, 0.42, 0.55, -0.5, st.seed, -0.25, 0);
+      return blob(0.46, 1.5, 0.42, 0.55, -0.5, st.seed, -0.25, 0);
     case "boulder":
       return blob(0.82, 0.6, 0.78, 0.1, 0.05, st.seed, 0, 0);
     case "slab":
