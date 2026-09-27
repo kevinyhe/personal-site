@@ -293,6 +293,16 @@ export default function B16(): JSX.Element {
   return (
     <div className="relative w-full" ref={rootRef} style={{ backgroundColor: BAND, color: BLOSSOM }}>
       {mode === "journey" ? <Journey /> : <Plain withStage={mode === "still"} />}
+      {/* The band above is this plum. The first rows under it are plum
+          too, whatever the tree is doing, and the bars come up out of it.
+          It scrolls away with the page. */}
+      {mode === "journey" || mode === "still" ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[14vh]"
+          style={{ background: `linear-gradient(${BAND} 0%, ${BAND} 12%, rgba(42, 13, 30, 0) 100%)` }}
+        />
+      ) : null}
     </div>
   );
 }
