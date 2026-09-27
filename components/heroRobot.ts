@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { buildRobotDrawing, type RobotDrawing } from "@/components/robotDrawing";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { CanvasSource } from "@/components/valley/barShader";
@@ -79,10 +78,6 @@ export type HeroRobotOptions = {
    *  so its wheels rest on the edge with no air under them, instead of
    *  centring the frame on the robot's middle. */
   floorAtBottom?: boolean;
-  /** Off screen only: also keep an engineer's drawing of it, the same
-   *  pose from the same lens, on a second canvas (`drawing`). Drawn only
-   *  while setDrawing(true), since it costs a second render. */
-  drawing?: { fill: string; edge: string; dim: string; faint: string };
 };
 
 export type HeroRobot = {
@@ -125,21 +120,6 @@ export type HeroRobot = {
   source: CanvasSource;
   /** Resolves once the glb is decoded and the first frame could draw. */
   ready: Promise<void>;
-  /** The drawing, when `drawing` was asked for: a canvas the size of the
-   *  robot's, and a count that goes up each time it is redrawn. */
-  drawing: { canvas: HTMLCanvasElement; version(): number } | null;
-  /** Draw the drawing too on every frame, or stop. Turning it on draws. */
-  setDrawing(on: boolean): void;
-  /** The robot's box on its canvas right now, in the canvas's px:
-   *  left, top, right, bottom. Null before it loads. */
-  screenBox(): [number, number, number, number] | null;
-  /** The same, one box per part: a turned robot's outline is much
-   *  narrower than its overall box, and this follows it closely. */
-  screenBoxes(): [number, number, number, number][];
-  /** Is there robot at this point of its canvas (px), give or take `pad`
-   *  px? Read from the rendered picture, so it follows the outline. Only
-   *  with `drawing`; false otherwise. */
-  hit(x: number, y: number, pad: number): boolean;
 };
 
 /** The shot. */
@@ -171,7 +151,6 @@ export function mountHeroRobot({
   pedestal = false,
   fill: FILL_OPT = FILL,
   floorAtBottom = false,
-  drawing: drawingColours,
 }: HeroRobotOptions): HeroRobot | null {
   if (typeof window === "undefined" || window.innerWidth < MIN_WIDTH) return null;
 
@@ -192,16 +171,7 @@ export function mountHeroRobot({
     (container ?? document.body).appendChild(canvas);
   }
 
-  // With a drawing, the robot's pixels are also read back to test where
-  // the cursor is (hit()); a canvas that is never shown can keep its
-  // buffer at no cost, and must, to be read after the frame.
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    alpha: true,
-    antialias: true,
-    powerPreference: "low-power",
-    preserveDrawingBuffer: !!(offscreen && drawingColours),
-  });
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
   renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(offscreen ? 1 : Math.min(MAX_DPR, window.devicePixelRatio || 1));
   if (shaded) {
@@ -277,24 +247,6 @@ export function mountHeroRobot({
   let frameTop = 1;
   let dirty = false;
   let raf = 0;
-  // The outline, for hit(): the rendered picture at a sixth of its size,
-  // read back once per new frame, on the first question after it.
-  const HIT_SCALE = 6;
-  const hitCanvas = offscreen && drawingColours ? document.createElement("canvas") : null;
-  const hitCtx = hitCanvas?.getContext("2d", { willReadFrequently: true }) ?? null;
-  let hitData: Uint8ClampedArray | null = null;
-  let hitStale = true;
-  // The drawing: its own canvas, a copy of the renderer's taken right
-  // after the drawing pass, so the shaded pass can go on using the
-  // renderer's canvas as the bar layer.
-  const drawCanvas = offscreen && drawingColours ? document.createElement("canvas") : null;
-  const drawCtx = drawCanvas?.getContext("2d") ?? null;
-  let drawer: RobotDrawing | null = null;
-  /** The model itself, without the drawing's lines and labels, for
-   *  measuring where the robot is on screen. */
-  let model: THREE.Object3D | null = null;
-  let drawingOn = false;
-  let drawVersion = 0;
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -359,27 +311,8 @@ export function mountHeroRobot({
 
   const render = () => {
     if (disposed || !loaded) return;
-    if (drawingOn && drawer && drawCanvas && drawCtx) {
-      // The drawing first, copied off, then the shaded robot over it on
-      // the renderer's own canvas. The shadow map does not need drawing
-      // for a pass of flat fills and lines.
-      drawer.begin();
-      const auto = renderer.shadowMap.autoUpdate;
-      renderer.shadowMap.autoUpdate = false;
-      renderer.render(scene, camera);
-      renderer.shadowMap.autoUpdate = auto;
-      drawer.end();
-      if (drawCanvas.width !== canvas.width || drawCanvas.height !== canvas.height) {
-        drawCanvas.width = canvas.width;
-        drawCanvas.height = canvas.height;
-      }
-      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-      drawCtx.drawImage(canvas, 0, 0);
-      drawVersion += 1;
-    }
     renderer.render(scene, camera);
     dirty = true;
-    hitStale = true;
   };
   /** Its y for the current lift: standing at 0, or down past the frame's
    *  bottom edge with all of it — plinth included — out of view. */
@@ -433,7 +366,6 @@ export function mountHeroRobot({
     const gltf = await loader.parseAsync(bytes, "");
     if (disposed) return;
     robot.add(gltf.scene);
-    model = gltf.scene;
     gltf.scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && shaded) {
         (o as THREE.Mesh).castShadow = true;
@@ -476,18 +408,6 @@ export function mountHeroRobot({
       robot.add(disc);
     }
     axleY = wheels[0]?.radius ?? size.y * 0.1;
-    if (drawCanvas && drawingColours) {
-      const family = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace";
-      await document.fonts?.ready;
-      if (disposed) return;
-      drawer = buildRobotDrawing(
-        robot,
-        gltf.scene,
-        wheels.map((w) => w.node),
-        drawingColours,
-        family,
-      );
-    }
     loaded = true;
     frame();
     if (reduced) parked = true;
@@ -605,10 +525,6 @@ export function mountHeroRobot({
     if (disposed) return;
     disposed = true;
     cancelAnimationFrame(raf);
-    // The drawing first: it puts the parts' own materials back, so the
-    // loop below frees those and not the drawing's fill twice.
-    drawer?.dispose();
-    drawer = null;
     window.removeEventListener("resize", onResize);
     document.removeEventListener("visibilitychange", onVisibility);
     robot.traverse((o) => {
@@ -623,75 +539,5 @@ export function mountHeroRobot({
     canvas.remove();
   };
 
-  const setDrawing = (on: boolean) => {
-    if (drawingOn === on) return;
-    drawingOn = on;
-    if (on) render();
-  };
-  const corner = new THREE.Vector3();
-  const project = (b: THREE.Box3): [number, number, number, number] => {
-    const { w, h } = box();
-    let x0 = Infinity;
-    let y0 = Infinity;
-    let x1 = -Infinity;
-    let y1 = -Infinity;
-    for (let i = 0; i < 8; i += 1) {
-      corner.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(camera);
-      const x = ((corner.x + 1) / 2) * w;
-      const y = ((1 - corner.y) / 2) * h;
-      x0 = Math.min(x0, x);
-      x1 = Math.max(x1, x);
-      y0 = Math.min(y0, y);
-      y1 = Math.max(y1, y);
-    }
-    return [x0, y0, x1, y1];
-  };
-  const screenBox = (): [number, number, number, number] | null => {
-    if (!loaded || !model) return null;
-    return project(new THREE.Box3().setFromObject(model));
-  };
-  const partBox = new THREE.Box3();
-  const screenBoxes = (): [number, number, number, number][] => {
-    if (!loaded || !model) return [];
-    const out: [number, number, number, number][] = [];
-    model.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-      const gb = mesh.geometry.boundingBox;
-      if (!gb) return;
-      out.push(project(partBox.copy(gb).applyMatrix4(mesh.matrixWorld)));
-    });
-    return out;
-  };
-  const hit = (x: number, y: number, pad: number): boolean => {
-    if (!hitCanvas || !hitCtx || !loaded) return false;
-    const hw = Math.max(1, Math.round(canvas.width / HIT_SCALE));
-    const hh = Math.max(1, Math.round(canvas.height / HIT_SCALE));
-    if (hitStale || !hitData || hitCanvas.width !== hw || hitCanvas.height !== hh) {
-      if (hitCanvas.width !== hw || hitCanvas.height !== hh) {
-        hitCanvas.width = hw;
-        hitCanvas.height = hh;
-      }
-      hitCtx.clearRect(0, 0, hw, hh);
-      hitCtx.drawImage(canvas, 0, 0, hw, hh);
-      hitData = hitCtx.getImageData(0, 0, hw, hh).data;
-      hitStale = false;
-    }
-    const cx = Math.round(x / HIT_SCALE);
-    const cy = Math.round(y / HIT_SCALE);
-    const r = Math.max(0, Math.round(pad / HIT_SCALE));
-    for (let j = -r; j <= r; j += 1) {
-      for (let i = -r; i <= r; i += 1) {
-        const px = cx + i;
-        const py = cy + j;
-        if (px < 0 || py < 0 || px >= hw || py >= hh) continue;
-        if (hitData[(py * hw + px) * 4 + 3] > 40) return true;
-      }
-    }
-    return false;
-  };
-  const drawing = drawCanvas ? { canvas: drawCanvas, version: () => drawVersion } : null;
-
-  return { play, seek, yaw, rise, moveTo, arc, ARC_HEADING, topPx, frontPx, canvas, source, dispose, ready, drawing, setDrawing, screenBox, screenBoxes, hit };
+  return { play, seek, yaw, rise, moveTo, arc, ARC_HEADING, topPx, frontPx, canvas, source, dispose, ready };
 }

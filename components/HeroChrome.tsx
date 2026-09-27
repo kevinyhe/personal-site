@@ -46,12 +46,12 @@ export default function HeroChrome() {
 
       {/* Solid type; only the large right serif word carries the (subtle)
           difference effect, matching the reference site. */}
-      <div className="pointer-events-none fixed inset-0 z-20 flex flex-col px-6 py-3 text-[#f0f0f0] sm:px-16 sm:py-8">
+      <div className="pointer-events-none fixed inset-0 z-20 flex flex-col px-6 py-3 text-[#f0f0f0] sm:px-[8rem] sm:py-[4rem]">
         {/* Top strip: signature left, the pages centred, the quick
             links right. A 3-column grid so the nav is centred on the
             page, not between its neighbours. */}
         <div
-          className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 font-serif-display text-[1.1rem] text-white"
+          className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 font-serif-display text-[2.2rem] text-white"
           data-hero-animate
           data-hero-strip
           style={{ textShadow: "0 0 8px rgba(255,255,255,0.25)" }}
@@ -65,7 +65,7 @@ export default function HeroChrome() {
               Work, Info and Contact are on this page now. /work, /info and
               /contact still exist and still link to each other; nothing
               here reaches them any more. */}
-          <nav className="flex items-center justify-center gap-8 sm:gap-14">
+          <nav className="flex items-center justify-center gap-8 sm:gap-[7rem]">
             {sectionLinks.map((item) => (
               <SectionLink
                 className="pointer-events-auto transition-opacity duration-200 hover:opacity-60"
@@ -77,9 +77,9 @@ export default function HeroChrome() {
             ))}
           </nav>
 
-          <div className="flex items-center justify-end gap-3">
+          <div className="flex items-center justify-end gap-[1.5rem]">
             {socialLinks.map((social, index) => (
-              <span className="flex items-center gap-3" key={social.label}>
+              <span className="flex items-center gap-[1.5rem]" key={social.label}>
                 {/* A middle dot, not a slash: the strip is set in the demo
                     serif now, and "/" is one of the glyphs that cut
                     replaces with its watermark (see siteContent). */}
@@ -114,7 +114,7 @@ export default function HeroChrome() {
           // from the first frame, so HeroIntro's measurements of them do
           // not change meaning the moment the scroll gives the lockup a
           // transform (which would make it their offsetParent anyway).
-          className="relative flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_128px)/2.165),72vh),54rem)]"
+          className="relative flex items-baseline justify-between text-[clamp(4rem,calc((100vw_-_48px)/2.165),54rem)] leading-[0.82] sm:text-[clamp(4rem,min(calc((100vw_-_16rem)/2.165),72vh),54rem)]"
           data-hero-lockup
         >
           {/* One shared baseline, both words the same size (0.58 of the
