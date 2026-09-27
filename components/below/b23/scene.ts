@@ -362,7 +362,7 @@ function assemble(
     };
     for (const t of TREES) placeAll(tree(t.h, t.seed), spotMatrix(t, -0.004));
     for (const s of SHRINES) placeAll(shrine(), spotMatrix(s));
-    for (const t of ROAD_TORII) placeAll(torii(0.24, 0.2), spotMatrix(t));
+    for (const t of ROAD_TORII) placeAll(torii(0.3, 0.3), spotMatrix(t));
     for (const t of SHRINE_TORII) placeAll(torii(0.08, 0.075), spotMatrix(t));
     LANTERNS.forEach((l, i) => placeAll(lantern(l.ring, i), spotMatrix(l)));
     placeAll(pagoda(), spotMatrix({ lat: Math.PI / 2 - 1e-4, lon: 0, turn: 0 }));
