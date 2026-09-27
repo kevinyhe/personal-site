@@ -5,6 +5,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 import { mountHeroRobot, type HeroRobot } from "@/components/heroRobot";
+import { createRobotReveal } from "@/components/robotReveal";
 import {
   createBarCanvas,
   hexToRgb,
@@ -122,6 +123,7 @@ const STAIR = 2;
 export default function StatementSection(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const revealRef = useRef<HTMLCanvasElement | null>(null);
   const lineRef = useRef<HTMLParagraphElement | null>(null);
 
   // The flower, opened BY THE SCROLL.
@@ -326,6 +328,9 @@ export default function StatementSection(): JSX.Element {
       endX: robotW * 0.5,
       fill: 0.7,
       shaded: true,
+      // The engineer's drawing the hover opens onto: blossom edges on the
+      // band's own plum, white dimensions, a faint floor grid.
+      drawing: { fill: BAND, edge: INK, dim: "#ffffff", faint: INK },
     });
     const robotConfig: BarLayerConfig = {
       x: "0%", y: "0%", width: "100%", height: "100%",
@@ -345,6 +350,25 @@ export default function StatementSection(): JSX.Element {
       { type: "canvas", source, config: configLeft },
       ...(robot ? [{ type: "canvas" as const, source: robot.source, config: robotConfig }] : []),
     ];
+    // Hover the robot and a window opens onto its drawing (robotReveal).
+    // The window maps into the robot layer's box, which the push-in moves,
+    // so it reads that box live off robotConfig.
+    const pct = (v: string | number) => (typeof v === "number" ? v : parseFloat(v)) / 100;
+    const overlay = revealRef.current;
+    const reveal =
+      robot && overlay && !reduced
+        ? createRobotReveal({
+            overlay,
+            robot,
+            rect: () => ({
+              x: pct(robotConfig.x),
+              y: pct(robotConfig.y),
+              w: pct(robotConfig.width),
+              h: pct(robotConfig.height),
+            }),
+            colours: { ground: "#1a0812", grid: INK, rim: "#ffe3f1" },
+          })
+        : null;
     bar = createBarCanvas(canvas, layers, {
       colors: () => ({ bg: hexToRgb(BAND), fill: hexToRgb(INK) }),
       defaults: { bgOpacity: 0 },
@@ -496,6 +520,7 @@ export default function StatementSection(): JSX.Element {
     return () => {
       stopped = true;
       context.revert();
+      reveal?.dispose();
       robot?.dispose();
       bar?.destroy();
       video.pause();
@@ -572,6 +597,12 @@ export default function StatementSection(): JSX.Element {
         className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
         data-statement-scene
         ref={canvasRef}
+      />
+      {/* The window onto the robot's drawing, laid exactly over the bars. */}
+      <canvas
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
+        ref={revealRef}
       />
 
       {/* What is left once the sentence has gone: four lines on the left
