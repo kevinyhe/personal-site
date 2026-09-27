@@ -132,7 +132,7 @@ function Journey(): JSX.Element {
   return (
     <div className="relative" data-journey>
       <div className="sticky top-0 w-full overflow-hidden" data-stage style={{ height: SCREEN, backgroundColor: BAND }}>
-        <canvas aria-hidden className="absolute inset-0 block h-full w-full" data-gl />
+        <div aria-hidden className="absolute inset-0" data-gl />
         {/* The panels already open run left under the words; this keeps the words on plum. */}
         <div
           aria-hidden
@@ -192,7 +192,7 @@ function Plain({ withStage }: { withStage: boolean }): JSX.Element {
     <div>
       {withStage ? (
         <div className="relative w-full overflow-hidden" data-stage style={{ height: SCREEN, backgroundColor: BAND }}>
-          <canvas aria-hidden className="absolute inset-0 block h-full w-full" data-gl />
+          <div aria-hidden className="absolute inset-0" data-gl />
         </div>
       ) : null}
 
