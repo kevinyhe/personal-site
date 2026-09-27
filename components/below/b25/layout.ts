@@ -126,15 +126,21 @@ export const driveAt = (s: number): number => {
   return t * t * 2.6;
 };
 
-export function poseAt(s: number): Pose {
+/**
+ * The camera and the robot at scroll s. Every shot is framed for a wide
+ * screen; on one narrower than 1.25 wide (an upright phone's still frame)
+ * the camera backs off so the robot's width still fits.
+ */
+export function poseAt(s: number, aspect = 1.85): Pose {
   let shot = shotMix(WORK_A, WORK_B, smooth(0, 4.9, s));
   shot = shotMix(shot, SKILLS, smooth(4.85, 5.8, s));
   shot = shotMix(shot, CONTACT, smooth(7.5, 8.2, s));
+  const dist = shot.dist * Math.max(1, 1.25 / aspect);
   const target = { x: shot.tx, y: shot.ty, z: 0 };
   const eye = {
     x: target.x,
-    y: target.y + shot.dist * Math.sin(shot.elev),
-    z: shot.dist * Math.cos(shot.elev),
+    y: target.y + dist * Math.sin(shot.elev),
+    z: dist * Math.cos(shot.elev),
   };
   const drive = driveAt(s);
   // It drives the way it is pointing, so it does not slide sideways.

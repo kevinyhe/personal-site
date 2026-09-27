@@ -94,8 +94,9 @@ export function startExploded(root: HTMLElement, mode: Mode): () => void {
 
   /** Where a group's leader lands on the stage right now, 0..1. */
   const anchorOnStage = (group: number): { x: number; y: number } => {
-    const pose = poseAt(s);
-    return project(pose, toWorld(pose, anchorOf(group, explodeAt(group, s))), aspect());
+    const a = aspect();
+    const pose = poseAt(s, a);
+    return project(pose, toWorld(pose, anchorOf(group, explodeAt(group, s))), a);
   };
 
   /** Leader i from a to b, at opacity v; its dot sits on b. */
@@ -160,8 +161,9 @@ export function startExploded(root: HTMLElement, mode: Mode): () => void {
     blackPoint: 200,
     whitePoint: 25,
     threshold: 255,
-    xSquares: 110,
-    ySquares: 150,
+    // The band's spray density: cells about 3.4 by 4 px on a 1920 screen.
+    xSquares: 170,
+    ySquares: 140,
     bgOpacity: 0,
     fillOpacity: 0,
   };
@@ -176,11 +178,11 @@ export function startExploded(root: HTMLElement, mode: Mode): () => void {
   };
 
   // The robot's layer: every frame it asks where the scroll is, and the
-  // robot redraws only if that moved.
+  // robot redraws only if that moved. No `ready`: the bar shader would hold
+  // every layer, and so the words, until the 1.8 MB model is in.
   const robotSource: CanvasSource = {
     canvas: glCanvas,
     animated: true,
-    ready: robot.source.ready,
     update: (time, dt) => {
       tick();
       return robot.source.update?.(time, dt) ?? true;
@@ -238,10 +240,12 @@ export function startExploded(root: HTMLElement, mode: Mode): () => void {
 
   // The still frame waits for the model, then draws once more.
   if (still) {
-    void robot.ready.then(() => {
-      tick();
-      bar.redraw();
-    });
+    robot.ready
+      .then(() => {
+        tick();
+        bar.redraw();
+      })
+      .catch(() => {});
   }
 
   const resizer = new ResizeObserver(() => {
@@ -273,7 +277,7 @@ export function startExploded(root: HTMLElement, mode: Mode): () => void {
           s,
           goTo: [...GO_TO],
           stops: [...STOPS],
-          pose: poseAt(s),
+          pose: poseAt(s, a),
           drive: driveAt(s),
           groups: GROUPS.map((g, i) => ({
             name: g.name,

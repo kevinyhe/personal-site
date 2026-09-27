@@ -84,11 +84,21 @@ function ProjectText({ p, i }: { p: Project; i: number }): JSX.Element {
   );
 }
 
+/** A group name in the serif; its "&" set in Inter, which the serif would draw as a flower. */
 function GroupHeading({ g }: { g: SkillGroup }): JSX.Element {
-  return serifSafe(g.label) ? (
-    <h3 className="font-serif-display text-[2.4rem] font-normal italic leading-[1.2] text-white">{g.label}</h3>
-  ) : (
-    <h3 className="font-sans text-[2.2rem] font-light leading-[1.2] text-white">{g.label}</h3>
+  const parts = g.label.split("&");
+  if (!parts.every(serifSafe)) {
+    return <h3 className="font-sans text-[2.2rem] font-light leading-[1.2] text-white">{g.label}</h3>;
+  }
+  return (
+    <h3 className="font-serif-display text-[2.4rem] font-normal italic leading-[1.2] text-white">
+      {parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 ? <span className="font-sans font-light not-italic">&amp;</span> : null}
+          {part}
+        </span>
+      ))}
+    </h3>
   );
 }
 

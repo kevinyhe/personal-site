@@ -114,8 +114,9 @@ export function buildExploded(canvas: HTMLCanvasElement, url: string): Exploded 
   let dirty = false;
 
   const setSize = (aspect: number): void => {
-    const w = RENDER_W;
-    const h = Math.max(2, Math.round(RENDER_W / aspect));
+    // An upright screen keeps its height under RENDER_W too.
+    const w = Math.max(2, Math.round(Math.min(RENDER_W, RENDER_W * aspect)));
+    const h = Math.max(2, Math.round(w / aspect));
     renderer.setSize(w, h, false);
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
@@ -123,7 +124,7 @@ export function buildExploded(canvas: HTMLCanvasElement, url: string): Exploded 
   setSize(1.85);
 
   const place = (s: number): void => {
-    const pose = poseAt(s);
+    const pose = poseAt(s, camera.aspect);
     camera.position.set(pose.eye.x, pose.eye.y, pose.eye.z);
     camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
     robot.rotation.y = pose.yaw;
