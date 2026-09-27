@@ -302,6 +302,13 @@ export type Grid = {
 
 const GRID = { left: 0.29, pitch: 0.064, top: 0.2, rowPitch: 0.155 };
 export const LENS_Z = 0.6;
+/** The small lens: how flat it is pressed, how far a ray runs inside it (in radii), how much it bends. */
+export const LENS_PRESS = 0.45;
+export const LENS_THICKNESS = 1.8;
+export const LENS_IOR = 1.45;
+/** How far a lifted row of lenses stands off, and how much it grows. */
+export const LIFT_Z = 0.3;
+export const LIFT_GROW = 0.14;
 
 /** The skills: one row per group, a lens per skill, from the left. */
 export function lensGrid(view: View, counts: number[]): Grid {
@@ -391,7 +398,8 @@ export function arrange(stop: number, view: View, boxes: Box[], grid: Grid, slid
     });
   }
 
-  return HEAP.map((s, i) => pose(i, HEAP_AT.x + s[0] / aspect, HEAP_AT.y + s[1], s[2]));
+  // Drawn in a little, so that neighbours touch and lap over each other.
+  return HEAP.map((s, i) => pose(i, HEAP_AT.x + (s[0] * 0.85) / aspect, HEAP_AT.y + s[1] * 0.85, s[2]));
 }
 
 export type Stage = { from: number; to: number; t: number };
@@ -491,6 +499,69 @@ export function toWorld(p: { x: number; y: number; z: number; r: number }, view:
   out.z = p.z;
   out.radius = p.r * h;
   return out;
+}
+
+/**
+ * Which point of the sheet shows in the middle of a lens that faces the
+ * eye. Not the point straight behind it: three bends the eye's ray where
+ * it meets the glass, runs it `thickness` radii on, and shows what is on
+ * screen where that ends. Off to one side of the stage that lands nearer
+ * the middle of the stage than the lens is. The marks are drawn where
+ * this says, so each sits in the middle of its lens.
+ */
+export function seenThrough(
+  p: { x: number; y: number; z: number; r: number },
+  view: View,
+  press: number,
+  thickness: number,
+  ior: number,
+): { x: number; y: number } {
+  const at = toWorld(p, view, { x: 0, y: 0, z: 0, radius: 0 });
+  // Where the ray from the eye to the lens's middle meets its front.
+  // With z stretched by 1 / press the lens is a ball, and the ray still
+  // runs through its middle, so the meeting point is straight toward
+  // the eye from there.
+  let qx = -at.x;
+  let qy = -at.y;
+  let qz = (CAM_Z - at.z) / press;
+  const ql = Math.hypot(qx, qy, qz);
+  qx /= ql;
+  qy /= ql;
+  qz /= ql;
+  const px = at.x + qx * at.radius;
+  const py = at.y + qy * at.radius;
+  const pz = at.z + qz * at.radius * press;
+  // The surface's normal there.
+  let nx = qx;
+  let ny = qy;
+  let nz = qz / press;
+  const nl = Math.hypot(nx, ny, nz);
+  nx /= nl;
+  ny /= nl;
+  nz /= nl;
+  // The ray coming in, from the eye.
+  let ix = px;
+  let iy = py;
+  let iz = pz - CAM_Z;
+  const il = Math.hypot(ix, iy, iz);
+  ix /= il;
+  iy /= il;
+  iz /= il;
+  // Snell's law, as GLSL's refract does it.
+  const eta = 1 / ior;
+  const d = nx * ix + ny * iy + nz * iz;
+  const k = Math.max(0, 1 - eta * eta * (1 - d * d));
+  const bend = eta * d + Math.sqrt(k);
+  const rx = eta * ix - bend * nx;
+  const ry = eta * iy - bend * ny;
+  const rz = eta * iz - bend * nz;
+  const rl = Math.hypot(rx, ry, rz) || 1;
+  const run = thickness * at.radius;
+  const ex = px + (rx / rl) * run;
+  const ey = py + (ry / rl) * run;
+  const ez = pz + (rz / rl) * run;
+  const h = viewHeightAt(ez);
+  return { x: 0.5 + ex / (h * (view.w / view.h)), y: 0.5 - ey / h };
 }
 
 /** How far a disc is from a box, in stage heights. Negative: it overlaps. */

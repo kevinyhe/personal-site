@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { LENS_PRESS } from "./layout";
 
 /**
  * The shapes of the ten glass solids and of the small skill lens, all
@@ -123,4 +124,4 @@ export function buildSolidGeometries(): THREE.BufferGeometry[] {
 }
 
 /** The small lens over each skill's mark. */
-export const buildLensGeometry = (): THREE.BufferGeometry => lens(0.45, 48, 32);
+export const buildLensGeometry = (): THREE.BufferGeometry => lens(LENS_PRESS, 48, 32);
