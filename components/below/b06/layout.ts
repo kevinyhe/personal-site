@@ -33,8 +33,6 @@ export const WORK = {
   /** The others while one is open. */
   thinW: 1.4,
   thinGap: 0.5,
-  /** Nothing of the opened arrangement comes nearer the edge than this. */
-  margin: 3,
   titleW: 30,
   titleGap: 2.5,
   /** The row's left edge where its travel begins and ends. */
@@ -45,10 +43,17 @@ export const WORK = {
 export const WORK_PITCH = WORK.w + WORK.gap;
 export const WORK_ROW_W = WORK.count * WORK.w + (WORK.count - 1) * WORK.gap;
 const THIN_PITCH = WORK.thinW + WORK.thinGap;
-/** Room left over once the opened arrangement is laid out edge to edge.
- *  The arrangement moves inside it to stay under the cursor. */
-const OPEN_SLACK =
-  100 - 2 * WORK.margin - ((WORK.count - 1) * THIN_PITCH + WORK.openW + 2 * WORK.titleGap + WORK.titleW);
+/** The title's column: the title and the space each side of it. */
+const COLUMN = WORK.titleW + 2 * WORK.titleGap;
+/** The opened arrangement, edge to edge: nine thin strips, the opened
+ *  one and the column. It stands in the middle of the screen. */
+const OPEN_W = (WORK.count - 1) * THIN_PITCH + WORK.openW + COLUMN;
+const OPEN_LEFT = (100 - OPEN_W) / 2;
+/** An opened strip stays open while the pointer is within this of it,
+ *  so a pointer on its very edge cannot set two strips fighting. */
+export const OPEN_HOLD = 1;
+/** The column runs lower than the strips: the bullets are in it. */
+export const COLUMN_H = 62;
 
 /** The row's left edge for a slide of 0 (start) to 1 (end). 0.5 is rest:
  *  the row in the middle of the screen. */
@@ -60,9 +65,8 @@ export function restLayout(rowLeft: number): Rect[] {
   return out;
 }
 
-/** Which strip's place the point x is over, or -1. A place is the strip
- *  at rest and half the gap each side. It does not change while strips
- *  open and close, so the answer cannot flicker. */
+/** Which strip's place at rest the point x is over, or -1. A place is
+ *  the strip and half the gap each side. */
 export function workSlotAt(x: number, y: number, rowLeft: number, rowTop: number): number {
   if (y < rowTop || y > rowTop + WORK.h) return -1;
   const i = Math.floor((x - (rowLeft - WORK.gap / 2)) / WORK_PITCH);
@@ -71,40 +75,72 @@ export function workSlotAt(x: number, y: number, rowLeft: number, rowTop: number
 
 export type OpenLayout = { rects: Rect[]; title: Rect; side: Side };
 
+/** The left edge of strip i when it is opened with its title on `side`. */
+function openStart(i: number, side: Side): number {
+  const base = OPEN_LEFT + i * THIN_PITCH;
+  return side === "right" ? base : base + COLUMN;
+}
+
 /**
- * The row with strip i opened. The arrangement fills the screen: thin
- * strips, the opened one, the title column beside it, thin strips. The
- * title goes on whichever side lets the opened strip cover the place the
- * strip had at rest, so the cursor that opened it is still on it.
+ * The row with strip i opened. The arrangement fills the screen and does
+ * not depend on where the row was: the thin strips before i, then the
+ * opened strip and the title's column in the order `side` says, then the
+ * thin strips after i. The thin strips stand in the same places for
+ * either side.
  */
-export function openLayout(i: number, rowLeft: number, forced?: Side): OpenLayout {
-  const slotL = rowLeft + i * WORK_PITCH - WORK.gap / 2;
-  const slotR = slotL + WORK_PITCH;
-  const want = (slotL + slotR) / 2 - WORK.openW / 2;
-  const base = WORK.margin + i * THIN_PITCH;
-  const column = WORK.titleW + 2 * WORK.titleGap;
-
-  const leftIfTitleRight = clamp(want, base, base + OPEN_SLACK);
-  const leftIfTitleLeft = clamp(want, base + column, base + column + OPEN_SLACK);
-  const cover = (left: number): number => Math.min(slotL - left, left + WORK.openW - slotR);
-  const side: Side = forced ?? (cover(leftIfTitleRight) >= cover(leftIfTitleLeft) ? "right" : "left");
-
-  const openLeft = side === "right" ? leftIfTitleRight : leftIfTitleLeft;
-  const shift = openLeft - base - (side === "right" ? 0 : column);
+export function openLayout(i: number, side: Side): OpenLayout {
+  const base = OPEN_LEFT + i * THIN_PITCH;
+  const openLeft = openStart(i, side);
+  const after = base + COLUMN + WORK.openW + WORK.thinGap;
   const rects: Rect[] = [];
   for (let j = 0; j < WORK.count; j += 1) {
-    if (j < i) rects.push({ left: WORK.margin + j * THIN_PITCH + shift, width: WORK.thinW });
+    if (j < i) rects.push({ left: OPEN_LEFT + j * THIN_PITCH, width: WORK.thinW });
     else if (j === i) rects.push({ left: openLeft, width: WORK.openW });
-    else {
-      const after = openLeft + WORK.openW + (side === "right" ? column : WORK.thinGap);
-      rects.push({ left: after + (j - i - 1) * THIN_PITCH, width: WORK.thinW });
-    }
+    else rects.push({ left: after + (j - i - 1) * THIN_PITCH, width: WORK.thinW });
   }
   const title: Rect = {
-    left: side === "right" ? openLeft + WORK.openW + WORK.titleGap : openLeft - WORK.titleGap - WORK.titleW,
+    left: side === "right" ? openLeft + WORK.openW + WORK.titleGap : base + WORK.titleGap,
     width: WORK.titleW,
   };
   return { rects, title, side };
+}
+
+/** The side for strip i's title that puts the opened strip best under
+ *  the point x: the pointer that opened it should be left well on it. */
+export function sideFor(i: number, x: number): Side {
+  const cover = (left: number): number => Math.min(x - left, left + WORK.openW - x);
+  return cover(openStart(i, "right")) >= cover(openStart(i, "left")) ? "right" : "left";
+}
+
+export type Hit = { strip: number; side: Side };
+
+/**
+ * Which strip the pointer opens. `open` and `side` are what is open now
+ * (-1 for nothing). The test is made against where the strips are going,
+ * not where they are this frame, so it gives the same answer all through
+ * a change. With a strip open: on it or on its column keeps it, on a
+ * thin strip opens that one, anywhere else closes. With none open: the
+ * strip whose place at rest the pointer is over.
+ */
+export function workHit(x: number, y: number, rowLeft: number, rowTop: number, open: number, side: Side): Hit {
+  const none: Hit = { strip: -1, side };
+  const inBand = y >= rowTop && y <= rowTop + WORK.h;
+  if (open < 0) {
+    const i = workSlotAt(x, y, rowLeft, rowTop);
+    return i < 0 ? none : { strip: i, side: sideFor(i, x) };
+  }
+  const lay = openLayout(open, side);
+  const column = lay.title.left - WORK.titleGap;
+  if (x >= column && x <= column + COLUMN && y >= rowTop && y <= rowTop + COLUMN_H) return { strip: open, side };
+  if (!inBand) return none;
+  const o = lay.rects[open];
+  if (x >= o.left - OPEN_HOLD && x <= o.left + o.width + OPEN_HOLD) return { strip: open, side };
+  for (let j = 0; j < WORK.count; j += 1) {
+    if (j === open) continue;
+    const r = lay.rects[j];
+    if (x >= r.left - WORK.thinGap / 2 && x < r.left + r.width + WORK.thinGap / 2) return { strip: j, side: sideFor(j, x) };
+  }
+  return none;
 }
 
 /**
@@ -302,8 +338,9 @@ export function titleLines(title: string): string[] {
 }
 
 export const TITLE = {
-  /** Line height, in ems. Capitals only, so it can be tight. */
-  leading: 0.86,
+  /** From one line to the next, in ems: a line height of 0.86 and the
+   *  0.05 of padding under each line. Capitals only, so it can be tight. */
+  leading: 0.91,
   tracking: -0.04,
   /** The title is never taller than this, in vh, nor its type larger
    *  than this, in vw. */

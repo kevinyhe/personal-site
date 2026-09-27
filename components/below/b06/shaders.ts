@@ -62,8 +62,8 @@ float hash(float n) {
   return fract(sin(n * 127.1) * 43758.5453);
 }
 
-// 1 inside a line of half width w about d = 0, soft over the next s.
-float line(float d, float w, float s) {
+// 1 inside a stroke of half width w about d = 0, soft over the next s.
+float stroke(float d, float w, float s) {
   return 1.0 - smoothstep(w, w + s, abs(d));
 }
 
@@ -107,14 +107,14 @@ vec3 art(vec2 q, float t) {
   float len = 0.05 + 0.92 * level * hump;
   float d = abs(q.x - 0.5) * 2.0;
   float band = smoothstep(0.0, 0.14, inRow) * (1.0 - smoothstep(0.86, 1.0, inRow));
-  vec3 col = mix(PLUM, PINK, 0.15 + 0.07 * q.y);
+  vec3 col = mix(PLUM, PINK, 0.20 + 0.08 * q.y);
   // The track each band runs in.
   col = mix(col, PINK, 0.12 * band);
   float lit = (1.0 - smoothstep(len - 0.004, len, d)) * band;
   float tip = smoothstep(len - 0.09, len, d);
   col = mix(col, mix(PINK, WHITE, tip), lit);
   // The middle line the levels grow from.
-  col = mix(col, APRICOT, line(q.x - 0.5, 0.0015, 0.0015));
+  col = mix(col, APRICOT, stroke(q.x - 0.5, 0.0015, 0.0015));
   return col;
 }
 `;
@@ -129,10 +129,10 @@ float signal(float x, float k, float t) {
 
 vec3 art(vec2 q, float t) {
   vec2 p = centred(q);
-  vec3 col = mix(DEEP, MINT, 0.13 + 0.05 * q.y);
+  vec3 col = mix(DEEP, MINT, 0.19 + 0.06 * q.y);
   // Graph paper, moving with the traces.
   vec2 cell = abs(fract(vec2(p.x + t * 0.12, p.y) * 8.0) - 0.5);
-  float grid = max(line(cell.x - 0.5, 0.02, 0.02), line(cell.y - 0.5, 0.02, 0.02));
+  float grid = max(stroke(cell.x - 0.5, 0.02, 0.02), stroke(cell.y - 0.5, 0.02, 0.02));
   col = mix(col, MINT, 0.16 * grid);
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
@@ -140,7 +140,7 @@ vec3 art(vec2 q, float t) {
     float d = p.y - y;
     vec3 ink = k == 0 ? MINT : (k == 1 ? PINK : WHITE);
     col += ink * 0.22 * exp(-abs(d) * 38.0);
-    col = mix(col, ink, line(d, 0.006, 0.006));
+    col = mix(col, ink, stroke(d, 0.006, 0.006));
   }
   return col;
 }
@@ -150,19 +150,19 @@ vec3 art(vec2 q, float t) {
 const ART_ARCS = /* glsl */ `
 vec3 art(vec2 q, float t) {
   vec2 p = centred(q);
-  vec2 from = p - vec2(0.0, 0.62);
-  float r = length(from);
-  float ang = atan(from.x, -from.y);
-  vec3 col = mix(PLUM, APRICOT, 0.13 + 0.08 * (1.0 - q.y));
+  vec2 hang = p - vec2(0.0, 0.62);
+  float r = length(hang);
+  float ang = atan(hang.x, -hang.y);
+  vec3 col = mix(PLUM, APRICOT, 0.18 + 0.08 * (1.0 - q.y));
   for (int k = 0; k < 6; k++) {
     float fk = float(k);
     float radius = 0.22 + 0.17 * fk;
     float speed = 2.4 / sqrt(radius * 4.0);
     float swing = 0.78 * sin(t * speed + fk * 1.9);
-    float inRing = line(r - radius, 0.022, 0.006);
-    float inSpan = line(ang - swing, 0.24, 0.02);
+    float inRing = stroke(r - radius, 0.022, 0.006);
+    float inSpan = stroke(ang - swing, 0.24, 0.02);
     // A faint whole ring shows the way each arc travels.
-    col = mix(col, APRICOT, 0.10 * line(r - radius, 0.002, 0.003));
+    col = mix(col, APRICOT, 0.10 * stroke(r - radius, 0.002, 0.003));
     vec3 ink = k == 1 || k == 4 ? PINK : (k == 2 || k == 5 ? WHITE : APRICOT);
     col = mix(col, ink, inRing * inSpan);
   }
@@ -183,10 +183,10 @@ float slope(float x) {
 
 vec3 art(vec2 q, float t) {
   vec2 p = centred(q);
-  vec3 col = mix(DEEP, PINK, 0.12 + 0.05 * q.y);
+  vec3 col = mix(DEEP, PINK, 0.18 + 0.05 * q.y);
   // The field's tiles.
   vec2 cell = abs(fract(p * 6.0) - 0.5);
-  float grid = max(line(cell.x - 0.5, 0.015, 0.015), line(cell.y - 0.5, 0.015, 0.015));
+  float grid = max(stroke(cell.x - 0.5, 0.015, 0.015), stroke(cell.y - 0.5, 0.015, 0.015));
   col = mix(col, PINK, 0.20 * grid);
 
   float reach = uAspect * 0.5 + 0.12;
@@ -196,14 +196,14 @@ vec3 art(vec2 q, float t) {
   float d = (p.y - path(p.x)) / sqrt(1.0 + slope(p.x) * slope(p.x));
   float driven = 1.0 - step(rx, p.x);
   float dots = step(0.5, fract(p.x * 18.0));
-  col = mix(col, MINT, line(d, 0.004, 0.004) * dots * (1.0 - driven) * 0.7);
+  col = mix(col, MINT, stroke(d, 0.004, 0.004) * dots * (1.0 - driven) * 0.7);
   col += MINT * 0.20 * exp(-abs(d) * 30.0) * driven;
-  col = mix(col, MINT, line(d, 0.007, 0.005) * driven);
+  col = mix(col, MINT, stroke(d, 0.007, 0.005) * driven);
 
   // Points the path is drawn through.
   for (int k = 0; k < 5; k++) {
     float wx = (float(k) - 2.0) * 0.3;
-    float ring = line(length(p - vec2(wx, path(wx))) - 0.028, 0.004, 0.004);
+    float ring = stroke(length(p - vec2(wx, path(wx))) - 0.028, 0.004, 0.004);
     col = mix(col, APRICOT, ring);
   }
 
@@ -213,10 +213,10 @@ vec3 art(vec2 q, float t) {
   l = vec2(l.x * cos(h) + l.y * sin(h), -l.x * sin(h) + l.y * cos(h));
   float box = max(abs(l.x), abs(l.y));
   col = mix(col, DEEP, 1.0 - smoothstep(0.046, 0.05, box));
-  col = mix(col, WHITE, line(box - 0.046, 0.005, 0.003));
-  col = mix(col, WHITE, line(l.y, 0.004, 0.003) * step(0.0, l.x) * (1.0 - step(0.046, l.x)));
+  col = mix(col, WHITE, stroke(box - 0.046, 0.005, 0.003));
+  col = mix(col, WHITE, stroke(l.y, 0.004, 0.003) * step(0.0, l.x) * (1.0 - step(0.046, l.x)));
   float pulse = fract(t * 0.8);
-  col += WHITE * 0.35 * (1.0 - pulse) * line(length(p - robot) - (0.06 + 0.10 * pulse), 0.003, 0.004);
+  col += WHITE * 0.35 * (1.0 - pulse) * stroke(length(p - robot) - (0.06 + 0.10 * pulse), 0.003, 0.004);
   return col;
 }
 `;
@@ -227,17 +227,17 @@ const ART_RINGS = /* glsl */ `
 vec3 art(vec2 q, float t) {
   vec2 p = centred(q);
   float r = length(p);
-  vec3 col = mix(DEEP, PINK, 0.10 + 0.05 * q.y);
+  vec3 col = mix(DEEP, PINK, 0.16 + 0.05 * q.y);
   // Wide rings moving outward, very slowly.
   float wave = fract(r * 5.0 - t * 0.06);
-  col = mix(col, PINK, 0.22 * line(wave - 0.5, 0.03, 0.05));
+  col = mix(col, PINK, 0.22 * stroke(wave - 0.5, 0.03, 0.05));
 
   float tilt = -0.38 + 0.10 * sin(t * 0.17);
   vec2 s = vec2(p.x * cos(tilt) - p.y * sin(tilt), p.x * sin(tilt) + p.y * cos(tilt));
   float e = length(vec2(s.x, s.y * 3.4));
   float turn = atan(s.y * 3.4, s.x);
   float inRings = smoothstep(0.27, 0.285, e) * (1.0 - smoothstep(0.69, 0.70, e));
-  float gap = line(e - 0.50, 0.012, 0.004);
+  float gap = stroke(e - 0.50, 0.012, 0.004);
   float grain = 0.62 + 0.38 * sin(e * 95.0 + sin(turn * 2.0 + t * 0.25) * 1.5);
   vec3 ringInk = mix(PINK, WHITE, smoothstep(0.30, 0.68, e)) * grain;
   float rings = inRings * (1.0 - gap);
@@ -247,10 +247,10 @@ vec3 art(vec2 q, float t) {
   vec3 discInk = mix(APRICOT, PINK, bands) * (0.72 + 0.28 * smoothstep(-0.17, 0.12, p.x + p.y));
 
   // The far half of the rings goes behind the disc, the near half in front.
-  float near = step(s.y, 0.0);
-  col = mix(col, ringInk, rings * (1.0 - near));
+  float front = step(s.y, 0.0);
+  col = mix(col, ringInk, rings * (1.0 - front));
   col = mix(col, discInk, disc);
-  col = mix(col, ringInk, rings * near);
+  col = mix(col, ringInk, rings * front);
   return col;
 }
 `;
