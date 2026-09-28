@@ -2,7 +2,7 @@ import HeroChrome from "@/components/HeroChrome";
 import HeroIntro from "@/components/HeroIntro";
 import HeroValley from "@/components/HeroValley";
 import StatementSection from "@/components/StatementSection";
-import BrushWork from "@/components/BrushWork";
+import Projects from "@/components/Projects";
 import Ending from "@/components/Ending";
 import BelowSwitch from "@/components/below/BelowSwitch";
 import { BELOWS } from "@/components/below/list";
@@ -55,10 +55,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           <BelowSwitch base="/?below=" n={pick} />
         </div>
       ) : (
-        // Under the band: the work and the skills with brush strokes
-        // running down the page, then the sky with the moon for the end.
+        // Under the band: the work, one project a screen, with a brush
+        // stroke painting for each; the skills; then the sky and the moon.
         <div className="relative z-10">
-          <BrushWork />
+          <Projects />
           <Ending />
         </div>
       )}

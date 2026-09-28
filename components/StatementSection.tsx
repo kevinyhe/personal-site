@@ -410,7 +410,6 @@ export default function StatementSection(): JSX.Element {
     );
     const climb = gsap.parseEase("power2.out");
     const soft = gsap.parseEase("power2.out");
-    const glide = gsap.parseEase("power2.inOut");
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     let openFrames = 0;
     let spin = 0;
@@ -458,13 +457,9 @@ export default function StatementSection(): JSX.Element {
       const k = 1 + z;
       robotConfig.width = `${100 * k}%`;
       robotConfig.height = `${100 * k}%`;
-      // Then the camera runs down the robot: over 0.8-1.0 the layer rises
-      // until its wheels stand on the bottom edge, so the lower half shows.
-      // (The robot fills the middle 70% of its canvas: its wheels sit at
-      // 0.85 of the layer's height, 1.84 frames down at the close-up.)
-      const pan = glide(clamp01((p - 0.8) / 0.2));
-      const y0 = 0.14 * z;
-      const yFrac = y0 + (0.95 - 0.85 * k - y0) * pan;
+      // It holds there; once the lines are in, the pin ends and the page
+      // scrolls on with the robot as it stands.
+      const yFrac = 0.14 * z;
       // Measured off the render rather than the model's box: in profile
       // the robot is narrower than its box and its lift's near side rises
       // above it, so the offsets are what put its left edge on the frame's
@@ -517,7 +512,7 @@ export default function StatementSection(): JSX.Element {
           const p = clamp01((scrolled - vh) / pinLen);
           // The flower: open over the screen before the pin and the first
           // fifth of it, so it is full as the robot sets off.
-          openScroll = clamp01(scrolled / (vh + 0.2 * pinLen));
+          openScroll = clamp01(scrolled / (0.75 * vh));
           // The turn: one full circle from the start of the rise to a
           // little past its end, eased out, so it comes to rest in profile
           // as the push-in takes over.
@@ -594,7 +589,7 @@ export default function StatementSection(): JSX.Element {
       // inside for the last three: the viewport holds on the sentence while
       // the flower opens, the robot crosses and parks in the middle, the
       // flower closes, and the four lines come in beside it.
-      className="relative z-10 min-h-[100vh] lg:min-h-[500vh]"
+      className="relative z-10 min-h-[100vh] lg:min-h-[360vh]"
       data-statement
       id="info"
       ref={rootRef}
