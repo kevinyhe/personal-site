@@ -119,6 +119,9 @@ const AFTER =
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
 const STAIR = 2;
+/** The scene canvas's height in frames: tall enough for the whole
+ *  close-up robot, whose wheels are 1.84 frames down. */
+const CANVAS_H = 1.9;
 /** Where the robot's turn comes to rest, radians: the angle it passes
  *  half way up, turned well round from profile. */
 const END_YAW = -0.6 - Math.PI / 2;
@@ -300,7 +303,7 @@ export default function StatementSection(): JSX.Element {
     const config: BarLayerConfig = {
       // Hanging down the right of the band, past the centred sentence, and
       // again down the left as its mirror.
-      x: "-9%", y: "2%", width: "50%", height: "100%",
+      x: "-9%", y: `${2 / CANVAS_H}%`, width: "50%", height: `${100 / CANVAS_H}%`,
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
@@ -358,7 +361,7 @@ export default function StatementSection(): JSX.Element {
       tilt: 0.28,
     });
     const fieldConfig: BarLayerConfig = {
-      x: `${FIELD_X * 100}%`, y: "0%", width: `${FIELD_W * 100}%`, height: "100%",
+      x: `${FIELD_X * 100}%`, y: "0%", width: `${FIELD_W * 100}%`, height: `${100 / CANVAS_H}%`,
       blackPoint: 200, whitePoint: 25, threshold: 255,
       xSquares: 170, ySquares: 260, bgOpacity: 0, fillOpacity: 1,
     };
@@ -422,18 +425,28 @@ export default function StatementSection(): JSX.Element {
       const shut = p < 0.22 ? 0 : clamp01((p - 0.22) / 0.5);
       // The wave runs left to right: the original flower at the far left
       // first, then the bough beside it.
-      const open = p < 0.22 ? clamp01(openScroll / 0.55) : 1 - shut;
-      const fieldOpen = p < 0.22 ? clamp01((openScroll - 0.3) / 0.7) : 1 - shut;
+      const open = p < 0.22 ? openScroll : 1 - shut;
+      const fieldOpen = p < 0.22 ? clamp01((openScroll - 0.1) / 0.6) : 1 - shut;
       field.set(fieldOpen);
       openFrames = clamp01(open) * (FRAMES - 1);
       want = Math.round(openFrames);
       // And they sink as they close: the box slides down the frame over
       // the rise, a whole frame's worth, so at the end the top of it has
       // just gone under the bottom edge — barely hidden, not switched off.
-      config.y = `${2 + 100 * shut}%`;
+      config.y = `${(2 + 100 * shut) / CANVAS_H}%`;
       config.fillOpacity = open <= 0.002 ? 0 : 1;
-      fieldConfig.y = `${100 * shut}%`;
+      fieldConfig.y = `${(100 * shut) / CANVAS_H}%`;
       fieldConfig.fillOpacity = fieldOpen <= 0.002 ? 0 : 1;
+      // The aurora. It runs behind the whole site (SiteBackground) and the
+      // band's plum covers it; while the sentence writes in, the plum thins
+      // to let it through as a plum field with pink light moving in it, and
+      // it closes again before the robot is up, so the band still meets the
+      // work below in solid plum.
+      // It starts once the band's top edge has reached the top of the screen
+      // (openScroll 0.56), so it never shows a line against the valley.
+      const aurora = clamp01((openScroll - 0.56) / 0.34) * (1 - clamp01((p - 0.3) / 0.3));
+      const band = rootRef.current;
+      if (band) band.style.backgroundColor = `rgba(42, 13, 30, ${(1 - 0.6 * soft(aurora)).toFixed(3)})`;
       // Both pairs, top then bottom, one line after another.
       for (const [i, el] of lines.entries()) {
         // After the push-in has taken the robot out from under them.
@@ -456,7 +469,7 @@ export default function StatementSection(): JSX.Element {
       const z = 1;
       const k = 1 + z;
       robotConfig.width = `${100 * k}%`;
-      robotConfig.height = `${100 * k}%`;
+      robotConfig.height = `${(100 * k) / CANVAS_H}%`;
       // It holds there; once the lines are in, the pin ends and the page
       // scrolls on with the robot as it stands.
       const yFrac = 0.14 * z;
@@ -465,7 +478,7 @@ export default function StatementSection(): JSX.Element {
       // above it, so the offsets are what put its left edge on the frame's
       // middle and its top a quarter of the way down.
       robotConfig.x = `${-29 * z}%`;
-      robotConfig.y = `${100 * yFrac}%`;
+      robotConfig.y = `${(100 * yFrac) / CANVAS_H}%`;
       // The wipe, from the bottom: the robot canvas is a scaled copy of
       // the frame, so its top edge scales back by the ratio.
       // The robot's layer is k times the frame and offset by its y, so
@@ -473,7 +486,7 @@ export default function StatementSection(): JSX.Element {
       const scale = ((frame0?.clientWidth ?? sceneW) / robotW) * k;
       const box = wipe.getBoundingClientRect();
       const cb = canvas.getBoundingClientRect();
-      const top = cb.top + cb.height * yFrac + robot.topPx() * scale;
+      const top = cb.top + (cb.height / CANVAS_H) * yFrac + robot.topPx() * scale;
       const cut = r <= 0 ? 0 : box.bottom - top;
       const finish = box.height * soft(clamp01((r - 0.72) / 0.28));
       wipe.style.clipPath = `inset(0 0 ${Math.max(0, cut, finish)}px 0)`;
@@ -512,7 +525,7 @@ export default function StatementSection(): JSX.Element {
           const p = clamp01((scrolled - vh) / pinLen);
           // The flower: open over the screen before the pin and the first
           // fifth of it, so it is full as the robot sets off.
-          openScroll = clamp01(scrolled / (0.75 * vh));
+          openScroll = clamp01(scrolled / (vh + 0.2 * pinLen));
           // The turn: one full circle from the start of the rise to a
           // little past its end, eased out, so it comes to rest in profile
           // as the push-in takes over.
@@ -589,7 +602,7 @@ export default function StatementSection(): JSX.Element {
       // inside for the last three: the viewport holds on the sentence while
       // the flower opens, the robot crosses and parks in the middle, the
       // flower closes, and the four lines come in beside it.
-      className="relative z-10 min-h-[100vh] lg:min-h-[360vh]"
+      className="relative z-10 min-h-[100vh] lg:min-h-[500vh]"
       data-statement
       id="info"
       ref={rootRef}
@@ -605,8 +618,13 @@ export default function StatementSection(): JSX.Element {
 
       <canvas
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
+        className="pointer-events-none absolute left-0 top-0 hidden w-full lg:block"
         data-statement-scene
+        // Taller than the frame (CANVAS_H frames): the close-up robot hangs
+        // below the frame's bottom edge, and when the pin lets go and the
+        // page scrolls on, its lower half comes up into view instead of
+        // being cut off along the canvas's edge.
+        style={{ height: `${CANVAS_H * 100}%` }}
         ref={canvasRef}
       />
 
