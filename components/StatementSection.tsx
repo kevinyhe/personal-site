@@ -452,9 +452,9 @@ export default function StatementSection(): JSX.Element {
       // canvas (x 0.33..0.67) and the middle 70% of its height; at twice
       // the size, a box at (-16%, -5%) puts its left edge on the frame's
       // middle and its top a quarter of the way down.
-      // The push-in, as before: over 0.6-0.8 the layer grows to twice the
-      // frame and slides so the robot's upper left fills the right half.
-      const z = glide(clamp01((p - 0.6) / 0.2));
+      // The close-up holds the whole way: the robot rises straight into
+      // the bottom right at twice the frame, with no stop in the middle.
+      const z = 1;
       const k = 1 + z;
       robotConfig.width = `${100 * k}%`;
       robotConfig.height = `${100 * k}%`;
