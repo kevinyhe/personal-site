@@ -1,5 +1,6 @@
 "use client";
 
+import Loader from "@/components/Loader";
 import {
   Component,
   type ErrorInfo,
@@ -295,6 +296,8 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       displayed = Math.min(goal, displayed + BAR_RATE * dt);
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
+      const pct = document.querySelector<HTMLElement>("[data-loader-pct]");
+      if (pct) pct.textContent = `${Math.round(Math.min(1, displayed) * 100)}%`;
       if (crtReadyRef.current && displayed >= 0.995) {
         tvShownAtRef.current = now;
         setTvShown(true);
@@ -311,6 +314,9 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   // froze the veil mid-fade.
   useEffect(() => {
     if (!tvShown) return undefined;
+    // The loader takes its canvas down before the veil lifts: left up, it
+    // flashed white for half a second as the fade uncovered it.
+    window.dispatchEvent(new Event("arbor:loaded"));
     const overlay = overlayRef.current;
     const tweens: gsap.core.Tween[] = [];
     // The veil is black over a black room: it can go quickly, and the lamp
@@ -319,7 +325,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       tweens.push(
         gsap.to(overlay, {
           autoAlpha: 0,
-          duration: 0.25,
+          duration: 0.7,
           ease: "power2.out",
           pointerEvents: "none",
         }),
@@ -1032,20 +1038,21 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
         <div
           aria-label="Loading"
           aria-live="polite"
-          className="absolute inset-0 z-10 overflow-hidden bg-[#0a0a0a]"
+          className="absolute inset-0 z-10 overflow-hidden bg-[#2a0d1e]"
           ref={overlayRef}
           role="status"
         >
-          <div className="absolute left-1/2 top-1/2 w-40 -translate-x-1/2 -translate-y-1/2">
+          <Loader />
+          <div className="absolute inset-x-[3vw] bottom-[19vh]">
             <div
               aria-valuemax={crtLoad.total}
               aria-valuemin={0}
               aria-valuenow={crtReady ? crtLoad.total : crtLoad.loaded}
-              className="h-px w-full overflow-hidden bg-white/15"
+              className="h-px w-full overflow-hidden bg-[#f9b9dc]/20"
               role="progressbar"
             >
               <div
-                className="h-full bg-[#f0f0f0]"
+                className="h-full bg-[#f9b9dc]"
                 ref={progressFillRef}
                 style={{ width: 0 }}
               />
