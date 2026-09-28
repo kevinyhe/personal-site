@@ -46,6 +46,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           the screen there, and this is what comes up and covers it. */}
       <div className="relative z-10 -mt-[100vh]">
         <StatementSection />
+        {/* Plum under the band for the robot's lower half: its scene canvas
+            hangs below the band, and this is what it is drawn over as the
+            page scrolls on. */}
+        <div aria-hidden className="h-[90vh]" style={{ backgroundColor: "#2a0d1e" }} />
       </div>
 
       {/* Where the reference copy stops. From the prologue down the page is
