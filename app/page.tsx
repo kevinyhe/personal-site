@@ -2,7 +2,8 @@ import HeroChrome from "@/components/HeroChrome";
 import HeroIntro from "@/components/HeroIntro";
 import HeroValley from "@/components/HeroValley";
 import StatementSection from "@/components/StatementSection";
-import Pond from "@/components/below/b27";
+import BrushWork from "@/components/BrushWork";
+import Ending from "@/components/Ending";
 import BelowSwitch from "@/components/below/BelowSwitch";
 import { BELOWS } from "@/components/below/list";
 import TreeTuner from "@/components/TreeTuner";
@@ -54,9 +55,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           <BelowSwitch base="/?below=" n={pick} />
         </div>
       ) : (
-        // The pond (design 27) is the page's own section under the band.
+        // Under the band: the work and the skills with brush strokes
+        // running down the page, then the sky with the moon for the end.
         <div className="relative z-10">
-          <Pond />
+          <BrushWork />
+          <Ending />
         </div>
       )}
     </div>

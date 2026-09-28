@@ -119,6 +119,10 @@ const AFTER =
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
 const STAIR = 2;
+/** The robot's layer: its size against the frame and where its box sits. */
+const ROBOT_K = 1.3;
+const ROBOT_X = 0.68 - 0.5 * ROBOT_K;
+const ROBOT_Y = 0.965 - 0.85 * ROBOT_K;
 /** Where the robot's turn comes to rest, radians: the angle it passes
  *  half way up, turned well round from profile. */
 const END_YAW = -0.6 - Math.PI / 2;
@@ -454,16 +458,18 @@ export default function StatementSection(): JSX.Element {
       // It comes up where it ends: the close-up framing holds the whole way
       // (no rise in the middle and push-in after), so it rises straight
       // into the bottom right at its final size.
-      const z = 1;
-      const k = 1 + z;
+      // At 1.3 times the frame, placed so the whole robot stands in the
+      // bottom right: its centre at 68% across, its wheels just above the
+      // bottom edge. (It stands in the middle 70% of its own canvas.)
+      const k = ROBOT_K;
       robotConfig.width = `${100 * k}%`;
       robotConfig.height = `${100 * k}%`;
       // Measured off the render rather than the model's box: in profile
       // the robot is narrower than its box and its lift's near side rises
       // above it, so the offsets are what put its left edge on the frame's
       // middle and its top a quarter of the way down.
-      robotConfig.x = `${-29 * z}%`;
-      robotConfig.y = `${14 * z}%`;
+      robotConfig.x = `${100 * ROBOT_X}%`;
+      robotConfig.y = `${100 * ROBOT_Y}%`;
       // The wipe, from the bottom: the robot canvas is a scaled copy of
       // the frame, so its top edge scales back by the ratio.
       // The robot's layer is k times the frame and offset by its y, so
@@ -471,7 +477,7 @@ export default function StatementSection(): JSX.Element {
       const scale = ((frame0?.clientWidth ?? sceneW) / robotW) * k;
       const box = wipe.getBoundingClientRect();
       const cb = canvas.getBoundingClientRect();
-      const top = cb.top + cb.height * 0.14 * z + robot.topPx() * scale;
+      const top = cb.top + cb.height * ROBOT_Y + robot.topPx() * scale;
       const cut = r <= 0 ? 0 : box.bottom - top;
       const finish = box.height * soft(clamp01((r - 0.72) / 0.28));
       wipe.style.clipPath = `inset(0 0 ${Math.max(0, cut, finish)}px 0)`;
@@ -635,15 +641,13 @@ export default function StatementSection(): JSX.Element {
 
       {/* The sentence, in the middle. The box round it is what the wipe
           clips as the robot rises through it; the flowers hang either side. */}
-      {/* Padding below, not a transform, lifts the sentence: the wipe clips
-          this box, and a transform would carry the first line outside it. */}
-      <div className="relative z-[1] w-full pb-[26vh]">
+      <div className="relative z-[1] w-full">
         {/* Off centre, to the right of the spray and short of the flower at
             the end: large, in the display serif, stepped like the lines
             that follow the robot. */}
         <p
           aria-label={LINE}
-          className="ml-[38vw] whitespace-nowrap font-serif-display italic text-[min(18vh,7vw)] leading-[1.02] tracking-[-0.03em]"
+          className="ml-[47vw] whitespace-nowrap font-serif-display italic text-[min(16vh,6.2vw)] leading-[1.02] tracking-[-0.03em]"
           ref={lineRef}
         >
           {LINE_ROWS.map((row, r) => (
