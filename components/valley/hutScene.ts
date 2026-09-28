@@ -62,6 +62,8 @@ const PORTRAIT_FOV_MAX = 70;
 
 // Palette (sRGB; THREE.Color converts to linear).
 const SKY_TOP = "#2a1024";
+/** Bare mode: how much taller the view is made, drawn from its top. */
+const BARE_HEADROOM = 0.62;
 const SKY_HORIZON = "#e79cc8";
 const FOG_COLOR = "#d493bd";
 // Rosy, not amber. The sun skims the ground at 8 degrees, so its colour IS
@@ -1332,6 +1334,9 @@ export function createHutScene(
   const camPos = new THREE.Vector3();
   const trackHeight = buildTrackHeight(seed);
   function applyCamera() {
+    // The canvas's own shape. In bare mode the lens below is taller than the
+    // canvas, so camera.aspect is not this and has to be put back each time.
+    camera.aspect = width / Math.max(1, height);
     const portrait = camera.aspect < 1;
     // Nothing scrubs under reduced motion, so the one still frame is chosen
     // here. A portrait canvas is a narrow slot: even with the wider field
@@ -1357,6 +1362,23 @@ export function createHutScene(
     // (about 64 degrees vertical, 13 m across on a phone) and is continuous
     // at aspect 1, so a window dragged narrow does not jump.
     camera.fov = portrait ? Math.min(PORTRAIT_FOV_MAX, fov / Math.sqrt(camera.aspect)) : fov;
+    if (bare) {
+      // Headroom. The hero's television maps this picture onto its glass a
+      // little larger than the picture itself, and past the top edge it
+      // repeats the edge row, so peaks that touch the top ran straight up
+      // the screen as pillars. A lens shift, not a tilt: the view is widened
+      // to 1 + HEADROOM of its height and only its top part is drawn, so
+      // the scale is the same and the picture gains sky above the peaks.
+      // The full view is the canvas's width and (1 + HEADROOM) of its
+      // height, so its aspect is the canvas's divided by that; left at the
+      // canvas's, three stretched the drawn part sideways into a smear.
+      const full = 1 + BARE_HEADROOM;
+      const canvasAspect = camera.aspect;
+      const half = Math.atan(Math.tan((camera.fov * Math.PI) / 360) * full);
+      camera.fov = (half * 360) / Math.PI;
+      camera.aspect = canvasAspect / full;
+      camera.setViewOffset(1000 * canvasAspect, 1000 * full, 0, 0, 1000 * canvasAspect, 1000);
+    }
     camera.updateProjectionMatrix();
     // Two panes at full glow directly behind the pale wordmark bars leave the
     // logo with nothing to read against. They are dim at the top of the page
