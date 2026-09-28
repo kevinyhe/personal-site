@@ -119,10 +119,6 @@ const AFTER =
 const INTRO =
   "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
 const STAIR = 2;
-/** The robot's layer: its size against the frame and where its box sits. */
-const ROBOT_K = 1.3;
-const ROBOT_X = 0.68 - 0.5 * ROBOT_K;
-const ROBOT_Y = 0.965 - 0.85 * ROBOT_K;
 /** Where the robot's turn comes to rest, radians: the angle it passes
  *  half way up, turned well round from profile. */
 const END_YAW = -0.6 - Math.PI / 2;
@@ -414,6 +410,7 @@ export default function StatementSection(): JSX.Element {
     );
     const climb = gsap.parseEase("power2.out");
     const soft = gsap.parseEase("power2.out");
+    const glide = gsap.parseEase("power2.inOut");
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
     let openFrames = 0;
     let spin = 0;
@@ -455,21 +452,25 @@ export default function StatementSection(): JSX.Element {
       // canvas (x 0.33..0.67) and the middle 70% of its height; at twice
       // the size, a box at (-16%, -5%) puts its left edge on the frame's
       // middle and its top a quarter of the way down.
-      // It comes up where it ends: the close-up framing holds the whole way
-      // (no rise in the middle and push-in after), so it rises straight
-      // into the bottom right at its final size.
-      // At 1.3 times the frame, placed so the whole robot stands in the
-      // bottom right: its centre at 68% across, its wheels just above the
-      // bottom edge. (It stands in the middle 70% of its own canvas.)
-      const k = ROBOT_K;
+      // The push-in, as before: over 0.6-0.8 the layer grows to twice the
+      // frame and slides so the robot's upper left fills the right half.
+      const z = glide(clamp01((p - 0.6) / 0.2));
+      const k = 1 + z;
       robotConfig.width = `${100 * k}%`;
       robotConfig.height = `${100 * k}%`;
+      // Then the camera runs down the robot: over 0.8-1.0 the layer rises
+      // until its wheels stand on the bottom edge, so the lower half shows.
+      // (The robot fills the middle 70% of its canvas: its wheels sit at
+      // 0.85 of the layer's height, 1.84 frames down at the close-up.)
+      const pan = glide(clamp01((p - 0.8) / 0.2));
+      const y0 = 0.14 * z;
+      const yFrac = y0 + (0.95 - 0.85 * k - y0) * pan;
       // Measured off the render rather than the model's box: in profile
       // the robot is narrower than its box and its lift's near side rises
       // above it, so the offsets are what put its left edge on the frame's
       // middle and its top a quarter of the way down.
-      robotConfig.x = `${100 * ROBOT_X}%`;
-      robotConfig.y = `${100 * ROBOT_Y}%`;
+      robotConfig.x = `${-29 * z}%`;
+      robotConfig.y = `${100 * yFrac}%`;
       // The wipe, from the bottom: the robot canvas is a scaled copy of
       // the frame, so its top edge scales back by the ratio.
       // The robot's layer is k times the frame and offset by its y, so
@@ -477,7 +478,7 @@ export default function StatementSection(): JSX.Element {
       const scale = ((frame0?.clientWidth ?? sceneW) / robotW) * k;
       const box = wipe.getBoundingClientRect();
       const cb = canvas.getBoundingClientRect();
-      const top = cb.top + cb.height * ROBOT_Y + robot.topPx() * scale;
+      const top = cb.top + cb.height * yFrac + robot.topPx() * scale;
       const cut = r <= 0 ? 0 : box.bottom - top;
       const finish = box.height * soft(clamp01((r - 0.72) / 0.28));
       wipe.style.clipPath = `inset(0 0 ${Math.max(0, cut, finish)}px 0)`;
