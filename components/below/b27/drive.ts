@@ -21,6 +21,7 @@ import {
   unproject,
 } from "./layout";
 import { buildPond } from "./pond";
+import { createStrokes } from "./strokes";
 
 /**
  * Drives the pond from the page's scroll and the cursor. The bar shader's
@@ -33,7 +34,7 @@ import { buildPond } from "./pond";
 export type Mode = "journey" | "still";
 
 /** Cells across the bar grid. */
-const X_SQUARES = 240;
+const X_SQUARES = 320;
 const MAX_BAR_W = 2560;
 /** Where the stone starts, above the water. */
 const STONE_FROM = 5;
@@ -49,6 +50,7 @@ const smooth = (t: number): number => {
 export function startPond(root: HTMLElement, mode: Mode): () => void {
   const stage = root.querySelector<HTMLElement>("[data-stage]");
   const bars = root.querySelector<HTMLCanvasElement>("canvas[data-bars]");
+  const inkCanvas = root.querySelector<HTMLCanvasElement>("canvas[data-strokes]");
   const journey = root.querySelector<HTMLElement>("[data-journey]");
   if (!stage || !bars) throw new Error("b27: stage missing");
   const still = mode === "still";
@@ -214,10 +216,25 @@ export function startPond(root: HTMLElement, mode: Mode): () => void {
     pond.step();
     pond.draw({ pose, time, gather: gatherAt(s), stoneY });
     placeWords();
+    // Each stroke paints in over the last stretch of the approach to its
+    // pad, holds while the words are up, and lifts as the camera leaves.
+    strokes?.render(
+      (k) => smooth((s - (STOPS[k] - 0.55)) / 0.5),
+      (k) => 0.92 * (1 - smooth((s - (STOPS[k] + 0.35)) / 0.35)),
+    );
   };
 
   const monoFamily = getComputedStyle(root).getPropertyValue("--font-mono").trim() || "monospace";
   const glCanvas = document.createElement("canvas");
+  // The strokes go round the pad, on its side of the screen.
+  const strokes =
+    inkCanvas && !still
+      ? createStrokes(
+          inkCanvas,
+          (k) => (SIDES[k] < 0 ? { x0: 0.06, y0: 0.14, x1: 0.5, y1: 0.88 } : { x0: 0.5, y0: 0.14, x1: 0.94, y1: 0.88 }),
+          BLOSSOM,
+        )
+      : null;
   const pond = buildPond(glCanvas, { animated: !still, monoFamily, update: still ? undefined : tick });
   pond.resize(aspect());
 
@@ -272,6 +289,7 @@ export function startPond(root: HTMLElement, mode: Mode): () => void {
 
   const resizer = new ResizeObserver(() => {
     fitBars();
+    strokes?.resize();
     pond.resize(aspect());
     config.ySquares = Math.round(X_SQUARES / aspect());
     if (still) {
@@ -336,6 +354,7 @@ export function startPond(root: HTMLElement, mode: Mode): () => void {
     document.documentElement.removeEventListener("pointerleave", onLeave);
     resizer.disconnect();
     bar.destroy();
+    strokes?.dispose();
     pond.dispose();
     if (dev && w.__b27) delete w.__b27;
   };

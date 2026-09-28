@@ -33,7 +33,7 @@ import { LIST_TOP, LIST_W, RING_SHARE_X, SIDES } from "./layout";
 type Mode = "boot" | "plain" | SceneMode;
 
 const SCREEN = "var(--arbor-screen-h)";
-const LABEL = "font-mono text-[1.4rem] uppercase tracking-[0.2em]";
+const LABEL = "font-mono text-[1.8rem] uppercase tracking-[0.2em]";
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 const hostOf = (href: string): string => href.replace(/^https?:\/\//, "").replace(/\/$/, "");
 /** The display serif is a demo cut that draws a flower for digits and some marks. */
@@ -61,19 +61,19 @@ function Title({ p, big }: { p: Project; big: boolean }): JSX.Element {
 function ProjectText({ p, i }: { p: Project; i: number }): JSX.Element {
   return (
     <>
-      <p className="font-mono text-[1.4rem] tabular-nums tracking-[0.12em]">
+      <p className="font-mono text-[1.8rem] tabular-nums tracking-[0.12em]">
         {`${pad2(i + 1)} / ${pad2(projects.length)}`}
         <span className="ml-[1.6rem] opacity-70">{p.year}</span>
       </p>
       <div className="mt-[1.6rem]">
         <Title big p={p} />
       </div>
-      <p className="mt-[2rem] max-w-[62rem] font-sans text-[2.2rem] font-light leading-[1.45]">{p.tagline}</p>
-      <p className="mt-[2rem] font-mono text-[1.4rem] uppercase leading-[1.7] tracking-[0.12em] text-white">{p.stack.join("  ·  ")}</p>
-      {p.award ? <p className="mt-[0.8rem] font-mono text-[1.4rem] leading-[1.6]">{p.award}</p> : null}
+      <p className="mt-[2rem] max-w-[62rem] font-sans text-[2.6rem] font-light leading-[1.45] text-white">{p.tagline}</p>
+      <p className="mt-[2rem] font-mono text-[1.7rem] uppercase leading-[1.7] tracking-[0.12em] text-white">{p.stack.join("  ·  ")}</p>
+      {p.award ? <p className="mt-[0.8rem] font-mono text-[1.7rem] leading-[1.6]">{p.award}</p> : null}
       {p.href ? (
         <a
-          className="mt-[0.8rem] inline-block font-mono text-[1.4rem] leading-[1.6] underline underline-offset-[0.35em]"
+          className="mt-[0.8rem] inline-block font-mono text-[1.7rem] leading-[1.6] underline underline-offset-[0.35em]"
           href={p.href}
           rel="noreferrer"
           target="_blank"
@@ -100,13 +100,15 @@ function Links({ className }: { className: string }): JSX.Element {
   );
 }
 
-const SCRIM = "rgba(26, 8, 18, 0.8) 0%, rgba(26, 8, 18, 0.5) 55%, rgba(26, 8, 18, 0) 100%";
+const SCRIM = "rgba(26, 8, 18, 0.94) 0%, rgba(26, 8, 18, 0.82) 60%, rgba(26, 8, 18, 0) 100%";
 
 function Journey(): JSX.Element {
   return (
     <div className="relative" data-journey>
       <div className="sticky top-0 w-full overflow-hidden" data-stage style={{ height: SCREEN, backgroundColor: BAND }}>
         <canvas aria-hidden className="absolute inset-0 block h-full w-full" data-bars />
+        {/* Design 20's brush strokes, painted round each pad. */}
+        <canvas aria-hidden className="pointer-events-none absolute inset-0 block h-full w-full" data-strokes />
         <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[52vw]" data-scrim="left" style={{ opacity: 0, background: `linear-gradient(90deg, ${SCRIM})` }} />
         <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-[52vw]" data-scrim="right" style={{ opacity: 0, background: `linear-gradient(270deg, ${SCRIM})` }} />
         <p className={`pointer-events-none absolute bottom-[4vh] left-1/2 -translate-x-1/2 whitespace-nowrap ${LABEL}`} data-hint style={{ opacity: 0.7 }}>
@@ -142,10 +144,10 @@ function Journey(): JSX.Element {
               // Under this group's ring of lanterns.
               style={{ left: `${(RING_SHARE_X[r] * 100).toFixed(2)}%`, top: `${(LIST_TOP * 100).toFixed(2)}%`, width: `${(LIST_W * 100).toFixed(2)}vw` }}
             >
-              <h3 className="font-sans text-[1.9rem] font-medium leading-[1.2] text-white">{g.label}</h3>
+              <h3 className="font-sans text-[2.6rem] font-medium leading-[1.2] text-white">{g.label}</h3>
               <ul className="mt-[1.2rem]">
                 {g.skills.map((s) => (
-                  <li className="font-mono text-[1.35rem] leading-[1.7]" key={s.name}>
+                  <li className="font-mono text-[1.8rem] leading-[1.7]" key={s.name}>
                     {s.name}
                   </li>
                 ))}

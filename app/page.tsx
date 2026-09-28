@@ -2,7 +2,7 @@ import HeroChrome from "@/components/HeroChrome";
 import HeroIntro from "@/components/HeroIntro";
 import HeroValley from "@/components/HeroValley";
 import StatementSection from "@/components/StatementSection";
-import BelowIntro from "@/components/BelowIntro";
+import Pond from "@/components/below/b27";
 import BelowSwitch from "@/components/below/BelowSwitch";
 import { BELOWS } from "@/components/below/list";
 import TreeTuner from "@/components/TreeTuner";
@@ -54,7 +54,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           <BelowSwitch base="/?below=" n={pick} />
         </div>
       ) : (
-        <BelowIntro />
+        // The pond (design 27) is the page's own section under the band.
+        <div className="relative z-10">
+          <Pond />
+        </div>
       )}
     </div>
   );

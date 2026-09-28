@@ -97,7 +97,9 @@ void main() {
   float lit = clamp(-(slope.x * 0.6 + slope.y * 0.8) * 7.0, -0.06, 0.55);
   // A faint slow swell so still water is not one flat grey.
   float swell = 0.012 * sin(vWorld.x * 0.9 + uTime * 0.3) * sin(vWorld.z * 1.3 - uTime * 0.25);
-  float tone = 0.085 + swell + under * 0.8 + refl * 0.3 + lit;
+  // Still water draws nothing at all: only what is in it or on it, and
+  // the ripples, make bars, so the pads and the koi stand out clean.
+  float tone = swell * 0.5 + under * 0.85 + refl * 0.16 + max(lit, 0.0);
   gl_FragColor = vec4(vec3(clamp(tone, 0.03, 1.0)), 1.0);
 }
 `;
