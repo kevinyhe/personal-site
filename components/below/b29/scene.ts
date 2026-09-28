@@ -325,7 +325,7 @@ export function buildScene(): Scene {
       }
     }
     leafGeo = leafGeometry();
-    leafMaterial = new THREE.MeshStandardMaterial({ color: "#8e7d86", roughness: 0.8, metalness: 0, side: THREE.DoubleSide, emissive: new THREE.Color("#2a1c24") });
+    leafMaterial = new THREE.MeshStandardMaterial({ color: "#5e5058", roughness: 0.8, metalness: 0, side: THREE.DoubleSide, emissive: new THREE.Color("#2a1c24") });
     leafMesh = new THREE.InstancedMesh(leafGeo, leafMaterial, Math.max(1, base.length));
     leafMesh.frustumCulled = false;
     leafMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -467,11 +467,16 @@ export function buildScene(): Scene {
   };
 
   // ------------------------------------------------------------ colours
-  const hillSummer = new THREE.Color("#6a5a62");
-  const hillSnow = new THREE.Color("#f2eef0");
+  // The bars see only brightness. The ground in its grass is dim, about a
+  // third of a bar; under snow it is pale, most of a bar. Summer leaves
+  // are mid-grey, half a bar, so a crown in leaf reads thinner than one in
+  // blossom; autumn leaves are near white, full bars, which is how they
+  // show as turned.
+  const hillSummer = new THREE.Color("#4a3e44");
+  const hillSnow = new THREE.Color("#d6cfd3");
   const barkBare = new THREE.Color(0xb4a2ac);
   const barkSnow = new THREE.Color(0xe2d8de);
-  const leafGreen = new THREE.Color("#8e7d86");
+  const leafGreen = new THREE.Color("#5e5058");
   const leafTurned = new THREE.Color("#f3dde8");
 
   let stillSeeded = false;

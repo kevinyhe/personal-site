@@ -58,7 +58,7 @@ export function buildHill(): { mesh: THREE.Mesh; material: THREE.MeshStandardMat
   geometry.setIndex(index);
   geometry.computeVertexNormals();
   const texture = grassTexture();
-  const material = new THREE.MeshStandardMaterial({ color: "#6a5a62", map: texture ?? undefined, roughness: 1, metalness: 0 });
+  const material = new THREE.MeshStandardMaterial({ color: "#4a3e44", map: texture ?? undefined, roughness: 1, metalness: 0 });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "Hill";
   return {
