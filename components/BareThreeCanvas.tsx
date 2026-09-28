@@ -437,7 +437,7 @@ void main() {
     // over the top of it — which took that corner to flat white with the
     // raster streaking through it. This rolls the top end off so nothing in
     // the picture can reach 1 before the bloom has had it.
-    sc = sc / (1.0 + sc * 0.62);
+    sc = sc / (1.0 + sc * 0.95);
     col = mix(col, sc, uSceneMix);
   }
   gl_FragColor = vec4(col * uLevel, 1.0);
@@ -6135,8 +6135,30 @@ void main() {
           texture.dispose();
           material.dispose();
         };
-        return { uniforms, scene, updateRect, dispose };
+        // For a line that changes (the load count): repaint only when the
+        // words do.
+        const setText = (t: string) => {
+          if (t === o.text) return;
+          o.text = t;
+          paint(family);
+        };
+        return { uniforms, scene, updateRect, dispose, setText };
       };
+      // The load count, in mono under the name, while the page builds.
+      const glassLoad = makeGlassText({
+        text: "LOADING",
+        fontVar: "--font-mono",
+        fontStyle: "500",
+        fontPx: 96,
+        canvasW: 1536,
+        pad: 70,
+        letterSpacing: "0.32em",
+        emFrac: 0.045,
+        centerV: 0.3,
+        bloomAlpha: 0.02,
+        haloAlpha: 0.1,
+        haloBlurEm: 0.05,
+      });
       const glassName = makeGlassText({
         text: "Kevin He.",
         fontVar: "--font-instrument-serif",
@@ -6482,7 +6504,7 @@ void main() {
       // passes, so a lower threshold (0.55 was tried) turns every pale
       // patch of backdrop into a white wash instead of a glow around the
       // bright bits. Strength is set per frame from the ramp.
-      const CRT_POST_BLOOM_STRENGTH = 0.4;
+      const CRT_POST_BLOOM_STRENGTH = 0.26;
       const crtBloomPass = new UnrealBloomPass(
         new THREE.Vector2(drawingBufferSize.x, drawingBufferSize.y),
         0,
@@ -7031,7 +7053,7 @@ void main() {
               vec3 rW = reflect(-vW, nW);
               float kd = max(dot(rW, uKeyDir), 0.0);
               float fd = max(dot(rW, uFillDir), 0.0);
-              float keySpec = pow(kd, 120.0) * 0.8 + pow(kd, 10.0) * 0.1;
+              float keySpec = pow(kd, 120.0) * 0.55 + pow(kd, 10.0) * 0.07;
               float fillSpec = pow(fd, 32.0) * 0.06;
               float f = pow(1.0 - max(dot(nW, vW), 0.0), 4.0);
               float fresnel = 0.6 + 0.4 * f;
@@ -7044,7 +7066,7 @@ void main() {
               float lampRefl = exp(-dot(kp, kp) * 2.2);
               float floorRefl = smoothstep(0.55, 0.05, buv.y) * (0.4 + 0.6 * buv.x);
               vec3 roomRefl =
-                mix(vec3(1.0, 0.76, 0.85), vec3(1.0), uWhite) * lampRefl * 0.6 +
+                mix(vec3(1.0, 0.76, 0.85), vec3(1.0), uWhite) * lampRefl * 0.4 +
                 mix(vec3(0.52, 0.38, 0.5), vec3(0.48), uWhite) * floorRefl * 0.16;
               // The picture itself washes reflections out; the dark tube
               // shows them in full.
@@ -7543,7 +7565,7 @@ void main() {
         // Everything the tube throws into the room follows its power.
         const power = smoothstep(0.05, 0.85, clamp01(sceneFx.screenPower));
         crtGlow.intensity = 2.4 * fx * glowPulse * power;
-        crtHaloUniforms.uGlow.value = fx * (0.07 + 0.05 * glow) * glowPulse * power;
+        crtHaloUniforms.uGlow.value = fx * (0.045 + 0.03 * glow) * glowPulse * power;
         crtBgUniforms.uScreenLight.value = fx * (0.26 + 0.12 * glow) * glowPulse;
       };
 
@@ -7858,6 +7880,12 @@ void main() {
             0.01 * Math.sin(elapsed * 7.3);
           const hadAutoClear = renderer.autoClear;
           renderer.autoClear = false;
+          if (sceneFx.glassLoad > 0.001) {
+            glassLoad.setText(sceneFx.glassLoadText || "LOADING");
+            glassLoad.updateRect();
+            glassLoad.uniforms.uOpacity.value = clamp01(sceneFx.glassLoad) * hum;
+            renderer.render(glassLoad.scene, halftoneCamera);
+          }
           if (sceneFx.glassName > 0.001) {
             glassName.updateRect();
             glassName.uniforms.uOpacity.value = clamp01(sceneFx.glassName) * hum;
@@ -8720,6 +8748,7 @@ void main() {
         blankScene.dispose();
 
         glassName.dispose();
+        glassLoad.dispose();
         overlayQuadGeometry.dispose();
         // Post chain: composer buffers, bloom mip targets, grain material.
         crtComposer.dispose();

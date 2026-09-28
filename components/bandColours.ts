@@ -10,3 +10,7 @@
  */
 export const BAND = "#2a0d1e";
 export const BLOSSOM = "#f9b9dc";
+
+/** The light plum laid over the site's aurora below the band, so the
+ *  aurora shows through everywhere at the strength the band ends on. */
+export const PLUM_WASH = "rgba(42, 13, 30, 0.4)";

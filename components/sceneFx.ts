@@ -44,6 +44,10 @@ export const sceneFx = {
    * BareThreeCanvas).
    */
   glassName: 0,
+  /** 0..1 opacity of the load count under the name on the glass, and its
+   *  words ("LOADING  42%"). The television is the loading page. */
+  glassLoad: 0,
+  glassLoadText: "",
   /**
    * 0..1 warm-up glow of the tube during the television shot: brighter,
    * breathing and flickering glass, heavier bloom into the room. Fades

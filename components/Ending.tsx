@@ -50,6 +50,10 @@ export default function Ending(): JSX.Element {
     const canvas = document.createElement("canvas");
     canvas.setAttribute("aria-hidden", "true");
     canvas.style.cssText = "display:block;position:absolute;inset:0;width:100%;height:100%";
+    // The sky fades up out of the aurora above rather than starting as a
+    // block. On the canvas only, so the words over it stay whole.
+    canvas.style.maskImage = "linear-gradient(transparent, #000 45vh)";
+    canvas.style.setProperty("-webkit-mask-image", "linear-gradient(transparent, #000 45vh)");
     stage.appendChild(canvas);
 
     const config = {
@@ -140,11 +144,12 @@ export default function Ending(): JSX.Element {
   }, []);
 
   return (
-    <section className="relative h-[240vh]" id="contact" ref={rootRef} style={{ backgroundColor: BAND }}>
-      <div className="sticky top-0 h-[100vh] w-full overflow-hidden" ref={stageRef}>
-        {/* The plum of the section above runs down into the night, so the
-            sky comes up out of it rather than starting at a line. */}
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[45vh]" style={{ background: `linear-gradient(${BAND}, ${BAND}00)` }} />
+    <section className="relative h-[240vh]" id="contact" ref={rootRef} style={{ backgroundColor: "rgba(42, 13, 30, 0.4)" }}>
+      <div
+        className="sticky top-0 h-[100vh] w-full overflow-hidden"
+        ref={stageRef}
+      >
+
         <div className="absolute inset-x-0 top-[24vh] z-[1] text-center" ref={wordsRef} style={{ opacity: 0 }}>
           <p className="font-mono text-[1.8rem] uppercase tracking-[0.22em] text-[#f9b9dc] opacity-70">Contact</p>
           <a className="mt-[3vh] inline-block font-sans text-[5vw] font-light leading-none tracking-[-0.035em] text-white" href={`mailto:${EMAIL}`}>
