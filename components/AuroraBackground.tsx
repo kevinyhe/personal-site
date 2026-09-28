@@ -73,7 +73,7 @@ export default function AuroraBackground() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
-    renderer.setClearColor(0x0a0a0a, 1);
+    renderer.setClearColor(0x2a0d1e, 1);
 
     const uniforms = {
       uTime: { value: 0 },
@@ -93,7 +93,7 @@ export default function AuroraBackground() {
       // different pink. The hero keeps its own (BareThreeCanvas); on the home
       // page its curtains are covered by the valley anyway, and /crt is the
       // room they were tuned for.
-      uBase: { value: new THREE.Color(0x0b080d) },
+      uBase: { value: new THREE.Color(0x1f0916) },
       uDeep: { value: new THREE.Color(0x58304f) },
       uCore: { value: new THREE.Color(0xe3a8ce) },
       uHot: { value: new THREE.Color(0xfbe6f2) },

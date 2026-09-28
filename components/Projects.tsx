@@ -2,7 +2,7 @@
 
 import { type JSX, useEffect, useRef } from "react";
 
-import { BAND, BLOSSOM } from "@/components/bandColours";
+import { BLOSSOM, PLUM_WASH } from "@/components/bandColours";
 import { createStrokes } from "@/components/below/b27/strokes";
 import { projects, skillGroups } from "@/components/profile";
 
@@ -85,7 +85,7 @@ export default function Projects(): JSX.Element {
   }, []);
 
   return (
-    <div style={{ backgroundColor: BAND, color: BLOSSOM }}>
+    <div style={{ backgroundColor: PLUM_WASH, color: BLOSSOM }}>
       <style>{`
         [data-row] { opacity: .32; transition: opacity .5s cubic-bezier(.22,1,.36,1); }
         [data-row] [data-title] { font-size: 3.4rem; transition: font-size .6s cubic-bezier(.22,1,.36,1), color .4s; }

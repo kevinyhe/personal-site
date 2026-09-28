@@ -1,6 +1,5 @@
 "use client";
 
-import Loader from "@/components/Loader";
 import {
   Component,
   type ErrorInfo,
@@ -172,6 +171,7 @@ const LOADING_POSE = {
   halftone: 0,
   treeDrop: 1,
   glassName: 0,
+  glassLoad: 0,
   screenGlow: 1,
   screenPower: 0,
   roomLight: 0,
@@ -183,6 +183,7 @@ const HERO_POSE = {
   halftone: 1,
   treeDrop: 0,
   glassName: 0,
+  glassLoad: 0,
   screenGlow: 0,
   screenPower: 1,
   roomLight: 1,
@@ -233,6 +234,10 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   // show anything.
   const [crtLoad, setCrtLoad] = useState({ loaded: 0, total: 100 });
   const [sceneReady, setSceneReady] = useState(false);
+  const sceneReadyRef = useRef(false);
+  /** The count on the glass has reached 100: the reveal waits for it. */
+  const loadDoneRef = useRef(false);
+  sceneReadyRef.current = sceneReady;
   const [crtReady, setCrtReady] = useState(false);
   const [tvShown, setTvShown] = useState(false);
   const [revealStarted, setRevealStarted] = useState(false);
@@ -296,8 +301,6 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       displayed = Math.min(goal, displayed + BAR_RATE * dt);
       const fill = progressFillRef.current;
       if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
-      const pct = document.querySelector<HTMLElement>("[data-loader-pct]");
-      if (pct) pct.textContent = `${Math.round(Math.min(1, displayed) * 100)}%`;
       if (crtReadyRef.current && displayed >= 0.995) {
         tvShownAtRef.current = now;
         setTvShown(true);
@@ -314,9 +317,6 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   // froze the veil mid-fade.
   useEffect(() => {
     if (!tvShown) return undefined;
-    // The loader takes its canvas down before the veil lifts: left up, it
-    // flashed white for half a second as the fade uncovered it.
-    window.dispatchEvent(new Event("arbor:loaded"));
     const overlay = overlayRef.current;
     const tweens: gsap.core.Tween[] = [];
     // The veil is black over a black room: it can go quickly, and the lamp
@@ -325,7 +325,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       tweens.push(
         gsap.to(overlay, {
           autoAlpha: 0,
-          duration: 0.7,
+          duration: 0.25,
           ease: "power2.out",
           pointerEvents: "none",
         }),
@@ -384,6 +384,36 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
     };
   }, [tvShown]);
 
+  // The television is the loading page: under the name the glass counts
+  // while the tree builds. The count creeps toward 90 on its own and runs
+  // to 100 once the scene is in; it clears as the reveal starts.
+  useEffect(() => {
+    if (!tvShown) return undefined;
+    const t0 = performance.now();
+    let raf = 0;
+    let shown = 0;
+    const show = gsap.to(sceneFx, { glassLoad: 1, duration: 0.5, delay: 0.5, ease: "power2.out" });
+    let last = t0;
+    const step = () => {
+      const now = performance.now();
+      const t = (now - t0) / 1000;
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      // It counts in step with the tube coming up: never faster than
+      // 100 in 2.4 s, never past 90 until the scene is in.
+      const goal = sceneReadyRef.current ? 100 : 90 * (1 - Math.exp(-t / 2.2));
+      shown = Math.min(goal, shown + (100 / 2.4) * dt);
+      sceneFx.glassLoadText = `LOADING  ${String(Math.round(shown)).padStart(2, "0")}%`;
+      loadDoneRef.current = shown >= 99.5;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(raf);
+      show.kill();
+    };
+  }, [tvShown]);
+
   // Never strand the page: if the model fails to report (network, a stuck
   // decode), carry on with whatever the rig has after a grace period. The
   // canvas also reports "ready" on load failure, so this is belt and braces.
@@ -408,7 +438,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       const remaining = TV_DWELL_MS - (performance.now() - tvShownAtRef.current);
       // Headless captures set __heroHold to keep the television shot open.
       const hold = (window as unknown as Record<string, unknown>).__heroHold;
-      if (remaining > 0 || hold) {
+      if (remaining > 0 || hold || !loadDoneRef.current) {
         timeout = window.setTimeout(tryStart, Math.max(50, remaining));
         return;
       }
@@ -520,6 +550,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       // the narration on the glass), not the way in.
       timeline
         .to(sceneFx, { glassName: 0, duration: 0.45, ease: "power2.out" }, 0)
+        .to(sceneFx, { glassLoad: 0, duration: 0.3, ease: "power2.out" }, 0)
         .to(sceneFx, { screenGlow: 0, duration: 0.9, ease: "power2.out" }, 0)
         .to(
           sceneFx,
@@ -1038,21 +1069,20 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
         <div
           aria-label="Loading"
           aria-live="polite"
-          className="absolute inset-0 z-10 overflow-hidden bg-[#2a0d1e]"
+          className="absolute inset-0 z-10 overflow-hidden bg-[#0a0a0a]"
           ref={overlayRef}
           role="status"
         >
-          <Loader />
-          <div className="absolute inset-x-[3vw] bottom-[19vh]">
+          <div className="absolute left-1/2 top-1/2 w-40 -translate-x-1/2 -translate-y-1/2">
             <div
               aria-valuemax={crtLoad.total}
               aria-valuemin={0}
               aria-valuenow={crtReady ? crtLoad.total : crtLoad.loaded}
-              className="h-px w-full overflow-hidden bg-[#f9b9dc]/20"
+              className="h-px w-full overflow-hidden bg-white/15"
               role="progressbar"
             >
               <div
-                className="h-full bg-[#f9b9dc]"
+                className="h-full bg-[#f0f0f0]"
                 ref={progressFillRef}
                 style={{ width: 0 }}
               />

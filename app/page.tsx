@@ -49,7 +49,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
         {/* Plum under the band for the robot's lower half: its scene canvas
             hangs below the band, and this is what it is drawn over as the
             page scrolls on. */}
-        <div aria-hidden className="h-[90vh]" style={{ backgroundColor: "#2a0d1e" }} />
+        <div aria-hidden className="h-[90vh]" style={{ backgroundColor: "rgba(42, 13, 30, 0.4)" }} />
       </div>
 
       {/* Where the reference copy stops. From the prologue down the page is

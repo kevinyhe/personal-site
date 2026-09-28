@@ -440,11 +440,11 @@ export default function StatementSection(): JSX.Element {
       // The aurora. It runs behind the whole site (SiteBackground) and the
       // band's plum covers it; while the sentence writes in, the plum thins
       // to let it through as a plum field with pink light moving in it, and
-      // it closes again before the robot is up, so the band still meets the
-      // work below in solid plum.
+      // it stays: every section below lets it through under the same wash
+      // (PLUM_WASH).
       // It starts once the band's top edge has reached the top of the screen
       // (openScroll 0.56), so it never shows a line against the valley.
-      const aurora = clamp01((openScroll - 0.56) / 0.34) * (1 - clamp01((p - 0.3) / 0.3));
+      const aurora = clamp01((openScroll - 0.56) / 0.34);
       const band = rootRef.current;
       if (band) band.style.backgroundColor = `rgba(42, 13, 30, ${(1 - 0.6 * soft(aurora)).toFixed(3)})`;
       // Both pairs, top then bottom, one line after another.
