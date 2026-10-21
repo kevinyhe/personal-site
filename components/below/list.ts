@@ -40,6 +40,30 @@ export const BELOWS: Below[] = [
   { n: 28, name: "Screen", after: "dogstudio.co", note: "A folding screen that opens panel by panel in 3D, each panel painted with a project." },
   { n: 29, name: "Seasons", after: "seasonal scroll stories on awwwards", note: "One sakura tree through four seasons as you scroll; the work hangs on it." },
   { n: 30, name: "Garden", after: "zen garden pieces on awwwards", note: "Raked sand the cursor rakes; stones set in it are the projects." },
+  // Short ones: the work and the skills in two or three screens, not nine.
+  { n: 31, name: "Sheet", after: "elliott.mangham.dev and wodniack.dev", note: "One screen of ruled cells in small mono, like a data sheet; the work as a strip of bar pictures along the foot." },
+  { n: 32, name: "Filmstrip", after: "iamrossmason.com", note: "The five projects as one row of bar pictures; the one under the cursor grows. Strip or list." },
+  { n: 33, name: "Numbered", after: "gregorylalle.com", note: "A big number and a small grid of pictures per project, a caps list beside it; scroll steps through." },
+  { n: 34, name: "Letters", after: "wodniack.dev's work section", note: "WORK in huge bar letters filling the screen; a project's picture follows the cursor over its name." },
+  { n: 35, name: "Recognition", after: "wodniack.dev's awards grid", note: "The results as a grid of cells, organisation large and result small, the empty cells filled with bars." },
+  { n: 36, name: "Years", after: "art-yakushev.com", note: "21\u201326 very large, five small preview cards round it, each a bar picture with its index." },
+  { n: 37, name: "Mono", after: "olhalazarieva.com", note: "Everything in small uppercase mono with bracket tags; one line a project, one bar picture." },
+  // Straight copies of Awwwards portfolios' work and skills sections.
+  { n: 38, name: "Inline", after: "adcker.com", note: "A huge centred sentence with each project's picture set inline in brackets; a numbered thumbnail row." },
+  { n: 39, name: "Featured", after: "ashfall.studio", note: "Featured work as large pictures, a caption and tag pills under each; show more." },
+  { n: 40, name: "Orbit", after: "bleibtgleich.dev", note: "Work 24–26 with a ring of tiny thumbnails; recognition as a ruled table." },
+  { n: 41, name: "Capabilities", after: "formandfun.co", note: "WORK in big caps with outlined words; three capability columns with blocks and lists; an awards table." },
+  { n: 42, name: "Rows", after: "gilhuybrecht.com", note: "One row of small numbered pictures per project on black, info columns across the top." },
+  { n: 43, name: "Carousel", after: "jesperlandberg.com", note: "The work as a curved carousel of cards you drag through." },
+  { n: 44, name: "Selected", after: "leoparpeix.com", note: "Selected projects as a strip of large pictures with index, name, year and role under each." },
+  { n: 45, name: "Timeline", after: "mariavasilyeva.com", note: "A timeline of tiny thumbnails on a centre line; the active project opens into a collage." },
+  { n: 46, name: "Stats", after: "nickho-motorsports.nl", note: "Big numbers, and the tools as logos in a grid round one central picture." },
+  { n: 47, name: "Cards", after: "noho.ink", note: "Three stat cards, and recognition as grouped rows with years." },
+  { n: 48, name: "Works", after: "noth.in", note: "A black staggered grid of pictures with one-line captions; view all." },
+  { n: 49, name: "Services", after: "pensatori-irrazionali.com", note: "Two columns of large names with small details; numbered service blocks with ruled lists." },
+  { n: 50, name: "Podium", after: "podium.global", note: "A dark staggered grid with condensed caps titles and years." },
+  { n: 51, name: "Stack", after: "snp.agency", note: "Projects as full-screen cards that stack, their title tabs piling at the top." },
+  { n: 52, name: "Tiles", after: "fiddle.digital", note: "A row of award tiles, then the work as large named pictures." },
 ];
 
 export const pad2 = (n: number): string => String(n).padStart(2, "0");

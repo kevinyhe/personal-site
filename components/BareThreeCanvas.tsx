@@ -18,6 +18,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { markTvUp } from "@/components/tvUp";
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -431,14 +432,46 @@ void main() {
   }
   if (uSceneMix > 0.001) {
     vec2 su = (vUv - 0.5) * uSceneFit + 0.5;
-    vec3 sc = pow(texture2D(uScene, clamp(su, 0.0, 1.0)).rgb, vec3(2.2)) * uSceneGain;
+    vec4 st = texture2D(uScene, clamp(su, 0.0, 1.0));
+    // Stars over the aurora where the hills leave sky (the hills' canvas is
+    // see-through there): a grid of cells, one star at a seeded spot in a
+    // few of them, each twinkling at its own rate.
+    vec2 g = su * vec2(150.0, 150.0 / max(uSceneFit.x / uSceneFit.y, 0.01) * 0.6);
+    vec2 cell = floor(g);
+    float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    vec2 spot = vec2(fract(h * 17.31), fract(h * 91.7)) * 0.7 + 0.15;
+    float d = length(fract(g) - spot);
+    float tw = 0.45 + 0.55 * sin(uTime * (0.8 + 2.4 * fract(h * 7.3)) + h * 40.0);
+    float star = step(0.88, h) * smoothstep(0.12, 0.0, d) * max(tw, 0.0);
+    // One shooting star every 7 seconds, a 0.8 s streak down to the right
+    // across the upper sky, from a start that moves each time.
+    float n = floor(uTime / 7.0);
+    float u = mod(uTime, 7.0) / 0.8;
+    if (u < 1.0) {
+      vec2 a = vec2(0.15 + 0.6 * fract(sin(n * 12.9898) * 43758.5), 0.62 + 0.25 * fract(sin(n * 78.233) * 43758.5));
+      vec2 dir = normalize(vec2(1.0, -0.45));
+      vec2 head = a + dir * 0.22 * u;
+      vec2 q = su - head;
+      float along = dot(q, -dir);
+      float across = abs(dot(q, vec2(-dir.y, dir.x)));
+      float tail = smoothstep(0.09, 0.0, along) * step(0.0, along);
+      star += tail * smoothstep(0.0018, 0.0, across) * sin(3.14159 * u) * 1.4;
+    }
+    col += vec3(1.0, 0.86, 0.94) * star * (1.0 - st.a) * uSceneMix;
+    vec3 sc = pow(st.rgb, vec3(2.2)) * uSceneGain;
+    // The hills as dark plum shapes against the aurora: their own shading
+    // kept only as light and shade, in the aurora's base and deep colours,
+    // so they sit in its palette instead of the valley's.
+    float hl = dot(sc, vec3(0.299, 0.587, 0.114));
+    sc = mix(uBase * 0.8, uDeep * 0.9, smoothstep(0.0, 0.35, hl));
     // A shoulder, not a clamp. The valley's sky is already near white where
     // the sun is, and on the television the tube's own bloom is multiplied
     // over the top of it — which took that corner to flat white with the
     // raster streaking through it. This rolls the top end off so nothing in
     // the picture can reach 1 before the bloom has had it.
     sc = sc / (1.0 + sc * 0.95);
-    col = mix(col, sc, uSceneMix);
+    // Only where there are hills: the rest is the aurora and its stars.
+    col = mix(col, sc, uSceneMix * st.a);
   }
   gl_FragColor = vec4(col * uLevel, 1.0);
 }
@@ -7578,10 +7611,19 @@ void main() {
       let crtAssetsReady = false;
       let loadingFramesDrawn = 0;
       let reportedCrtReady = false;
+      // The tree is built only once the television is up. Building it takes
+      // about 3 s of main thread (measured), and while it ran the GLB could
+      // not be parsed or its textures even requested, so the TV waited on
+      // a tree it does not show.
+      let crtUp: () => void = () => {};
+      const crtUpPromise = new Promise<void>((resolve) => {
+        crtUp = resolve;
+      });
       const maybeReportCrtReady = () => {
         if (reportedCrtReady || disposed) return;
         if (!crtAssetsReady || loadingFramesDrawn === 0) return;
         reportedCrtReady = true;
+        crtUp();
         onCrtReadyRef.current?.();
       };
       {
@@ -7750,26 +7792,82 @@ void main() {
               const geo = crtScreenMesh.geometry;
               const posAttr = geo.attributes.position;
               const hAttr = geo.attributes.aHeight as THREE.BufferAttribute;
-              const raycaster = new THREE.Raycaster();
-              const origin = new THREE.Vector3();
-              const dirWorld = new THREE.Vector3();
-              const hitLocal = new THREE.Vector3();
+              // Every ray runs straight down the plane's own -z, from z 2.5
+              // for 6 units. So the first hit is simply the highest model
+              // surface at or under z 2.5 (and above -3.5) over the
+              // vertex's x,y, in the plane's space. Was a THREE.Raycaster
+              // per vertex against the whole model with no spatial index:
+              // ~1.8k x every triangle, 1.6 s of main thread on load
+              // (measured). Now the triangles are put in the plane's space
+              // once, binned on a grid over x,y, and each vertex tests only
+              // its own cell. Same heights.
+              const toPlane = new THREE.Matrix4();
+              const planeInverse = new THREE.Matrix4().copy(crtScreenMesh.matrixWorld).invert();
+              const tris: number[] = [];
+              const va = new THREE.Vector3();
+              model.traverse((obj) => {
+                const mesh = obj as THREE.Mesh;
+                if (!mesh.isMesh) return;
+                toPlane.multiplyMatrices(planeInverse, mesh.matrixWorld);
+                const mp = mesh.geometry.attributes.position;
+                const index = mesh.geometry.index;
+                const count = index ? index.count : mp.count;
+                for (let k = 0; k < count; k += 1) {
+                  const vi = index ? index.getX(k) : k;
+                  va.fromBufferAttribute(mp, vi).applyMatrix4(toPlane);
+                  tris.push(va.x, va.y, va.z);
+                }
+              });
+              const box = new THREE.Box2();
+              for (let i = 0; i < posAttr.count; i += 1) {
+                box.expandByPoint(new THREE.Vector2(posAttr.getX(i), posAttr.getY(i)));
+              }
+              const GRID = 48;
+              const gx = (x: number) => Math.floor(((x - box.min.x) / Math.max(1e-6, box.max.x - box.min.x)) * (GRID - 1));
+              const gy = (y: number) => Math.floor(((y - box.min.y) / Math.max(1e-6, box.max.y - box.min.y)) * (GRID - 1));
+              const cells: number[][] = Array.from({ length: GRID * GRID }, () => []);
+              for (let t = 0; t < tris.length; t += 9) {
+                const x0 = Math.min(tris[t], tris[t + 3], tris[t + 6]);
+                const x1 = Math.max(tris[t], tris[t + 3], tris[t + 6]);
+                const y0 = Math.min(tris[t + 1], tris[t + 4], tris[t + 7]);
+                const y1 = Math.max(tris[t + 1], tris[t + 4], tris[t + 7]);
+                if (x1 < box.min.x || x0 > box.max.x || y1 < box.min.y || y0 > box.max.y) continue;
+                const zMax = Math.max(tris[t + 2], tris[t + 5], tris[t + 8]);
+                const zMin = Math.min(tris[t + 2], tris[t + 5], tris[t + 8]);
+                if (zMin > 2.5 || zMax < -3.5) continue;
+                const cx0 = Math.max(0, gx(x0));
+                const cx1 = Math.min(GRID - 1, gx(x1));
+                const cy0 = Math.max(0, gy(y0));
+                const cy1 = Math.min(GRID - 1, gy(y1));
+                for (let cy = cy0; cy <= cy1; cy += 1) {
+                  for (let cx = cx0; cx <= cx1; cx += 1) cells[cy * GRID + cx].push(t);
+                }
+              }
+              // Highest z of the triangles over (x, y), within the ray's reach.
+              const surfaceAt = (x: number, y: number): number | null => {
+                let best: number | null = null;
+                for (const t of cells[gy(y) * GRID + gx(x)]) {
+                  const ax = tris[t], ay = tris[t + 1], az = tris[t + 2];
+                  const bx = tris[t + 3], by = tris[t + 4], bz = tris[t + 5];
+                  const cx = tris[t + 6], cy = tris[t + 7], cz = tris[t + 8];
+                  const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+                  if (Math.abs(d) < 1e-12) continue;
+                  const w0 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d;
+                  const w1 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d;
+                  const w2 = 1 - w0 - w1;
+                  if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+                  const z = w0 * az + w1 * bz + w2 * cz;
+                  if (z > 2.5 || z < -3.5) continue;
+                  if (best === null || z > best) best = z;
+                }
+                return best;
+              };
               let apex = 0;
               const misses: number[] = [];
               for (let i = 0; i < posAttr.count; i += 1) {
-                origin
-                  .set(posAttr.getX(i), posAttr.getY(i), 2.5)
-                  .applyMatrix4(crtScreenMesh.matrixWorld);
-                dirWorld
-                  .set(0, 0, -1)
-                  .transformDirection(crtScreenMesh.matrixWorld);
-                raycaster.set(origin, dirWorld);
-                raycaster.far = 6;
-                const hits = raycaster.intersectObject(model, true);
-                if (hits.length > 0) {
-                  hitLocal.copy(hits[0].point);
-                  crtScreenMesh.worldToLocal(hitLocal);
-                  const h = hitLocal.z + 0.006;
+                const z = surfaceAt(posAttr.getX(i), posAttr.getY(i));
+                if (z !== null) {
+                  const h = z + 0.006;
                   hAttr.setX(i, h);
                   if (h > apex) apex = h;
                 } else {
@@ -8007,6 +8105,27 @@ void main() {
         uSceneGain: { value: 0.78 },
         uFrame: { value: new THREE.Vector2(1.774, 1.6129) },
       };
+      const HERO_AURORA = {
+        uBase: voidBackdropUniforms.uBase.value.clone(),
+        uDeep: voidBackdropUniforms.uDeep.value.clone(),
+        uCore: voidBackdropUniforms.uCore.value.clone(),
+        uHot: voidBackdropUniforms.uHot.value.clone(),
+        uViolet: voidBackdropUniforms.uViolet.value.clone(),
+        uWarmTint: voidBackdropUniforms.uWarmTint.value.clone(),
+        uCoolTint: voidBackdropUniforms.uCoolTint.value.clone(),
+      };
+      // AuroraBackground's colours. Its light parts are taken down to 0.55:
+      // on the page that aurora sits under a vignette, and at full strength
+      // behind the hills it washed the sky out to white.
+      const SITE_AURORA = {
+        uBase: new THREE.Color(0x1f0916),
+        uDeep: new THREE.Color(0x58304f).multiplyScalar(0.7),
+        uCore: new THREE.Color(0xe3a8ce).multiplyScalar(0.55),
+        uHot: new THREE.Color(0xfbe6f2).multiplyScalar(0.55),
+        uViolet: new THREE.Color(0x6a4a9c),
+        uWarmTint: new THREE.Vector3(1.06, 0.94, 1.0),
+        uCoolTint: new THREE.Vector3(0.88, 0.9, 1.15),
+      };
       // A 1x1 black stands in until a page hands a canvas over, so the
       // sampler is never left unbound (some drivers draw undefined then).
       const blankScene = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
@@ -8038,6 +8157,17 @@ void main() {
         }
         const on = mix > 0.001 && sceneTexture != null && (wanted?.width ?? 0) > 1;
         voidBackdropUniforms.uSceneMix.value = on ? mix : 0;
+        // Behind the hills the curtains take the site aurora's colours
+        // (AuroraBackground), the aurora that used to show behind the hill
+        // section, not the hero's own magenta.
+        const k = on ? mix : 0;
+        voidBackdropUniforms.uBase.value.lerpColors(HERO_AURORA.uBase, SITE_AURORA.uBase, k);
+        voidBackdropUniforms.uDeep.value.lerpColors(HERO_AURORA.uDeep, SITE_AURORA.uDeep, k);
+        voidBackdropUniforms.uCore.value.lerpColors(HERO_AURORA.uCore, SITE_AURORA.uCore, k);
+        voidBackdropUniforms.uHot.value.lerpColors(HERO_AURORA.uHot, SITE_AURORA.uHot, k);
+        voidBackdropUniforms.uViolet.value.lerpColors(HERO_AURORA.uViolet, SITE_AURORA.uViolet, k);
+        voidBackdropUniforms.uWarmTint.value.lerpVectors(HERO_AURORA.uWarmTint, SITE_AURORA.uWarmTint, k);
+        voidBackdropUniforms.uCoolTint.value.lerpVectors(HERO_AURORA.uCoolTint, SITE_AURORA.uCoolTint, k);
         if (!on) return;
         voidBackdropUniforms.uScene.value = sceneTexture;
         sceneTexture!.needsUpdate = true;
@@ -8126,6 +8256,12 @@ void main() {
         cancelAnimationFrame(loadingRaf);
       };
       await reportSceneBuildProgress();
+      // Never strand the tree on a TV that fails to load.
+      await Promise.race([crtUpPromise, new Promise((resolve) => setTimeout(resolve, 6000))]);
+      // Then a moment for the page to lift its veil and switch the TV on
+      // before the build takes the main thread.
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      if (disposed) return;
 
       const generator = new WeepingCherryGenerator({
         seed: INTRO_TREE_SEED,
@@ -8133,6 +8269,7 @@ void main() {
         showDebugLobes: false,
       });
       const tree = await generator.generate(reportSceneBuildProgress);
+      markTvUp();
       await reportSceneBuildProgress();
 
       worldGroup.add(tree.group);

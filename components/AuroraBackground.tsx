@@ -7,6 +7,7 @@ import {
   VOID_BACKDROP_FRAGMENT_SHADER,
   VOID_BACKDROP_VERTEX_SHADER,
 } from "@/components/BareThreeCanvas";
+import { useTvUp } from "@/components/tvUp";
 
 /**
  * The aurora, as the page's own background.
@@ -52,7 +53,10 @@ const RENDER_SCALE = 0.5;
 export default function AuroraBackground() {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
+  const tvUp = useTvUp();
+  // Waits for the hero (tvUp.ts) so it does not slow the TV loading.
   useEffect(() => {
+    if (!tvUp) return undefined;
     const host = hostRef.current;
     if (!host) return undefined;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -73,7 +77,7 @@ export default function AuroraBackground() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
-    renderer.setClearColor(0x2a0d1e, 1);
+    renderer.setClearColor(0x170a14, 1);
 
     const uniforms = {
       uTime: { value: 0 },
@@ -186,7 +190,7 @@ export default function AuroraBackground() {
       renderer!.domElement.remove();
       renderer!.dispose();
     };
-  }, []);
+  }, [tvUp]);
 
   return <div aria-hidden="true" className="site-bg-aurora" ref={hostRef} />;
 }

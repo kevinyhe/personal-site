@@ -29,9 +29,9 @@ export default async function BelowPage({ params }: { params: Promise<{ n: strin
     <div>
       <div className="relative flex h-[60vh] flex-col justify-between px-[4vw] py-[9vh]" id="info" style={{ backgroundColor: BAND, color: BLOSSOM }}>
         <p className="font-serif-display text-[min(15vh,5.8vw)] italic leading-[1] tracking-[-0.03em]">
-          I write software for
+          I build systems that
           <br />
-          <span className="ml-[2vw]">things that move.</span>
+          <span className="ml-[2vw]">bring ideas to life.</span>
         </p>
         <p className="font-mono text-[0.8rem] uppercase tracking-[0.18em] opacity-60">
           Design {pad2(b.n)}, {b.name}. After {b.after}. In place on the home page at /?below={b.n}

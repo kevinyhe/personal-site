@@ -151,7 +151,7 @@ export const HERO_NARRATION: {
   ],
 ];
 
-export const EMAIL = "kevin.yuhan.he@gmail.com";
+export const EMAIL = "keviny.he@mail.utoronto.ca";
 export const GITHUB = "https://github.com/kevinyhe";
 
 /**

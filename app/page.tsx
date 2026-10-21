@@ -2,7 +2,11 @@ import HeroChrome from "@/components/HeroChrome";
 import HeroIntro from "@/components/HeroIntro";
 import HeroValley from "@/components/HeroValley";
 import StatementSection from "@/components/StatementSection";
-import Projects from "@/components/Projects";
+import WorkIndex from "@/components/luke/WorkIndex";
+import Passage from "@/components/CloudPassage";
+import Skills from "@/components/luke/Skills";
+import Contact from "@/components/luke/Contact";
+import { GROUND } from "@/components/luke/theme";
 import Ending from "@/components/Ending";
 import BelowSwitch from "@/components/below/BelowSwitch";
 import { BELOWS } from "@/components/below/list";
@@ -44,27 +48,37 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           stem in it and one sentence. Pulled back over the transition's
           tail: the hero's framed picture is still pinned in the middle of
           the screen there, and this is what comes up and covers it. */}
-      <div className="relative z-10 -mt-[100vh]">
-        <StatementSection />
-        {/* Plum under the band for the robot's lower half: its scene canvas
-            hangs below the band, and this is what it is drawn over as the
-            page scrolls on. */}
-        <div aria-hidden className="h-[90vh]" style={{ backgroundColor: "rgba(42, 13, 30, 0.4)" }} />
-      </div>
-
-      {/* Where the reference copy stops. From the prologue down the page is
-          in the site's own language again — see BelowIntro. */}
       {pick ? (
-        <div className="relative z-10">
-          <BelowSwitch base="/?below=" n={pick} />
-        </div>
+        <>
+          <div className="relative z-20 -mt-[100vh]">
+            <StatementSection />
+          </div>
+          {/* Where the reference copy stops. From the prologue down the page
+              is in the site's own language again — see BelowIntro. */}
+          <div className="relative z-10">
+            <BelowSwitch base="/?below=" n={pick} />
+          </div>
+        </>
       ) : (
-        // Under the band: the work, one project a screen, with a brush
-        // stroke painting for each; the skills; then the sky and the moon.
-        <div className="relative z-10">
-          <Projects />
-          <Ending />
-        </div>
+        <>
+          {/* The statement, the bank of cloud that rolls in over it
+              (Passage), and Work in the cloud's colours behind the bank's
+              parting, in one block so the bank's track can run over both.
+              The bank turns the page back to plum under Work's last
+              project, so the sections below carry on on the dark ground. */}
+          <div className="relative z-20 -mt-[100vh]" style={{ backgroundColor: GROUND }}>
+            <StatementSection />
+            <Passage />
+            <WorkIndex />
+          </div>
+          {/* Projects done: skills and the record, contact, and
+              lukebaffait.fr's end page with the mountain behind it. */}
+          <div className="relative z-10" style={{ backgroundColor: GROUND }}>
+            <Skills />
+            <Contact />
+            <Ending />
+          </div>
+        </>
       )}
     </div>
   );

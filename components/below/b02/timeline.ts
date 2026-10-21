@@ -66,6 +66,10 @@ export type StageEls = {
   /** No scene to look at. The legend shows from the top, or the first
    *  screen would be an empty one. */
   plain?: boolean;
+  /** The frame's ground at s, in place of frameGround. */
+  ground?: (s: number) => string;
+  /** Corner radius at rest, rem. Default FRAME.radius. */
+  radius?: number;
 };
 
 /**
@@ -77,11 +81,11 @@ export function makeStage(els: StageEls): (s: number) => number {
   return (s: number): number => {
     const k = frameAmount(s);
     // The corners round off early, or a thin margin would have square ones.
-    const r = Math.min(1, k * 5) * FRAME.radius;
+    const r = Math.min(1, k * 5) * (els.radius ?? FRAME.radius);
     const f = (v: number): string => v.toFixed(3);
     const clip = k <= 0 ? "none" : `inset(${f(k * FRAME.top)}vh ${f(k * FRAME.side)}vw ${f(k * FRAME.side)}vw ${f(k * FRAME.side)}vw round ${f(r)}rem)`;
     if (clip !== lastClip) { els.frame.style.clipPath = clip; lastClip = clip; }
-    const ground = frameGround(s);
+    const ground = (els.ground ?? frameGround)(s);
     if (ground !== lastGround) { els.frame.style.backgroundColor = ground; lastGround = ground; }
     const amount = els.plain && s < TL.widenStart ? 1 : smooth(0.6, 1, k);
     const show = Math.round(amount * 100) / 100;

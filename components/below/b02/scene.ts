@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { BAND, BLOSSOM } from "@/components/bandColours";
+import { createBars, type Bars, type BarsOpts } from "./bars";
 import { makeCards, type Card } from "./cards";
 import { makeBody, step, type Body, type World } from "./physics";
 import { colliderOf, drawFace, makeCube, makePieces, makePuck, orbitCounts, type Piece } from "./pieces";
@@ -36,6 +37,24 @@ export type ClusterOpts = {
   applyStage: (s: number) => number;
   reduced: boolean;
   fontFamily: string;
+  /** Draw the scene in the site's bars instead of shaded (the home page). */
+  bars?: BarsOpts;
+  /** A picture per card in place of its drawn art (the home page): an
+   *  image URL, or a canvas already drawn. */
+  photos?: (string | HTMLCanvasElement)[];
+  /** Where gravity comes on, in the design's screens x 100, and how far
+   *  below the middle of the screen the floor is, as a share of its height.
+   *  Default TL.toPile and 0.45 (the foot of the screen). */
+  pileAt?: number;
+  floor?: number;
+  /** Moves the knot from its place in the frame, in shares of the view
+   *  (x right, y up), given the stage size: the home page puts it under
+   *  the skills index on a phone. */
+  knotShift?: (w: number, h: number) => { x: number; y: number };
+  /** Size of the pieces in the pile, as a share of full size. Default 0.8. */
+  pileScale?: (w: number, h: number) => number;
+  /** Split the cards' pictures top and bottom (the words under them). */
+  tallCards?: (w: number, h: number) => boolean;
 };
 
 export type Cluster = { setFocus: (group: number) => void; dispose: () => void };
@@ -84,6 +103,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
   canvas.style.height = "100%";
   canvas.setAttribute("aria-hidden", "true");
   o.frame.appendChild(canvas);
+  const bars: Bars | null = o.bars ? createBars(renderer, o.bars) : null;
 
   const scene = new THREE.Scene();
   const bandC = new THREE.Color(BAND), deepC = new THREE.Color(DEEP);
@@ -186,7 +206,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     [ringPlace[i], ringPlace[j]] = [ringPlace[j], ringPlace[i]];
   }
 
-  const kit = makeCards(o.slots.length);
+  const kit = makeCards(o.slots.length, o.photos);
   const cards: Card[] = kit.cards;
   cards.forEach((c) => scene.add(c.group));
 
@@ -217,6 +237,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     // stretched, which costs less than half the pixels.
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5, 2560 / W));
     renderer.setSize(W, H, false);
+    bars?.setSize(W, H, renderer.getPixelRatio());
     const aspect = W / H;
     // A narrow window backs the camera off so the knot still fits across.
     viewH = Math.max(10, 12 / aspect);
@@ -229,7 +250,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     camera.updateProjectionMatrix();
     fog.near = D - 1.5;
     fog.far = D + 17;
-    world.floor = -viewH * 0.45;
+    world.floor = -viewH * (o.floor ?? 0.45);
     world.wallX = viewW * 0.49;
     key.position.set(-viewW * 0.28, viewH * 0.95, D * 0.75);
     const sc = key.shadow.camera;
@@ -285,6 +306,11 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     }
   }
 
+  const draw = (): void => {
+    if (bars) bars.render(scene, camera);
+    else renderer.render(scene, camera);
+  };
+
   const euler = new THREE.Euler();
   const vec = new THREE.Vector3();
 
@@ -304,6 +330,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
       c.seen = Math.abs(cy) < viewH / 2 + c.h / 2 + 0.5 && sNow > TL.toRing;
       c.group.visible = c.seen;
       c.material.uniforms.uSize.value.set(c.w, c.h);
+      c.material.uniforms.uTall.value = o.tallCards?.(W, H) ? 1 : 0;
       // 2rem on the page, in scene units.
       c.material.uniforms.uCorner.value = ((FRAME.radius * parseFloat(rootFont)) / H) * viewH;
       c.material.uniforms.uTime.value = o.reduced ? 12 : time;
@@ -343,8 +370,9 @@ export function createCluster(o: ClusterOpts): Cluster | null {
       const k = frameAmount(sNow);
       // The frame's middle is below the screen's, and the legend has the left.
       const bottom = (FRAME.side * W) / H;
-      const cx = k * 0.075 * viewW;
-      const cy = (-k * ((FRAME.top - bottom) / 200)) * viewH;
+      const shift = o.knotShift?.(W, H) ?? { x: 0, y: 0 };
+      const cx = k * (0.075 + shift.x) * viewW;
+      const cy = (-k * ((FRAME.top - bottom) / 200 - shift.y)) * viewH;
       world.cx = cx; world.cy = cy; world.cz = 0;
       b.pull = 9; b.drag = 2.4;
       if (focus < 0) { b.ax = cx; b.ay = cy; b.az = 0; return 1; }
@@ -390,7 +418,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
       return p.role === "corner" ? 0.56 : 0.5;
     }
     b.pull = 0; b.drag = 0.25;
-    return 0.8;
+    return o.pileScale?.(W, H) ?? 0.8;
   }
 
   function cursorTo(px: number, py: number, on: boolean): void {
@@ -470,7 +498,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
   }
 
   function modeAt(s: number): Mode {
-    return s < TL.toRing ? "knot" : s < TL.toWork ? "ring" : s < TL.toPile ? "work" : "pile";
+    return s < TL.toRing ? "knot" : s < TL.toWork ? "ring" : s < (o.pileAt ?? TL.toPile) ? "work" : "pile";
   }
 
   function frame(dt: number): void {
@@ -507,7 +535,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
     simulate(Math.max(1, Math.min(5, Math.round(dt / STEP))));
     writeMeshes();
     showLabel(pt.on ? pick(pt.x, pt.y) : -1);
-    renderer.render(scene, camera);
+    draw();
   }
 
   // Reduced motion. No loop. Each state is worked out once, to rest, and
@@ -576,7 +604,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
       for (let i = 0; i < n; i += 1) scaleNow[i] = 0.8;
     }
     writeMeshes();
-    renderer.render(scene, camera);
+    draw();
   }
 
   // Start: size it, then let the knot form before the first frame.
@@ -670,6 +698,7 @@ export function createCluster(o: ClusterOpts): Cluster | null {
       materials.forEach((m) => m.dispose());
       textures.forEach((t) => t.dispose());
       kit.dispose();
+      bars?.dispose();
       key.shadow.map?.dispose();
       env.dispose();
       renderer.dispose();

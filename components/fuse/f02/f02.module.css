@@ -1,0 +1,81 @@
+/* Motion for concept F02. Everything here stops under reduced motion. */
+
+/* The glow on the first screen: soft blobs that drift slowly. */
+.blob {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform;
+}
+.driftA {
+  animation: driftA 26s ease-in-out infinite alternate;
+}
+.driftB {
+  animation: driftB 32s ease-in-out infinite alternate;
+}
+.driftC {
+  animation: driftC 22s ease-in-out infinite alternate;
+}
+@keyframes driftA {
+  from { transform: translate3d(-4%, -2%, 0) scale(1); }
+  to { transform: translate3d(6%, 4%, 0) scale(1.12); }
+}
+@keyframes driftB {
+  from { transform: translate3d(5%, 0, 0) scale(1.05); }
+  to { transform: translate3d(-7%, 6%, 0) scale(0.92); }
+}
+@keyframes driftC {
+  from { transform: translate3d(0, 3%, 0) scale(0.95); }
+  to { transform: translate3d(-5%, -4%, 0) scale(1.1); }
+}
+
+/* The name rises into place once, on load. */
+.rise {
+  animation: rise 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.riseLate {
+  animation: rise 1.4s 0.12s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rise {
+  from { transform: translate3d(0, 0.35em, 0); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* The brush stroke draws itself along its path. */
+.draw {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  animation: draw 0.9s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+.drawLate {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  animation: draw 0.9s 0.08s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* The preview card comes up when the year changes. */
+.fade {
+  animation: fade 0.6s ease-out both;
+}
+@keyframes fade {
+  from { opacity: 0; transform: translate3d(0, 0.8rem, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driftA,
+  .driftB,
+  .driftC,
+  .rise,
+  .riseLate,
+  .fade {
+    animation: none;
+  }
+  .draw,
+  .drawLate {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

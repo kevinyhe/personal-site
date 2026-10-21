@@ -157,18 +157,18 @@ body {
        margin worth shipping on something that moves. */
     linear-gradient(
       to bottom,
-      rgba(42, 13, 30, 0.62) 0%,
-      rgba(42, 13, 30, 0) 20%
+      rgba(23, 10, 20, 0.62) 0%,
+      rgba(23, 10, 20, 0) 20%
     ),
     radial-gradient(
       124% 104% at 68% 28%,
-      rgba(42, 13, 30, 0) 32%,
-      rgba(42, 13, 30, 0.9) 100%
+      rgba(23, 10, 20, 0) 32%,
+      rgba(23, 10, 20, 0.9) 100%
     ),
     linear-gradient(
       to bottom right,
-      rgba(42, 13, 30, 0.92),
-      rgba(42, 13, 30, 0) 46%
+      rgba(23, 10, 20, 0.92),
+      rgba(23, 10, 20, 0) 46%
     );
 }
 

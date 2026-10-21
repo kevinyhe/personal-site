@@ -205,7 +205,6 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   const hasTail = tail != null;
   const rootRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const progressFillRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   const narrationSpaceRef = useRef<HTMLDivElement | null>(null);
@@ -232,7 +231,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   // The veil's bar is for the television's own assets only (GLB + four
   // textures): the thing the page is actually waiting on before it can
   // show anything.
-  const [crtLoad, setCrtLoad] = useState({ loaded: 0, total: 100 });
+  const [, setCrtLoad] = useState({ loaded: 0, total: 100 });
   const [sceneReady, setSceneReady] = useState(false);
   const sceneReadyRef = useRef(false);
   /** The count on the glass has reached 100: the reveal waits for it. */
@@ -243,9 +242,6 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   const [revealStarted, setRevealStarted] = useState(false);
   const [revealComplete, setRevealComplete] = useState(false);
 
-  const crtProgress = crtLoad.total ? crtLoad.loaded / crtLoad.total : 0;
-  const crtProgressRef = useRef(0);
-  crtProgressRef.current = crtReady ? 1 : crtProgress;
   const crtReadyRef = useRef(false);
   crtReadyRef.current = crtReady;
   const tvShownAtRef = useRef(0);
@@ -257,6 +253,11 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
     [],
   );
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
+  /** The tree build's real progress, 0..1, from the canvas's milestones. */
+  const buildProgressRef = useRef(0);
+  const handleBuildProgress = useCallback((next: { loaded: number; total: number }) => {
+    buildProgressRef.current = next.total ? next.loaded / next.total : 0;
+  }, []);
   const handleCrtReady = useCallback(() => setCrtReady(true), []);
 
   // The scene must be in the loading pose before its first frame. Children
@@ -275,42 +276,14 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
     };
   }, []);
 
-  // Loader feel. The television's assets are preloaded from the HTML head,
-  // so their progress lands in one or two jumps (the GLB is one item); a
-  // bar that mirrors that reads as a glitch. The displayed fill is
-  // rate-limited — it can travel at most BAR_RATE of its width per
-  // second, so a jump from 0 to 1 plays out over ~0.7 s — and the veil
-  // only lifts once the bar has VISIBLY filled, so it always reads as a
-  // load that completed. Between real progress it creeps a little so it
-  // never sits still.
+  // The television is the loading screen. Its own assets are small and
+  // preloaded from the HTML head, so it goes up the moment they are in: no
+  // bar, no count. The tree builds behind it.
   useEffect(() => {
-    if (tvShown) return undefined;
-    const BAR_RATE = 1.4;
-    let displayed = 0;
-    let creep = 0;
-    let raf = 0;
-    let last = performance.now();
-    const step = () => {
-      const now = performance.now();
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      const target = crtProgressRef.current;
-      creep = Math.min(creep + 0.12 * dt, 0.08);
-      if (target >= 1) creep = 0;
-      const goal = Math.min(1, target + (target < 1 ? creep : 0));
-      displayed = Math.min(goal, displayed + BAR_RATE * dt);
-      const fill = progressFillRef.current;
-      if (fill) fill.style.width = `${Math.min(100, displayed * 100).toFixed(2)}%`;
-      if (crtReadyRef.current && displayed >= 0.995) {
-        tvShownAtRef.current = now;
-        setTvShown(true);
-        return;
-      }
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [tvShown]);
+    if (tvShown || !crtReady) return;
+    tvShownAtRef.current = performance.now();
+    setTvShown(true);
+  }, [crtReady, tvShown]);
 
   // Separate effect so these are only ever killed on unmount: a cleanup
   // tied to the readiness flags above ran the moment tvShown flipped and
@@ -384,26 +357,24 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
     };
   }, [tvShown]);
 
-  // The television is the loading page: under the name the glass counts
-  // while the tree builds. The count creeps toward 90 on its own and runs
-  // to 100 once the scene is in; it clears as the reveal starts.
+  // Under the name on the glass, a small count, "(42)": the tree build's
+  // real progress (the canvas's build milestones), 100 once the scene is
+  // in. The number only eases toward the real value so it does not jump;
+  // it never runs ahead of it. The reveal waits for 100.
   useEffect(() => {
     if (!tvShown) return undefined;
     const t0 = performance.now();
     let raf = 0;
     let shown = 0;
-    const show = gsap.to(sceneFx, { glassLoad: 1, duration: 0.5, delay: 0.5, ease: "power2.out" });
     let last = t0;
+    const show = gsap.to(sceneFx, { glassLoad: 1, duration: 0.4, ease: "power2.out" });
     const step = () => {
       const now = performance.now();
-      const t = (now - t0) / 1000;
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      // It counts in step with the tube coming up: never faster than
-      // 100 in 2.4 s, never past 90 until the scene is in.
-      const goal = sceneReadyRef.current ? 100 : 90 * (1 - Math.exp(-t / 2.2));
-      shown = Math.min(goal, shown + (100 / 2.4) * dt);
-      sceneFx.glassLoadText = `LOADING  ${String(Math.round(shown)).padStart(2, "0")}%`;
+      const goal = sceneReadyRef.current ? 100 : 100 * Math.min(0.99, buildProgressRef.current);
+      shown = Math.min(goal, shown + 200 * dt);
+      sceneFx.glassLoadText = `(${Math.round(shown)})`;
       loadDoneRef.current = shown >= 99.5;
       raf = requestAnimationFrame(step);
     };
@@ -987,6 +958,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
         introActive={revealStarted}
         onCrtProgress={handleCrtProgress}
         onCrtReady={handleCrtReady}
+        onProgress={handleBuildProgress}
         onReady={handleSceneReady}
         screenLayerRef={heroLayerRef}
       />
@@ -1062,7 +1034,7 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
           style={{ opacity: 0, visibility: "hidden" }}
         />
       )}
-      {/* Black veil with the bar while the television's own assets load; it
+      {/* Black veil while the television's own assets load; it
           lifts to the television, which then shows the name while the tree
           builds behind it. Removed from the DOM when the reveal is done. */}
       {!revealComplete ? (
@@ -1073,21 +1045,6 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
           ref={overlayRef}
           role="status"
         >
-          <div className="absolute left-1/2 top-1/2 w-40 -translate-x-1/2 -translate-y-1/2">
-            <div
-              aria-valuemax={crtLoad.total}
-              aria-valuemin={0}
-              aria-valuenow={crtReady ? crtLoad.total : crtLoad.loaded}
-              className="h-px w-full overflow-hidden bg-white/15"
-              role="progressbar"
-            >
-              <div
-                className="h-full bg-[#f0f0f0]"
-                ref={progressFillRef}
-                style={{ width: 0 }}
-              />
-            </div>
-          </div>
         </div>
       ) : null}
         </div>
