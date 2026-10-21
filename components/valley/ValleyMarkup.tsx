@@ -24,7 +24,7 @@ export const NAV: NavItem[] = [
   { label: "GitHub", href: "https://github.com/kevinyhe", external: true },
 ];
 
-const MAILTO = "mailto:kevin.yuhan.he@gmail.com";
+const MAILTO = "mailto:keviny.he@mail.utoronto.ca";
 
 const TRANSITION_COLUMNS = 20;
 const TRANSITION_CELLS = 12;

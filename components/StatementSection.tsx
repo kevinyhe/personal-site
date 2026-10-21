@@ -4,8 +4,6 @@ import { useEffect, useRef, type JSX } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-import { mountHeroRobot, type HeroRobot } from "@/components/heroRobot";
-import { createBloomField } from "@/components/bloomField";
 import {
   createBarCanvas,
   hexToRgb,
@@ -14,6 +12,7 @@ import {
   type BarLayerConfig,
   type CanvasSource,
 } from "@/components/valley/barShader";
+import { useTvUp } from "@/components/tvUp";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -96,36 +95,19 @@ const FRAME_H = 356;
  * and the reason its landscape needs no seam either. Change one and the
  * join becomes a line.
  */
-const BAND = "#2a0d1e";
+const BAND = "#170a14";
 const INK = "#f9b9dc";
 /** The lines' colour: the same blossom the bars are drawn in, so the
  *  difference blend cancels to dark where they meet. */
 const BLOSSOM_INK = INK;
 
 /** Below this there is no room beside the column for a stem to stand in. */
-const NARROW = 992;
+const NARROW = 1024;
 
-/** The robot's numbers. Weight from the machine; drivetrain, speed and
- *  power from vexsim's six_motor_450 preset, which is what its Push Back
- *  scene drives (`python3 -m vexsim spec six_motor_450`); the pack from the
- *  V5 battery's datasheet. */
-/** The tagline, wrapped round the close-up of the robot: the first line
- *  runs across the top of the frame, which the push-in leaves clear, and
- *  the second sits beside the robot's shoulder in the left half. Sized so
- *  the second line ends before the robot's edge at the frame's middle. */
-const AFTER =
-  "whitespace-nowrap font-serif-display italic text-[min(15vh,5.8vw)] leading-[1] tracking-[-0.03em] opacity-0";
-/** The introduction: the sans at reading size for a narrow column. */
+/** The introduction: the sans at reading size, under the sentence. */
 const INTRO =
-  "font-sans text-[min(2.8vh,1.15vw)] font-light leading-[1.55] tracking-[0.005em] opacity-0";
-const STAIR = 2;
-/** The scene canvas's height in frames: tall enough for the whole
- *  close-up robot, whose wheels are 1.84 frames down. */
-const CANVAS_H = 1.9;
-/** Where the robot's turn comes to rest, radians: the angle it passes
- *  half way up, turned well round from profile. */
-const END_YAW = -0.6 - Math.PI / 2;
-/** The sentence, in three stepped lines on the right. */
+  "font-sans text-[1.75rem] font-light leading-[1.6] tracking-[0.01em] opacity-0 lg:text-[min(2.2vh,0.93vw)]";
+
 const LINE_ROWS = ["I build systems", "that bring ideas", "to life."];
 
 export default function StatementSection(): JSX.Element {
@@ -152,11 +134,20 @@ export default function StatementSection(): JSX.Element {
   // and every frame that lands in the span below is copied into a grid. From
   // then on the scroll is an index into that grid, and every step of it is a
   // real frame.
+  const tvUp = useTvUp();
+  // Waits for the hero (tvUp.ts) so it does not slow the TV loading.
   useEffect(() => {
+    if (!tvUp) return undefined;
     const canvas = canvasRef.current;
     const line = lineRef.current;
     if (!canvas || !line) return undefined;
-    if (window.innerWidth < NARROW) return undefined;
+    if (window.innerWidth < NARROW) {
+      // No pin and no flowers here: the introduction just stands.
+      rootRef.current?.querySelectorAll<HTMLElement>("[data-intro]").forEach((el) => {
+        el.style.opacity = "1";
+      });
+      return undefined;
+    }
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const video = document.createElement("video");
@@ -303,72 +294,15 @@ export default function StatementSection(): JSX.Element {
     const config: BarLayerConfig = {
       // Hanging down the right of the band, past the centred sentence, and
       // again down the left as its mirror.
-      x: "-9%", y: `${2 / CANVAS_H}%`, width: "50%", height: `${100 / CANVAS_H}%`,
+      x: "-2.5%", y: "2%", width: "50%", height: "100%",
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
       blackPoint: 200, whitePoint: 25, threshold: 255,
       xSquares: 150, ySquares: 190, bgOpacity: 0, fillOpacity: 1,
     };
-    // THE ROBOT, on the same canvas, in the same bars.
-    //
-    // heroRobot draws it off screen — a white shape on nothing — and hands
-    // the canvas over as a layer source, so the engine dithers it exactly
-    // as it does the flower: one bar a cell, wide where the source is
-    // bright. Read upside down (255 / 0) so white is a full bar, and the
-    // robot is solid ink in the band's own marks. Transparent is discarded,
-    // so nothing is drawn around it.
-    const frame0 = rootRef.current;
-    const sceneW = frame0?.clientWidth ?? window.innerWidth;
-    const sceneH = window.innerHeight;
-    const robotW = Math.min(2200, sceneW);
-    const robotH = Math.round((robotW * sceneH) / sceneW);
-    const robot: HeroRobot | null = mountHeroRobot({
-      url: "/models/hero.glb",
-      offscreen: { width: robotW, height: robotH },
-      enterFrom: "left",
-      // It parks in the middle of the screen, a little smaller than the
-      // frame so its near side, which stands closer to the lens than its
-      // box, still clears the top. Lit, not flat: the bar shader reads
-      // brightness, so the shading comes out as bar width — lit faces wide,
-      // shadowed faces thin — in the band's own two colours.
-      endX: robotW * 0.5,
-      fill: 0.7,
-      shaded: true,
-    });
-    const robotConfig: BarLayerConfig = {
-      x: "0%", y: "0%", width: "100%", height: "100%",
-      // Upside down, so a lit face is a wide bar; and the white point up
-      // off zero so the darkest faces keep a hairline rather than vanish.
-      // A hard grade: anything over 190 grey is a full bar, anything under
-      // 70 has none, so the lit faces are solid and the shadow is empty.
-      blackPoint: 190, whitePoint: 70, threshold: 255,
-      // The flower's density, carried across the full width — and the bar
-      // capped under its cell, so a white shape stays a run of LINES
-      // rather than filling to one solid mass. That cap is the effect.
-      xSquares: 300, ySquares: 190, maxSquareWidth: "64%", bgOpacity: 0, fillOpacity: 1,
-    };
-    // THE SPRAY on the left third: sakura boughs that grow and bloom as a
-    // wave from left to right (bloomField), in the flower's own grade.
-    // Just right of the original flower, leaning right, toward the text.
-    const FIELD_X = 0.17;
-    const FIELD_W = 0.3;
-    const fieldH = 720;
-    const field = createBloomField({
-      width: Math.round((FIELD_W * sceneW * fieldH) / sceneH),
-      height: fieldH,
-      still: reduced,
-      tilt: 0.28,
-    });
-    const fieldConfig: BarLayerConfig = {
-      x: `${FIELD_X * 100}%`, y: "0%", width: `${FIELD_W * 100}%`, height: `${100 / CANVAS_H}%`,
-      blackPoint: 200, whitePoint: 25, threshold: 255,
-      xSquares: 170, ySquares: 260, bgOpacity: 0, fillOpacity: 1,
-    };
     const layers: BarLayer[] = [
-      { type: "canvas", source: field.source, config: fieldConfig },
       { type: "canvas", source, config },
-      ...(robot ? [{ type: "canvas" as const, source: robot.source, config: robotConfig }] : []),
     ];
     bar = createBarCanvas(canvas, layers, {
       colors: () => ({ bg: hexToRgb(BAND), fill: hexToRgb(INK) }),
@@ -376,142 +310,37 @@ export default function StatementSection(): JSX.Element {
       fps: reduced ? 4 : 60,
     });
 
-    // ONE TIMELINE OVER THE PIN, and everything reads off it:
+    // One reading off the scroll, while the stage is held:
     //   (before)     the flower opens from the moment the section shows
-    //                over the fold, a whole screen before the pin, and is
-    //                open by the time the robot sets off;
-    //   0.22 - 0.72  the robot comes up from below the frame's bottom edge
-    //                and stops in the middle, turning the whole way, and
-    //                the flowers close over the same stretch — buds again
-    //                by the time it is up;
-    //   0.22 - 0.72  as its top rises past the sentence, the lines below
-    //                it are gone: a clip from the bottom that follows it,
-    //                and finishes over the last of the rise whatever the
-    //                edge is doing;
-    //   0.22 - 0.72  the robot comes up from below the frame's bottom edge
-    //                and stops in the middle, turning the whole way, and
-    //                keeps turning until the section has scrolled off;
-    //   0.22 - 0.78  ...and the turn is one full circle over that, slowing
-    //                into a side profile, so it is settling as the push
-    //                begins and the close-up is always the same face;
-    //   0.68 - 1.00  the camera PUSHES IN, slowly, eased at both ends: the
-    //                robot's layer grows to twice the frame and slides down
-    //                and right, so what is left on screen is its upper
-    //                left, filling the right half of the width and the
-    //                bottom three quarters of the height, cut off by the
-    //                edges. The words keep the top and the left.
-    //   0.80 - 1.00  the two lines come in, then the introduction, on the
-    //                left, in the room it has left.
-    // The turn runs from the moment it starts to rise until the section
-    // has scrolled off the top, which is past the end of the pin: one full
-    // circle, slow, as if on a turntable. One trigger runs the section's
-    // whole pass, from its top clearing the fold to its bottom clearing
-    // the top; `p` is the pin's share of it, and `openScroll` the flower's.
-    const wipe = line.parentElement as HTMLElement;
+    //                over the fold, and the sentence writes in;
+    //   0.00 - 0.14  the introduction comes in under the sentence.
+    // The flower then stays open until the wall of bars (below) closes
+    // over it.
     const lines = Array.from(
-      (rootRef.current?.querySelectorAll<HTMLElement>("[data-after-line]") ?? []),
+      (rootRef.current?.querySelectorAll<HTMLElement>("[data-intro]") ?? []),
     );
-    const climb = gsap.parseEase("power2.out");
     const soft = gsap.parseEase("power2.out");
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-    let openFrames = 0;
-    let spin = 0;
     let openScroll = 0;
+    let pinPx = 1;
     const apply = (p: number) => {
-      // Closing: the clip run BACKWARDS over the rise, the whole of it —
-      // the petals fold, the flower shuts to a bud, the stem sinks back
-      // into the ground, and the first frame is empty. The sheet starts at
-      // the clip's own start (BLOOM_FROM 0) for exactly this reason.
-      const shut = p < 0.22 ? 0 : clamp01((p - 0.22) / 0.5);
-      // The wave runs left to right: the original flower at the far left
-      // first, then the bough beside it.
-      const open = p < 0.22 ? openScroll : 1 - shut;
-      const fieldOpen = p < 0.22 ? clamp01((openScroll - 0.1) / 0.6) : 1 - shut;
-      field.set(fieldOpen);
-      openFrames = clamp01(open) * (FRAMES - 1);
-      want = Math.round(openFrames);
-      // And they sink as they close: the box slides down the frame over
-      // the rise, a whole frame's worth, so at the end the top of it has
-      // just gone under the bottom edge — barely hidden, not switched off.
-      config.y = `${(2 + 100 * shut) / CANVAS_H}%`;
+      const open = clamp01(openScroll);
+      want = Math.round(open * (FRAMES - 1));
       config.fillOpacity = open <= 0.002 ? 0 : 1;
-      fieldConfig.y = `${(100 * shut) / CANVAS_H}%`;
-      fieldConfig.fillOpacity = fieldOpen <= 0.002 ? 0 : 1;
-      // The aurora. It runs behind the whole site (SiteBackground) and the
-      // band's plum covers it; while the sentence writes in, the plum thins
-      // to let it through as a plum field with pink light moving in it, and
-      // it stays: every section below lets it through under the same wash
-      // (PLUM_WASH).
-      // It starts once the band's top edge has reached the top of the screen
-      // (openScroll 0.56), so it never shows a line against the valley.
-      const aurora = clamp01((openScroll - 0.56) / 0.34);
-      const band = rootRef.current;
-      if (band) band.style.backgroundColor = `rgba(42, 13, 30, ${(1 - 0.6 * soft(aurora)).toFixed(3)})`;
-      // Both pairs, top then bottom, one line after another.
-      for (const [i, el] of lines.entries()) {
-        // After the push-in has taken the robot out from under them.
-        // Three lines, 0.04 apart, 0.12 long: the last one ends at 1.00,
-        // where p stops, so it reaches full opacity.
-        const q = soft(clamp01((p - 0.8 - i * 0.04) / 0.12));
+      for (const el of lines) {
+        const q = soft(clamp01(p / 0.14));
         el.style.opacity = String(q);
         el.style.transform = `translateY(${(1 - q) * 28}px)`;
       }
-      if (!robot) return;
-      const r = clamp01((p - 0.22) / 0.5);
-      robot.yaw(spin);
-      robot.rise(climb(r));
-      // The push-in. The robot stands in the middle third of its own
-      // canvas (x 0.33..0.67) and the middle 70% of its height; at twice
-      // the size, a box at (-16%, -5%) puts its left edge on the frame's
-      // middle and its top a quarter of the way down.
-      // The close-up holds the whole way: the robot rises straight into
-      // the bottom right at twice the frame, with no stop in the middle.
-      const z = 1;
-      const k = 1 + z;
-      robotConfig.width = `${100 * k}%`;
-      robotConfig.height = `${(100 * k) / CANVAS_H}%`;
-      // It holds there; once the lines are in, the pin ends and the page
-      // scrolls on with the robot as it stands.
-      const yFrac = 0.14 * z;
-      // Measured off the render rather than the model's box: in profile
-      // the robot is narrower than its box and its lift's near side rises
-      // above it, so the offsets are what put its left edge on the frame's
-      // middle and its top a quarter of the way down.
-      robotConfig.x = `${-29 * z}%`;
-      robotConfig.y = `${(100 * yFrac) / CANVAS_H}%`;
-      // The wipe, from the bottom: the robot canvas is a scaled copy of
-      // the frame, so its top edge scales back by the ratio.
-      // The robot's layer is k times the frame and offset by its y, so
-      // its top on the page scales and shifts with that.
-      const scale = ((frame0?.clientWidth ?? sceneW) / robotW) * k;
-      const box = wipe.getBoundingClientRect();
-      const cb = canvas.getBoundingClientRect();
-      const top = cb.top + (cb.height / CANVAS_H) * yFrac + robot.topPx() * scale;
-      const cut = r <= 0 ? 0 : box.bottom - top;
-      const finish = box.height * soft(clamp01((r - 0.72) / 0.28));
-      wipe.style.clipPath = `inset(0 0 ${Math.max(0, cut, finish)}px 0)`;
     };
 
     const context = gsap.context(() => {
-      // Parked in the middle from the start; only its height and its turn
-      // are the scroll's.
-      let lastP = 0;
-      robot?.ready.then(() => {
-        robot?.seek(1);
-        apply(lastP);
-      });
       if (reduced) {
         want = FRAMES - 1;
-        robot?.seek(1);
         for (const el of lines) el.style.opacity = "1";
         return;
       }
       const root = rootRef.current;
-      // The section's whole pass, in px scrolled: from its top at the
-      // fold to its bottom at the top of the screen. The pin is the middle
-      // of that — one screen in, one screen short of the end.
-      const RISE = 0.22;
-      const TURN_END = 0.78;
       ScrollTrigger.create({
         trigger: root,
         start: "top bottom",
@@ -521,20 +350,11 @@ export default function StatementSection(): JSX.Element {
           const vh = window.innerHeight;
           const H = root?.offsetHeight ?? 4 * vh;
           const scrolled = self.progress * (H + vh);
-          const pinLen = Math.max(1, H - vh);
-          const p = clamp01((scrolled - vh) / pinLen);
-          // The flower: open over the screen before the pin and the first
-          // fifth of it, so it is full as the robot sets off.
-          openScroll = clamp01(scrolled / (vh + 0.2 * pinLen));
-          // The turn: one full circle from the start of the rise to a
-          // little past its end, eased out, so it comes to rest in profile
-          // as the push-in takes over.
-          const riseAt = vh + RISE * pinLen;
-          const turnEnd = vh + TURN_END * pinLen;
-          // Half a turn as it rises, coming to rest at a three-quarter
-          // angle (front and near side both showing), not in profile.
-          spin = END_YAW - Math.PI + Math.PI * gsap.parseEase("power2.inOut")(clamp01((scrolled - riseAt) / (turnEnd - riseAt)));
-          lastP = p;
+          pinPx = Math.max(1, H - vh);
+          const p = clamp01((scrolled - vh) / pinPx);
+          // The flowers: open over the screen before the pin and the first
+          // fifth of it.
+          openScroll = clamp01(scrolled / (vh + 0.2 * pinPx));
           apply(p);
         },
       });
@@ -544,8 +364,6 @@ export default function StatementSection(): JSX.Element {
     return () => {
       stopped = true;
       context.revert();
-      field.dispose();
-      robot?.dispose();
       bar?.destroy();
       video.pause();
       video.removeAttribute("src");
@@ -555,8 +373,7 @@ export default function StatementSection(): JSX.Element {
       frame.width = 1;
       frame.height = 1;
     };
-  }, []);
-
+  }, [tvUp]);
   // The line coming to, a letter at a time, done by the middle of the screen.
   useEffect(() => {
     const line = lineRef.current;
@@ -594,93 +411,56 @@ export default function StatementSection(): JSX.Element {
 
   return (
     <section
-      // z-10 is load-bearing: the crest below is drawn ABOVE this section's
-      // own top edge, over the landscape, and the landscape's near canvas
-      // carries z-[2]. Without a stated layer here that canvas paints over
-      // the hill and the boundary goes back to being a straight rule.
-      // Four screens tall on a wide screen, with a one-screen frame pinned
-      // inside for the last three: the viewport holds on the sentence while
-      // the flower opens, the robot crosses and parks in the middle, the
-      // flower closes, and the four lines come in beside it.
-      className="relative z-10 min-h-[100vh] lg:min-h-[500vh]"
+      // z-10 is load-bearing: the landscape's near canvas carries z-[2].
+      // Two screens tall at every width, with a one-screen stage held
+      // inside for the second: the hold is for reading, and the clouds (CloudPassage.tsx) roll in over its second half.
+      className="relative z-10 min-h-[200vh]"
       data-statement
       id="info"
       ref={rootRef}
-      style={{ backgroundColor: BAND, color: INK }}
+      style={{ color: INK, backgroundColor: BAND }}
     >
-      <div className="sticky top-0 flex h-[100vh] items-center">
-      {/* NO seam device. The reference has none either, and the reason is
-          worth keeping: the bottom of its land plate grades to solid FILL
-          colour, and the section under it is painted that same colour, so
-          the bars simply run out into it. Ours is the same arrangement —
-          this band is BAR_FILL — so a drawn crest here was a hard edge
-          invented on top of a join that already worked. */}
-
+      <div className="sticky top-0 flex h-[100vh] items-center overflow-hidden" data-statement-stage>
       <canvas
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 hidden w-full lg:block"
+        className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
         data-statement-scene
-        // Taller than the frame (CANVAS_H frames): the close-up robot hangs
-        // below the frame's bottom edge, and when the pin lets go and the
-        // page scrolls on, its lower half comes up into view instead of
-        // being cut off along the canvas's edge.
-        style={{ height: `${CANVAS_H * 100}%` }}
         ref={canvasRef}
       />
-
-      {/* What is left once the sentence has gone: four lines on the left
-          of the parked robot, all in the display serif at one size and
-          each in a different cut: roman, italic, italic drawn hollow, bold
-          italic. They come in one after another at the end of the
-          pin; the timeline writes their opacity and lift directly. */}
-      <div className="pointer-events-none absolute left-[4vw] top-[6vh] z-[1] hidden lg:block" style={{ color: BLOSSOM_INK }}>
-        <p className={AFTER} data-after-line>
-          I write software for
-        </p>
-        <p className={AFTER} data-after-line style={{ marginLeft: `${STAIR}vw` }}>
-          things that move.
-        </p>
-      </div>
-      {/* The introduction, bottom left under the tagline, in the room the
-          robot leaves when it drives off to the right. */}
-      <div
-        className="pointer-events-none absolute bottom-[10vh] left-[4vw] z-[1] hidden w-[24vw] lg:block"
-        style={{ color: BLOSSOM_INK }}
-      >
-        <p className={INTRO} data-after-line>
-          My name is Kevin. I{"\u2019"}m a computer engineering student in Toronto. What I make works in the
-          real world, on real hardware, in real time.
-        </p>
-      </div>
-
-      {/* The sentence, in the middle. The box round it is what the wipe
-          clips as the robot rises through it; the flowers hang either side. */}
-      <div className="relative z-[1] w-full">
-        {/* Off centre, to the right of the spray and short of the flower at
-            the end: large, in the display serif, stepped like the lines
-            that follow the robot. */}
-        <p
-          aria-label={LINE}
-          className="ml-[47vw] whitespace-nowrap font-serif-display italic text-[min(16vh,6.2vw)] leading-[1.02] tracking-[-0.03em]"
-          ref={lineRef}
-        >
-          {LINE_ROWS.map((row, r) => (
-            <span aria-hidden="true" className="block" key={r} style={{ marginLeft: `${r * STAIR * 1.6}vw` }}>
-              {row.split(" ").map((word, index, all) => (
-                // The word stays one box, and the letters inside it are
-                // what the scroll writes.
-                <span className="inline-block" key={index}>
-                  {Array.from(word).map((glyph, at) => (
-                    <span className="inline-block will-change-[filter,opacity]" data-letter key={at}>
-                      {glyph}
-                    </span>
-                  ))}
-                  {index < all.length - 1 ? "\u00a0" : ""}
-                </span>
-              ))}
-            </span>
-          ))}
-        </p>
+      {/* The sentence and the introduction, held with the flower. */}
+      <div className="relative z-[1] flex h-[100vh] w-full items-center">
+        {/* On the work section's column (half way across on a wide screen),
+            flush, so "Work" lands where this sentence stood: large, in the
+            display serif. */}
+        <div className="mx-[6vw] lg:ml-[50vw] lg:mr-0" style={{ color: BLOSSOM_INK }}>
+          <p
+            aria-label={LINE}
+            className="pb-[0.1em] font-serif-display italic text-[12vw] leading-[1.02] tracking-[-0.03em] lg:whitespace-nowrap lg:text-[min(16vh,6.2vw)]"
+            ref={lineRef}
+          >
+            {LINE_ROWS.map((row, r) => (
+              <span aria-hidden="true" className="block" key={r}>
+                {row.split(" ").map((word, index, all) => (
+                  // The word stays one box, and the letters inside it are
+                  // what the scroll writes.
+                  <span className="inline-block" key={index}>
+                    {Array.from(word).map((glyph, at) => (
+                      <span className="inline-block will-change-[filter,opacity]" data-letter key={at}>
+                        {glyph}
+                      </span>
+                    ))}
+                    {index < all.length - 1 ? "\u00a0" : ""}
+                  </span>
+                ))}
+              </span>
+            ))}
+          </p>
+          {/* Under the sentence, on the same column. */}
+          <p className={`${INTRO} mt-[5vh] max-w-[46rem] lg:w-[22vw] lg:max-w-none`} data-intro>
+            My name is Kevin. I{"’"}m a computer engineering student at the University of Toronto. I design and
+            build software, hardware and robots, for the love of the craft and the people who use what I make.
+          </p>
+        </div>
       </div>
       </div>
     </section>

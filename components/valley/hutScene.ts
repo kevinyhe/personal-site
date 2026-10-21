@@ -691,10 +691,17 @@ export function createHutScene(
      * would be a different picture.
      */
     bare?: boolean;
+    /**
+     * Hills only, on a see-through ground: no sky dome and no mountain
+     * ranges, cleared to alpha 0. The hero lays the hills over its own
+     * aurora with this, so the aurora is the sky behind them.
+     */
+    skyless?: boolean;
   },
 ): HutScene {
   const quality = options.quality;
   const bare = options.bare === true;
+  const skyless = options.skyless === true;
   const seed = options.seed | 0;
   const reducedMotion = options.reducedMotion === true;
   const rng = makeRng(seed);
@@ -704,7 +711,7 @@ export function createHutScene(
     renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: quality !== "low",
-      alpha: false,
+      alpha: skyless,
       powerPreference: "high-performance",
     });
   } catch (error) {
@@ -755,7 +762,7 @@ export function createHutScene(
     // Nothing that casts a shadow moves, so one shadow pass is enough.
     renderer.shadowMap.autoUpdate = false;
     applyBufferSize();
-    renderer.setClearColor(new THREE.Color(FOG_COLOR), 1);
+    renderer.setClearColor(new THREE.Color(FOG_COLOR), skyless ? 0 : 1);
   }
 
   scene.fog = new THREE.Fog(new THREE.Color(FOG_COLOR), 40, 620);
@@ -868,7 +875,7 @@ export function createHutScene(
   const skyGeometry = new THREE.SphereGeometry(900, 96, 48);
   const sky = new THREE.Mesh(skyGeometry, skyMaterial);
   sky.frustumCulled = false;
-  scene.add(sky);
+  if (!skyless) scene.add(sky);
   disposables.push(skyGeometry, skyMaterial);
 
   // ---- materials -----------------------------------------------------------
@@ -1446,7 +1453,7 @@ export function createHutScene(
     try {
       buildTerrain();
       await yieldFrame();
-      buildRange({
+      if (!skyless) buildRange({
         width: 900,
         depth: 170,
         centerZ: -200,
@@ -1456,7 +1463,7 @@ export function createHutScene(
         snowLine: 0.55,
         rangeSeed: seed + 80,
       });
-      buildRange({
+      if (!skyless) buildRange({
         width: 1700,
         depth: 280,
         centerZ: -400,

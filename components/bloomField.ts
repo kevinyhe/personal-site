@@ -162,6 +162,33 @@ export function createBloomField({
   // Draw the far (small) ones first.
   blossoms.sort((a, b) => a.r - b.r);
 
+  // How much to shrink the leaned spray so all of it, sway included, stays
+  // inside the canvas: the bar shader draws the canvas's edge as a hard
+  // straight cut through anything that reaches it. Measured on the laid
+  // out boughs and blossoms, not guessed.
+  const fit = (() => {
+    const cos = Math.cos(tilt), sin = Math.sin(tilt);
+    const reach = W * 0.012 * 1.4; // the most the sway can move a tip
+    const margin = W * 0.03;
+    let need = 0.78;
+    const test = (x: number, y: number, r: number) => {
+      // Lean about the middle of the foot, as draw() does.
+      const dx = x - W / 2, dy = y - H;
+      const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
+      const out = r + reach;
+      if (rx > 0) need = Math.min(need, (W / 2 - margin) / (rx + out));
+      if (rx < 0) need = Math.min(need, (W / 2 - margin) / (-rx + out));
+      if (ry < 0) need = Math.min(need, (H - margin) / (-ry + out));
+    };
+    for (const b of branches) for (const [x, y] of b.pts) test(x, y, b.w);
+    for (const f of blossoms) {
+      const b = branches[f.branch];
+      const [x, y] = pointOn(b, f.at);
+      test(x + f.dx, y + f.dy, f.r * 1.1);
+    }
+    return Math.max(0.3, need);
+  })();
+
   // --- Drawing --------------------------------------------------------------------
   let progress = 0;
   let time = 0;
@@ -188,12 +215,12 @@ export function createBloomField({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
-    // Lean the spray about the middle of its foot, and shrink it a
-    // little so the lean never carries a tip past the canvas edge, which
-    // the bars would show as a straight cut.
+    // Lean the spray about the middle of its foot, and shrink it (`fit`)
+    // so the lean never carries a tip past the canvas edge, which the bars
+    // would show as a straight cut.
     ctx.translate(W / 2, H);
     ctx.rotate(tilt);
-    ctx.scale(0.78, 0.78);
+    ctx.scale(fit, fit);
     ctx.translate(-W / 2, -H);
     const t = progress;
 

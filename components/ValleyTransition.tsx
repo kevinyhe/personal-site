@@ -21,6 +21,7 @@ import {
 } from "@/components/valley/sources/shrine";
 import { sceneFx } from "@/components/sceneFx";
 import { BAND, BLOSSOM } from "@/components/bandColours";
+import { useTvUp } from "@/components/tvUp";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -246,7 +247,10 @@ export default function ValleyTransition() {
   // The landscape. Built lazily: two WebGL contexts, a generated range, a
   // cherry tree and four videos, and none of it should compete with the
   // hero's own scene while the reader is still looking at the hero.
+  const tvUp = useTvUp();
+  // Waits for the hero (tvUp.ts) so it does not slow the TV loading.
   useEffect(() => {
+    if (!tvUp) return undefined;
     const root = rootRef.current;
     const farCanvas = farRef.current;
     const nearCanvas = nearRef.current;
@@ -392,12 +396,12 @@ export default function ValleyTransition() {
       // turned a quarter to the left, one a quarter to the right.
       const toriiLeft: BarLayerConfig = {
         ...built,
-        x: "24%", y: "57.1%", width: "14%", height: "16%",
+        x: "24%", y: "58.6%", width: "14%", height: "16%",
         xSquares: 180, ySquares: 180, mirrorX: true,
       };
       const gate: BarLayerConfig = {
         ...built,
-        x: "39%", y: "59.2%", width: "14%", height: "16%",
+        x: "39%", y: "60.7%", width: "14%", height: "16%",
         xSquares: 180, ySquares: 180,
       };
       const lanterns: BarLayerConfig = {
@@ -660,7 +664,7 @@ export default function ValleyTransition() {
       for (const src of sources) src.dispose?.();
       sources = [];
     };
-  }, []);
+  }, [tvUp]);
 
   return (
     <div
@@ -669,6 +673,8 @@ export default function ValleyTransition() {
       ref={rootRef}
       style={{
         height: `${BLOCK_VH + LEAD_VH + SCENE_DROP + TAIL_VH}vh`,
+        // The plain page colour behind the hills, not the aurora (user).
+        backgroundColor: BAND,
         // NO background. Every plate is its subject on pure black, and the
         // shader discards black, so the sky is never painted by anything —
         // the page's aurora is what shows through it.

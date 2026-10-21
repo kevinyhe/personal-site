@@ -22,6 +22,10 @@ export type Project = {
   award?: string;
   year: string;
   href?: string;
+  /** Its source, when that is somewhere other than href. */
+  code?: string;
+  /** A picture of it, under public/. */
+  image?: string;
   /** The role it plays on a page: the first is the lead. */
   kind: "company" | "hackathon" | "library" | "bot";
 };
@@ -38,6 +42,7 @@ export const projects: Project[] = [
     stack: ["Next.js", "React", "Electron", "FastAPI", "FFmpeg", "MediaPipe", "Python", "TypeScript"],
     year: "2026",
     href: "https://theactually.company",
+    image: "/work/actually.jpg",
     kind: "company",
   },
   {
@@ -52,6 +57,7 @@ export const projects: Project[] = [
     award: "Finalist, Hack The North 2025",
     year: "2025",
     href: "https://devpost.com/software/s-kbd67",
+    image: "/work/s-kbd67.jpg",
     kind: "hackathon",
   },
   {
@@ -65,6 +71,8 @@ export const projects: Project[] = [
     award: "1st overall, EurekaHacks 2026",
     year: "2026",
     href: "https://devpost.com/software/king-of-the-ring",
+    code: "https://github.com/kevinyhe/eureka-hacks-2026",
+    image: "/work/king-of-the-ring.jpg",
     kind: "hackathon",
   },
   {
@@ -77,15 +85,21 @@ export const projects: Project[] = [
     stack: ["C++", "PROS", "VEX V5", "CMake"],
     year: "2022–2026",
     href: "https://github.com/kevinyhe/mclib",
+    image: "/work/mclib.jpg",
     kind: "library",
   },
   {
-    title: "Saturn",
-    tagline: "Moderation, logging and server management for Discord communities.",
-    bullets: ["Deployed to 40,000+ users across several communities."],
-    stack: ["JavaScript", "Node.js", "Discord API"],
-    year: "2021",
-    kind: "bot",
+    title: "Sharingan",
+    tagline: "A scout drone that finds people through walls and floors and streams them live to a VR headset.",
+    bullets: [
+      "Person detection on a Raspberry Pi 5 with a Hailo-10H accelerator: a global shutter camera for line of sight, radar for through walls and floors.",
+      "Bearing from pinhole camera geometry and range from a boresighted rangefinder; ArduPilot Loiter and PosHold hold the drone while the vision stack tracks.",
+      "Detections overlaid on a Meta Quest 3S passthrough HUD built in Unreal Engine, over a wired, air-gapped link, with a CoT/ATAK bridge.",
+    ],
+    stack: ["Raspberry Pi 5", "Hailo-10H", "ArduPilot", "Unreal Engine", "Meta Quest 3S"],
+    year: "2026",
+    href: "https://devpost.com/software/sharingan",
+    kind: "hackathon",
   },
 ];
 

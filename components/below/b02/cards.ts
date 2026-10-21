@@ -60,7 +60,43 @@ uniform vec3 uRipple;
 uniform vec2 uTilt;
 uniform float uCorner;
 uniform vec3 uPlum, uDeep, uBlossom, uWhite, uRose, uPale, uLift;
+uniform sampler2D uPhoto;
+uniform float uHasPhoto;
+uniform float uPhotoAspect;
+uniform float uInvert;
+/** 1 on a phone: the card is split top and bottom. Set by the page, so it
+ *  agrees with where the words are laid out. */
+uniform float uTall;
 varying vec2 vUv;
+
+/** The words' share of the card, from the left, when it carries a picture. */
+const float WORDS = 0.42;
+/** The same for a tall card, from the bottom. */
+const float WORDS_TALL = 0.5;
+
+// A picture in place of the drawn art: nothing under the words, and the
+// picture filling the rest of the card, cropped to cover it.
+vec3 photoArt(vec2 uv, float A) {
+  // A tall card (a phone) is split top and bottom instead: the picture on
+  // top, the words under it, so each card reads picture-then-words.
+  bool tall = uTall > 0.5;
+  float cut = tall ? 1.0 - WORDS_TALL : WORDS;
+  float along = tall ? uv.y : uv.x;
+  if (along < (tall ? WORDS_TALL : WORDS)) return vec3(0.0);
+  vec2 q = tall ? vec2(uv.x, (uv.y - WORDS_TALL) / cut) : vec2((uv.x - WORDS) / (1.0 - WORDS), uv.y);
+  float regionA = tall ? A / cut : (1.0 - WORDS) * A;
+  vec2 k = regionA > uPhotoAspect ? vec2(1.0, uPhotoAspect / regionA) : vec2(regionA / uPhotoAspect, 1.0);
+  vec2 t = (q - 0.5) * k + 0.5;
+  vec3 c = texture2D(uPhoto, t).rgb;
+  // A light picture (a web page on a pale ground) is turned over, so its
+  // ground is nothing and what is drawn on it is the ink. Turned over as
+  // the eye sees it (in sRGB), not in linear light, where a cream ground
+  // would come back as a mid grey.
+  c = mix(c, pow(1.0 - pow(c, vec3(1.0 / 2.2)), vec3(2.2)), uInvert);
+  // Eased in over the first few per cent, so the picture has no hard edge
+  // against the words.
+  return c * smoothstep(0.0, 0.04, tall ? q.y : q.x);
+}
 
 float hash11(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -271,7 +307,8 @@ void main() {
   float w = fwidth(p.y) * 0.75;
 
   vec3 col;
-  if (uKind == 0) col = art0(p, A, w);
+  if (uHasPhoto > 0.5) col = photoArt(p / vec2(A, 1.0) + 0.5, A);
+  else if (uKind == 0) col = art0(p, A, w);
   else if (uKind == 1) col = art1(p, A, w);
   else if (uKind == 2) col = art2(p, A, w);
   else if (uKind == 3) col = art3(p, A, w);
@@ -281,7 +318,10 @@ void main() {
   col *= 1.0 + rp * 0.22;
   // A band of light that crosses the card as it tilts.
   float sweep = exp(-pow((p.x * 0.8 + p.y * 0.5 - uTilt.x * 2.6) / 0.3, 2.0));
-  col += vec3(0.05) * sweep * (0.4 + abs(uTilt.x) * 4.0);
+  // Not under the words when the card carries a picture: there the light
+  // would come out as bars behind the type.
+  float lit = uHasPhoto > 0.5 ? (uTall > 0.5 ? step(WORDS_TALL, vUv.y) : step(WORDS, vUv.x)) : 1.0;
+  col += vec3(0.05) * sweep * (0.4 + abs(uTilt.x) * 4.0) * lit;
 
   vec2 m = (vUv - 0.5) * uSize;
   float d = sdBox(m, uSize * 0.5, uCorner);
@@ -310,7 +350,9 @@ export type Card = {
 
 export type CardKit = { cards: Card[]; dispose: () => void };
 
-export function makeCards(count: number): CardKit {
+export function makeCards(count: number, photos?: (string | HTMLCanvasElement)[]): CardKit {
+  const loader = new THREE.TextureLoader();
+  const pictures: THREE.Texture[] = [];
   const plane = new THREE.PlaneGeometry(1, 1, 96, 48);
   const shadowMat = new THREE.ShadowMaterial({ opacity: 0.3, fog: false });
   const col = (hex: string): THREE.Color => new THREE.Color(hex);
@@ -336,8 +378,48 @@ export function makeCards(count: number): CardKit {
         uRose: { value: col(ROSE) },
         uPale: { value: col(PALE) },
         uLift: { value: col(LIFT) },
+        uPhoto: { value: null as THREE.Texture | null },
+        uHasPhoto: { value: 0 },
+        uPhotoAspect: { value: 1 },
+        uInvert: { value: 0 },
+        uTall: { value: 0 },
       },
     });
+    const src = photos?.[i];
+    if (src) {
+      /** Mean brightness of a picture, 0..1, from a 32 px copy of it. */
+      const meanOf = (im: CanvasImageSource): number => {
+        const c = document.createElement("canvas");
+        c.width = 32;
+        c.height = 32;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return 0;
+        ctx.drawImage(im, 0, 0, 32, 32);
+        const d = ctx.getImageData(0, 0, 32, 32).data;
+        let sum = 0;
+        for (let k = 0; k < d.length; k += 4) sum += 0.2126 * d[k] + 0.7152 * d[k + 1] + 0.0722 * d[k + 2];
+        return sum / (255 * 1024);
+      };
+      const shown = (t: THREE.Texture, w: number, h: number): void => {
+        material.uniforms.uInvert.value = meanOf(t.image as CanvasImageSource) > 0.6 ? 1 : 0;
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        material.uniforms.uPhoto.value = t;
+        material.uniforms.uPhotoAspect.value = w / Math.max(1, h);
+        material.uniforms.uHasPhoto.value = 1;
+      };
+      if (typeof src === "string") {
+        const t = loader.load(src, (tex) => {
+          const im = tex.image as HTMLImageElement;
+          shown(tex, im.naturalWidth, im.naturalHeight);
+        });
+        pictures.push(t);
+      } else {
+        const t = new THREE.CanvasTexture(src);
+        shown(t, src.width, src.height);
+        pictures.push(t);
+      }
+    }
     const face = new THREE.Mesh(plane, material);
     face.name = "face";
     // The pieces at the corners and in orbit throw their shadows on it.
@@ -357,6 +439,7 @@ export function makeCards(count: number): CardKit {
       plane.dispose();
       shadowMat.dispose();
       cards.forEach((c) => c.material.dispose());
+      pictures.forEach((t) => t.dispose());
     },
   };
 }
