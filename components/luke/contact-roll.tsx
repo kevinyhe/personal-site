@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 
 /**
  * Text whose letters roll up, one after another, to a second copy of
@@ -8,7 +8,7 @@ import type { JSX } from "react";
  * Put it inside an element with Tailwind's `group` class: the roll keys off
  * that element's hover and focus. Screen readers get the plain text once.
  */
-export function RollText({ text, step = 18 }: { text: string; step?: number }): JSX.Element {
+export function RollText({ text, step = 18, glyphStyle }: { text: string; step?: number; glyphStyle?: (char: string) => CSSProperties | undefined }): JSX.Element {
   const chars = Array.from(text);
   return (
     <span className="relative inline-block whitespace-nowrap">
@@ -20,7 +20,7 @@ export function RollText({ text, step = 18 }: { text: string; step?: number }): 
             <span className="relative -mx-[0.09em] inline-block overflow-hidden px-[0.09em] leading-[1.4]" key={i}>
               <span
                 className="block transition-transform duration-[650ms] ease-[cubic-bezier(0.76,0,0.24,1)] group-hover:-translate-y-full group-focus-visible:-translate-y-full motion-reduce:transition-none"
-                style={{ transitionDelay: `${i * step}ms` }}
+                style={{ ...glyphStyle?.(c), transitionDelay: `${i * step}ms` }}
               >
                 {glyph}
                 <span className="absolute left-0 top-full">{glyph}</span>

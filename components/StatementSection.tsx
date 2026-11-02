@@ -13,6 +13,7 @@ import {
   type CanvasSource,
 } from "@/components/valley/barShader";
 import { useTvUp } from "@/components/tvUp";
+import { useIdea } from "@/components/ideas/idea";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -44,6 +45,13 @@ gsap.registerPlugin(ScrollTrigger);
  * The line is set in the display serif's ITALIC, which is the cut the hero's
  * own "He." is in — so the one sentence on the page and the one word of the
  * name that is emphasised are said in the same voice.
+ *
+ * THE BIRDS: sondaven's line of five (their clip, public/sonda), through
+ * the same bar shader, crossing the band from right to left high over the
+ * sentence, one pass every BIRDS_EVERY seconds while the band is on screen
+ * (the reference's looping tween on its hero flock, the other way round:
+ * the layer is mirrored, so the birds fly to the left). Under reduced
+ * motion they do not cross.
  *
  * THE LINE DOES NOT MOVE. The letters are out of focus and half there and
  * come to one at a time, scrubbed by the scroll — and the run FINISHES when
@@ -101,8 +109,27 @@ const INK = "#f9b9dc";
  *  difference blend cancels to dark where they meet. */
 const BLOSSOM_INK = INK;
 
-/** Below this there is no room beside the column for a stem to stand in. */
+/** Below this there is no room beside the column for a stem to stand in,
+ *  so the sentence goes to the top of the screen and the flower stands
+ *  under it, on the band's foot (see FLOWER_WIDE). */
 const NARROW = 1024;
+/** The flower's box, width over height, as on a wide screen (half of it
+ *  across, all of it down, 0.93 at 1888 by 1020): the frame is stretched to
+ *  its box, so a box of another shape would be another flower. */
+const FLOWER_WIDE = 0.9;
+/** The birds' box under NARROW, a share of the width: a smaller flock,
+ *  high enough to cross over the sentence, not through it. */
+const BIRDS_W_NARROW = 25;
+
+/** The birds: sondaven's line of five (their hero and about flock,
+ *  public/sonda/birds_02-c.mp4, 480 x 480, 5 s), in their box (a third of
+ *  the width, square) at their height; a crossing and the gap after it,
+ *  in seconds, theirs too. */
+const BIRDS_SRC = "/sonda/birds_02-c.mp4";
+const BIRDS_W = 33.33;
+const BIRDS_Y = "10%";
+const BIRDS_CROSS = 5;
+const BIRDS_EVERY = 10;
 
 /** The introduction: the sans at reading size, under the sentence. */
 const INTRO =
@@ -135,20 +162,14 @@ export default function StatementSection(): JSX.Element {
   // then on the scroll is an index into that grid, and every step of it is a
   // real frame.
   const tvUp = useTvUp();
+  // Idea 6's flock (ideas/i06) flies in this band's sky on a phone, so the line of five stays out of it there.
+  const flockOnPhone = useIdea() === 6;
   // Waits for the hero (tvUp.ts) so it does not slow the TV loading.
   useEffect(() => {
     if (!tvUp) return undefined;
     const canvas = canvasRef.current;
     const line = lineRef.current;
     if (!canvas || !line) return undefined;
-    if (window.innerWidth < NARROW) {
-      // No pin and no flowers here: the introduction just stands.
-      rootRef.current?.querySelectorAll<HTMLElement>("[data-intro]").forEach((el) => {
-        el.style.opacity = "1";
-      });
-      return undefined;
-    }
-
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const video = document.createElement("video");
     video.src = `${ASSETS}/prolog-r-c.mp4`;
@@ -175,6 +196,7 @@ export default function StatementSection(): JSX.Element {
     }
 
     let bar: BarCanvas | null = null;
+    let ctx_cleanup: (() => void) | null = null;
     let captured = 0;
     let want = 0;
     let shown = -1;
@@ -291,25 +313,56 @@ export default function StatementSection(): JSX.Element {
       },
     };
 
+    // Hanging down the right of the band, past the centred sentence, and
+    // again down the left as its mirror.
+    const WIDE_BOX = { x: "-2.5%", y: "2%", width: "50%", height: "100%" };
+    // Under NARROW the flower stands under the introduction, its box the
+    // wide screen's shape (FLOWER_WIDE), centred, its foot on the band's.
+    // Read from the layout (offsets, so the introduction's slide-in does
+    // not move it), again on every refresh: fonts and a turned phone both
+    // move the introduction's foot.
+    const narrow = window.innerWidth < NARROW;
+    const box = (): typeof WIDE_BOX => {
+      if (window.innerWidth >= NARROW) return WIDE_BOX;
+      const W = canvas.clientWidth;
+      const H = canvas.clientHeight;
+      const intros = rootRef.current?.querySelectorAll<HTMLElement>("[data-intro]") ?? [];
+      const last = intros[intros.length - 1];
+      const foot = last ? last.offsetTop + last.offsetHeight : 0.5 * H;
+      const top = Math.max(0.5 * H, foot + 0.03 * H);
+      const tall = H - top;
+      const wide = Math.min(W, tall * FLOWER_WIDE);
+      const pc = (v: number, of: number): string => `${((100 * v) / Math.max(1, of)).toFixed(2)}%`;
+      return { x: pc((W - wide) / 2, W), y: pc(top, H), width: pc(wide, W), height: pc(tall, H) };
+    };
     const config: BarLayerConfig = {
-      // Hanging down the right of the band, past the centred sentence, and
-      // again down the left as its mirror.
-      x: "-2.5%", y: "2%", width: "50%", height: "100%",
+      ...box(),
       // The prologue's own grade, upside down: a BRIGHT petal draws a WIDE
       // bar, so the flower is solid ink on the blossom ground. The right way
       // up it is the stem that inks and the petals that vanish.
       blackPoint: 200, whitePoint: 25, threshold: 255,
       xSquares: 150, ySquares: 190, bgOpacity: 0, fillOpacity: 1,
     };
+    // The birds: sondaven's own clip, their grade (255/0, bright draws
+    // wide), mirrored to fly the other way, starting off the right edge;
+    // the loop below carries the box across to the left.
+    const birdsW = narrow ? BIRDS_W_NARROW : BIRDS_W;
+    const birdsConfig: BarLayerConfig = {
+      x: "100%", y: narrow ? "1%" : BIRDS_Y, width: `${birdsW}%`, height: `${birdsW}vw`,
+      blackPoint: 255, whitePoint: 0, threshold: 255,
+      bgOpacity: 0, fillOpacity: 1, mirrorX: true,
+    };
     const layers: BarLayer[] = [
       { type: "canvas", source, config },
+      ...(narrow && flockOnPhone
+        ? []
+        : [{ type: "video" as const, sources: [{ src: BIRDS_SRC, type: "video/mp4" }], config: birdsConfig }]),
     ];
     bar = createBarCanvas(canvas, layers, {
       colors: () => ({ bg: hexToRgb(BAND), fill: hexToRgb(INK) }),
       defaults: { bgOpacity: 0 },
       fps: reduced ? 4 : 60,
     });
-
     // One reading off the scroll, while the stage is held:
     //   (before)     the flower opens from the moment the section shows
     //                over the fold, and the sentence writes in;
@@ -341,11 +394,38 @@ export default function StatementSection(): JSX.Element {
         return;
       }
       const root = rootRef.current;
+      // The birds' crossing, right to left, over and over while the band
+      // is on screen; paused off it, so a reader coming back does not meet
+      // a flock mid-air that has been flying for nobody.
+      const loop = gsap
+        .timeline({ paused: true })
+        .fromTo(
+          birdsConfig,
+          { x: "100%" },
+          { x: `${-birdsW}%`, duration: BIRDS_CROSS, ease: "none", repeat: -1, repeatDelay: BIRDS_EVERY - BIRDS_CROSS },
+          0,
+        );
+      const seen = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              if (loop.paused()) loop.play();
+            } else if (!loop.paused()) loop.pause();
+          }
+        },
+        { threshold: 0.01, rootMargin: "20% 0px 20% 0px" },
+      );
+      seen.observe(canvas);
+      ctx_cleanup = () => {
+        seen.disconnect();
+        loop.kill();
+      };
       ScrollTrigger.create({
         trigger: root,
         start: "top bottom",
         end: "bottom top",
         scrub: 0.4,
+        onRefresh: () => Object.assign(config, box()),
         onUpdate: (self) => {
           const vh = window.innerHeight;
           const H = root?.offsetHeight ?? 4 * vh;
@@ -363,6 +443,7 @@ export default function StatementSection(): JSX.Element {
 
     return () => {
       stopped = true;
+      ctx_cleanup?.();
       context.revert();
       bar?.destroy();
       video.pause();
@@ -373,7 +454,7 @@ export default function StatementSection(): JSX.Element {
       frame.width = 1;
       frame.height = 1;
     };
-  }, [tvUp]);
+  }, [tvUp, flockOnPhone]);
   // The line coming to, a letter at a time, done by the middle of the screen.
   useEffect(() => {
     const line = lineRef.current;
@@ -423,12 +504,13 @@ export default function StatementSection(): JSX.Element {
       <div className="sticky top-0 flex h-[100vh] items-center overflow-hidden" data-statement-stage>
       <canvas
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
+        className="pointer-events-none absolute inset-0 block h-full w-full"
         data-statement-scene
         ref={canvasRef}
       />
       {/* The sentence and the introduction, held with the flower. */}
-      <div className="relative z-[1] flex h-[100vh] w-full items-center">
+      {/* Under NARROW at the top, so the flower has the foot to stand in. */}
+      <div className="relative z-[1] flex h-[100vh] w-full items-start pt-[14svh] lg:items-center lg:pt-0">
         {/* On the work section's column (half way across on a wide screen),
             flush, so "Work" lands where this sentence stood: large, in the
             display serif. */}

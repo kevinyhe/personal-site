@@ -19,6 +19,8 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { markTvUp } from "@/components/tvUp";
+import { type BarkPixels, barkPixels } from "@/components/barkPixels";
+import { clamp01, fbm2, lerp, makeRng, smoothstep } from "@/components/treeNoise";
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -542,18 +544,6 @@ type BareThreeCanvasProps = {
 
 export const SCENE_BUILD_MILESTONE_TOTAL = 9;
 
-function makeRng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v));
-}
-
 function randomPointInUnitSphere(
   rng: () => number,
   target = new THREE.Vector3(),
@@ -566,15 +556,6 @@ function randomPointInUnitSphere(
 
 function vectorFromAngles(theta: number) {
   return new THREE.Vector3(Math.cos(theta), 0, Math.sin(theta)).normalize();
-}
-
-function smoothstep(edge0: number, edge1: number, x: number) {
-  const t = clamp01((x - edge0) / Math.max(1e-6, edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
 }
 
 function easeOutCubic(t: number) {
@@ -600,39 +581,6 @@ function dampSpring(
   out.current = current;
   out.velocity = velocity;
   return out;
-}
-
-function noiseHash2(x: number, z: number) {
-  const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
-  return n - Math.floor(n);
-}
-
-function valueNoise2(x: number, z: number) {
-  const xi = Math.floor(x);
-  const zi = Math.floor(z);
-  const xf = x - xi;
-  const zf = z - zi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = zf * zf * (3 - 2 * zf);
-  const n00 = noiseHash2(xi, zi);
-  const n10 = noiseHash2(xi + 1, zi);
-  const n01 = noiseHash2(xi, zi + 1);
-  const n11 = noiseHash2(xi + 1, zi + 1);
-  return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
-}
-
-function fbm2(x: number, z: number, octaves = 5) {
-  let value = 0;
-  let amplitude = 0.5;
-  let total = 0;
-  for (let i = 0; i < octaves; i += 1) {
-    value += valueNoise2(x, z) * amplitude;
-    total += amplitude;
-    x = x * 2.03 + 17.2;
-    z = z * 2.03 - 11.1;
-    amplitude *= 0.52;
-  }
-  return total > 0 ? value / total : 0;
 }
 
 export function resolveSceneQuality(q: Quality): Exclude<Quality, "auto"> {
@@ -2407,280 +2355,17 @@ function createBarkTextures() {
     return { colorMap: fallback, bumpMap: null, roughnessMap: null };
   }
 
-  // fbm made periodic across the u wrap: inside the last wrapMargin of u
-  // the sample cross-fades to the sample one period back, so the value at
-  // u=1 equals the value at u=0 and the tube circumference tiles without
-  // a vertical seam. Outside the margin only one sample is taken.
-  const wrapMargin = 0.2;
-  const fbmWrapU = (
-    u: number,
-    uFrequency: number,
-    xOffset: number,
-    y: number,
-    octaves: number,
-  ) => {
-    const base = fbm2(u * uFrequency + xOffset, y, octaves);
-    if (u < 1 - wrapMargin) return base;
-    const t = (u - (1 - wrapMargin)) / wrapMargin;
-    return lerp(base, fbm2((u - 1) * uFrequency + xOffset, y, octaves), t);
-  };
-
-  // Cherry lenticels: horizontal lens-shaped pores at random heights,
-  // elongated along the circumference (u). Seeded so rebuilds are stable.
-  // Denser than before: the horizontal banding is a primary cherry-bark cue
-  // and has to survive the dark scene lighting.
-  const lenticelRng = makeRng(0xba7c11);
-  const lenticels: {
-    vCenter: number;
-    uCenter: number;
-    uHalfLength: number;
-    vSigma: number;
-    strength: number;
-  }[] = [];
-  for (let i = 0; i < 24; i += 1) {
-    lenticels.push({
-      vCenter: lenticelRng(),
-      uCenter: lenticelRng(),
-      uHalfLength: 0.13 + lenticelRng() * 0.22,
-      vSigma: 0.005 + lenticelRng() * 0.006,
-      strength: 0.75 + lenticelRng() * 0.35,
-    });
-  }
-
-  // Knots: dark sunken cores with a raised rim ring, scattered and seeded.
-  // du wraps around the tube seam like the lenticels do.
-  const knotRng = makeRng(0x6b07);
-  const knots: {
-    uCenter: number;
-    vCenter: number;
-    uRadius: number;
-    vRadius: number;
-    strength: number;
-  }[] = [];
-  for (let i = 0; i < 5; i += 1) {
-    knots.push({
-      uCenter: knotRng(),
-      vCenter: knotRng(),
-      uRadius: 0.06 + knotRng() * 0.07,
-      vRadius: 0.028 + knotRng() * 0.035,
-      strength: 0.6 + knotRng() * 0.4,
-    });
-  }
-
-  // Bark color ramp stops (sRGB bytes): purple-brown shadow, warm
-  // gray-brown mid, slightly desaturated highlight. The mid stop is shared
-  // by both halves of the ramp so the transition stays continuous. Wider
-  // spread than before: the dark stage lighting flattens subtle bump, so
-  // the fissure/ridge contrast is baked into the albedo aggressively.
-  const rampShadow = [28, 20, 25];
-  const rampMid = [104, 84, 74];
-  const rampHighlight = [174, 158, 144];
-
-  const colorImage = colorContext.createImageData(width, height);
-  const bumpImage = bumpContext.createImageData(width, height);
-  const roughImage = roughContext.createImageData(width, height);
-  const rowLenticels: typeof lenticels = [];
-  for (let y = 0; y < height; y += 1) {
-    const v = y / height;
-    // Row prefilter: the v gate below is row-constant up to the +-0.003
-    // stroke wobble, so most rows skip the lenticel work entirely.
-    rowLenticels.length = 0;
-    for (const lenticel of lenticels) {
-      let dv0 = v - lenticel.vCenter;
-      dv0 -= Math.round(dv0);
-      if (Math.abs(dv0) <= lenticel.vSigma * 3.2 + 0.003) {
-        rowLenticels.push(lenticel);
-      }
-    }
-    for (let x = 0; x < width; x += 1) {
-      const u = x / width;
-      // Ridge flow along the branch with a slight helical drift (the v*1.4
-      // term skews the ridges around the tube as v advances).
-      const verticalRaw =
-        fbmWrapU(u, 16.0, Math.sin(v * 18.0) * 0.36 + v * 1.4, v * 3.2, 5) *
-          0.55 +
-        fbmWrapU(u, 44.0, v * 2.1, v * 9.5 - 3.4, 3) * 0.45;
-      // Contrast stretch so the fissure threshold below has real spread.
-      const vertical = clamp01((verticalRaw - 0.5) * 1.75 + 0.5);
-      const fineGrain = fbmWrapU(u, 96.0, -6.8, v * 32.0 + 2.4, 3);
-      // Second, higher-frequency cross-grain octave: tight striations that
-      // keep the surface busy between the deep fissures.
-      const crossGrain =
-        fbmWrapU(u, 168.0, 12.3, v * 64.0 + 7.7, 2) - 0.5;
-      // Wider threshold + deeper floor than before: fissures claim more
-      // area and cut harder.
-      const fissure =
-        smoothstep(0.5, 0.8, vertical) *
-        (0.6 + smoothstep(0.5, 0.8, fineGrain) * 0.4);
-      // Knots: sunken dark core inside a raised rim ring, with a slight
-      // helical wobble on the center like real occluded branch stubs.
-      let knotCore = 0;
-      let knotRim = 0;
-      for (const knot of knots) {
-        let du = u - knot.uCenter - Math.sin(v * 9.0) * 0.02;
-        du -= Math.round(du);
-        const dv = v - knot.vCenter;
-        if (Math.abs(dv) > knot.vRadius * 3) continue;
-        const d = Math.sqrt(
-          (du * du) / (knot.uRadius * knot.uRadius) +
-            (dv * dv) / (knot.vRadius * knot.vRadius),
-        );
-        if (d > 2.6) continue;
-        knotCore += knot.strength * Math.exp(-d * d * 1.6);
-        knotRim +=
-          knot.strength * Math.exp(-Math.pow((d - 1.35) / 0.42, 2));
-      }
-      knotCore = clamp01(knotCore);
-      knotRim = clamp01(knotRim);
-      const ridge = clamp01(
-        0.42 +
-          vertical * 0.45 +
-          fineGrain * 0.18 +
-          crossGrain * 0.22 -
-          fissure * 0.36,
-      );
-
-      // Lenticel profile: gaussian falloff in v, lens taper plus fbm
-      // breakup along u so the strokes read as broken pore bands.
-      const strokeNoise =
-        rowLenticels.length > 0 ? fbmWrapU(u, 26.0, 3.7, v * 88.0, 3) : 0.5;
-      let lenticelCore = 0;
-      let lenticelRim = 0;
-      for (const lenticel of rowLenticels) {
-        let dv = v - lenticel.vCenter;
-        dv -= Math.round(dv);
-        dv += (strokeNoise - 0.5) * 0.006;
-        if (Math.abs(dv) > lenticel.vSigma * 3.2) continue;
-        let du = u - lenticel.uCenter;
-        du -= Math.round(du);
-        const along = Math.abs(du) / lenticel.uHalfLength;
-        if (along >= 1) continue;
-        const gauss = Math.exp(
-          -(dv * dv) / (2 * lenticel.vSigma * lenticel.vSigma),
-        );
-        const profile =
-          lenticel.strength *
-          (1 - along * along) *
-          gauss *
-          (0.4 + 0.6 * smoothstep(0.28, 0.72, strokeNoise));
-        lenticelCore += smoothstep(0.26, 0.66, profile);
-        lenticelRim +=
-          smoothstep(0.16, 0.3, profile) * (1 - smoothstep(0.3, 0.5, profile));
-      }
-      lenticelCore = clamp01(lenticelCore);
-      lenticelRim = clamp01(lenticelRim);
-
-      // Horizontal peeling bands (slow in u, fast in v), a cherry-bark cue.
-      const peelBand = fbmWrapU(u, 1.6, 7.7, v * 26.0, 2) - 0.5;
-
-      const bump = clamp01(
-        0.42 +
-          ridge * 0.42 -
-          fissure * 0.58 +
-          knotRim * 0.34 -
-          knotCore * 0.26 +
-          crossGrain * 0.16 +
-          peelBand * 0.14 +
-          lenticelCore * 0.3 -
-          lenticelRim * 0.08,
-      );
-
-      // Crevice occlusion baked into the color so fissures still read
-      // where bump nuance is lost (distance, software rendering, and this
-      // scene's dim stage lighting). The coefficients here are tuned as a
-      // pair with the bump mix above: retune both together or the albedo
-      // shading drifts from the relief. The occlusion floor is deeper than
-      // before (0.34 vs 0.5) and a final contrast stretch keeps the
-      // fissures near-black under the warm key.
-      let shade =
-        clamp01(
-          0.5 +
-            ridge * 0.5 -
-            fissure * 0.62 +
-            knotRim * 0.2 -
-            knotCore * 0.3 +
-            crossGrain * 0.2 +
-            peelBand * 0.34,
-        ) *
-        (0.34 + 0.66 * bump);
-      shade = clamp01((shade - 0.5) * 1.4 + 0.5);
-
-      // Warm gray-brown ramp: purple-brown shadows, desaturated highlights.
-      let r: number;
-      let g: number;
-      let b: number;
-      if (shade < 0.5) {
-        const t = shade * 2;
-        r = lerp(rampShadow[0], rampMid[0], t);
-        g = lerp(rampShadow[1], rampMid[1], t);
-        b = lerp(rampShadow[2], rampMid[2], t);
-      } else {
-        const t = (shade - 0.5) * 2;
-        r = lerp(rampMid[0], rampHighlight[0], t);
-        g = lerp(rampMid[1], rampHighlight[1], t);
-        b = lerp(rampMid[2], rampHighlight[2], t);
-      }
-
-      // Low-frequency warm/cool patchiness so the bark is not monochrome.
-      const hueShift = fbmWrapU(u, 3.0, 9.1, v * 2.0 + 5.0, 3) - 0.5;
-      r += hueShift * 20;
-      g += hueShift * 7;
-      b -= hueShift * 8;
-
-      // Faint damp sheen in the crevices — a cool plum, not the old green
-      // algae (the night palette is pink/plum/violet only).
-      const damp =
-        smoothstep(0.55, 0.8, fbmWrapU(u, 2.2, -4.3, v * 1.6 + 11.0, 2)) *
-        smoothstep(0.25, 0.7, fissure) *
-        0.45;
-      r = lerp(r, 64, damp);
-      g = lerp(g, 50, damp);
-      b = lerp(b, 68, damp);
-
-      // Dark rim first, then the light tan-orange lenticel fill.
-      r = lerp(r, 38, lenticelRim * 0.35);
-      g = lerp(g, 27, lenticelRim * 0.35);
-      b = lerp(b, 31, lenticelRim * 0.35);
-      r = lerp(r, 176, lenticelCore * 0.85);
-      g = lerp(g, 138, lenticelCore * 0.85);
-      b = lerp(b, 104, lenticelCore * 0.85);
-
-      const index = (y * width + x) * 4;
-      colorImage.data[index] = r;
-      colorImage.data[index + 1] = g;
-      colorImage.data[index + 2] = b;
-      colorImage.data[index + 3] = 255;
-
-      const bumpValue = Math.floor(bump * 255);
-      bumpImage.data[index] = bumpValue;
-      bumpImage.data[index + 1] = bumpValue;
-      bumpImage.data[index + 2] = bumpValue;
-      bumpImage.data[index + 3] = 255;
-
-      // Baked roughness variation: crevices stay matte, exposed ridge tops
-      // and the waxy lenticel bands turn slightly glossier so the warm key
-      // and rose backlight pick up the relief as broken micro-highlights
-      // instead of one smooth gradient.
-      const roughValue = Math.floor(
-        clamp01(
-          0.88 +
-            fissure * 0.12 -
-            smoothstep(0.62, 0.95, shade) * 0.34 -
-            lenticelCore * 0.3 -
-            knotRim * 0.1 +
-            crossGrain * 0.08,
-        ) * 255,
-      );
-      roughImage.data[index] = roughValue;
-      roughImage.data[index + 1] = roughValue;
-      roughImage.data[index + 2] = roughValue;
-      roughImage.data[index + 3] = 255;
-    }
-  }
-
-  colorContext.putImageData(colorImage, 0, 0);
-  bumpContext.putImageData(bumpImage, 0, 0);
-  roughContext.putImageData(roughImage, 0, 0);
+  // The pixels are worked out in a worker (barkPixels.ts, bark.worker.ts):
+  // here, on the main thread, they were 0.3 s of the scene build on a
+  // desktop and 1.4 s on a phone's CPU, while the TV waited. Until they
+  // come back each map is flat at its own mean, and the textures are
+  // uploaded again when they land (a quarter of a second on a desktop).
+  colorContext.fillStyle = "rgb(120, 103, 94)";
+  colorContext.fillRect(0, 0, width, height);
+  bumpContext.fillStyle = "rgb(165, 165, 165)";
+  bumpContext.fillRect(0, 0, width, height);
+  roughContext.fillStyle = "rgb(192, 192, 192)";
+  roughContext.fillRect(0, 0, width, height);
   const colorMap = new THREE.CanvasTexture(colorCanvas);
   colorMap.colorSpace = THREE.SRGBColorSpace;
   colorMap.wrapS = THREE.RepeatWrapping;
@@ -2697,6 +2382,39 @@ function createBarkTextures() {
   roughnessMap.wrapS = THREE.RepeatWrapping;
   roughnessMap.wrapT = THREE.RepeatWrapping;
   roughnessMap.repeat.copy(colorMap.repeat);
+
+  const paint = (px: BarkPixels) => {
+    for (const [context, data, map] of [
+      [colorContext, px.color, colorMap],
+      [bumpContext, px.bump, bumpMap],
+      [roughContext, px.rough, roughnessMap],
+    ] as const) {
+      const image = context.createImageData(width, height);
+      image.data.set(data);
+      context.putImageData(image, 0, 0);
+      map.needsUpdate = true;
+    }
+  };
+  let worker: Worker | null = null;
+  try {
+    worker = new Worker(new URL("./bark.worker.ts", import.meta.url));
+  } catch {
+    worker = null;
+  }
+  if (worker) {
+    const w = worker;
+    w.onmessage = (e: MessageEvent<BarkPixels>) => {
+      paint(e.data);
+      w.terminate();
+    };
+    w.onerror = () => {
+      paint(barkPixels(width, height));
+      w.terminate();
+    };
+    w.postMessage({ width, height });
+  } else {
+    paint(barkPixels(width, height));
+  }
   return { colorMap, bumpMap, roughnessMap };
 }
 

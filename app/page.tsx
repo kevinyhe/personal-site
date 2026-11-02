@@ -62,19 +62,19 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
       ) : (
         <>
           {/* The statement, the bank of cloud that rolls in over it
-              (Passage), and Work in the cloud's colours behind the bank's
-              parting, in one block so the bank's track can run over both.
-              The bank turns the page back to plum under Work's last
-              project, so the sections below carry on on the dark ground. */}
+              (Passage), and Work and Skills (with the hold between them,
+              luke/hold.ts) in the cloud's colours behind the bank's
+              parting, in one block so the bank's track can run over all of
+              them. */}
           <div className="relative z-20 -mt-[100vh]" style={{ backgroundColor: GROUND }}>
             <StatementSection />
             <Passage />
             <WorkIndex />
-          </div>
-          {/* Projects done: skills and the record, contact, and
-              lukebaffait.fr's end page with the mountain behind it. */}
-          <div className="relative z-10" style={{ backgroundColor: GROUND }}>
             <Skills />
+          </div>
+          {/* Contact, then lukebaffait.fr's end page with the mountain
+              behind it, both on the dark ground. */}
+          <div className="relative z-10">
             <Contact />
             <Ending />
           </div>

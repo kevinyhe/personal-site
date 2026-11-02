@@ -70,6 +70,21 @@ export type HeroRobotOptions = {
    *  so what comes out is the SHADING alone, for a dither to read. A real
    *  key with a shadow map, so parts shade each other. */
   shaded?: boolean;
+  /** Shaded: the lights instead of the ones it has by default. `key` is
+   *  where the key light is from, x to the right of the screen, y up and z
+   *  toward the lens, and how strong it is; `sky` the hemisphere's
+   *  strength, `fill` the dim second light's and `fillAt` where it is from
+   *  (unset, opposite the key). */
+  light?: { key: [number, number, number]; keyI: number; sky: number; fill: number; fillAt?: [number, number, number] };
+  /** Shaded: each part in its own colour from the model, as a grey (how
+   *  light the colour is), no darker than DARKEST so a black part still
+   *  shows its shape, instead of every part in the one grey. */
+  colours?: boolean;
+  /** `colours`: how far apart the parts' greys stay, as a power on their
+   *  ratio to COLOUR_MIDDLE: 1 as the model has them, less pulls every
+   *  part toward the middle, so the light and shade across the robot
+   *  count for more than which part is which. */
+  colourSpread?: number;
   /** A low round plinth under it, which turns and rises with it. */
   pedestal?: boolean;
   /** Robot height as a share of the canvas height when parked. */
@@ -78,6 +93,13 @@ export type HeroRobotOptions = {
    *  so its wheels rest on the edge with no air under them, instead of
    *  centring the frame on the robot's middle. */
   floorAtBottom?: boolean;
+  /** The camera's height over the floor in wheel radii: 1 is level with
+   *  the axles, the middle of the wheels. Unset, a little over the axles
+   *  (8% of its height). */
+  eye?: number;
+  /** Look down at its middle from this many degrees over level instead,
+   *  the frame centred on it: the tops of its deck and rails show. */
+  elevation?: number;
 };
 
 export type HeroRobot = {
@@ -108,6 +130,19 @@ export type HeroRobot = {
   /** The heading the arc sets off on, radians of yaw. A turn before it
    *  should end here, so the two join without a kink. */
   readonly ARC_HEADING: number;
+  /** Set the wheels outright (not by the distance since the last call,
+   *  as moveTo and seek do): as if it had gone `forward` metres along its
+   *  heading and turned `turned` radians on the spot, each wheel rolling
+   *  the ground its own place covers. Draws. */
+  wheelsTo(forward: number, turned: number): void;
+  /** Draws how near each part is to the lens instead of its shading:
+   *  white at the nearest any part of it can come at any heading, black at
+   *  the furthest, for a bake that fades its far side. The next draw is
+   *  shaded again. */
+  renderDepth(): void;
+  /** The wheels' radius and the drivetrain's half-width (centre to the
+   *  wheels' planes), and its height, metres. Zero until ready. */
+  measure(): { radius: number; halfTrack: number; height: number };
   /** Where its top is right now, CSS px from the canvas's top. */
   topPx(): number;
   /** Where its leading edge is right now, CSS px from the canvas's left.
@@ -124,6 +159,10 @@ export type HeroRobot = {
 
 /** The shot. */
 const FOV = 40;
+/** `colours`: the darkest a part is drawn, linear: about black plastic's. */
+const DARKEST = 0.04;
+/** `colourSpread` pulls the parts' greys toward this one, linear. */
+const COLOUR_MIDDLE = 0.25;
 /** Robot height as a share of the canvas height when parked. */
 const FILL = 0.9;
 /** How much of the robot's length is on screen when parked. */
@@ -135,7 +174,16 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const MAX_DPR = 2;
 const MIN_WIDTH = 640;
 
-type Wheel = { node: THREE.Object3D; axis: THREE.Vector3; sign: number; radius: number };
+type Wheel = {
+  node: THREE.Object3D;
+  axis: THREE.Vector3;
+  sign: number;
+  radius: number;
+  /** As it was in the glb, for wheelsTo. */
+  rest: THREE.Quaternion;
+  /** Its centre across the robot (+z its right), metres. */
+  z: number;
+};
 
 export function mountHeroRobot({
   url,
@@ -148,9 +196,14 @@ export function mountHeroRobot({
   offscreen,
   endX,
   shaded = false,
+  light,
+  colours = false,
+  colourSpread = 1,
   pedestal = false,
   fill: FILL_OPT = FILL,
   floorAtBottom = false,
+  eye: eyeRadii,
+  elevation,
 }: HeroRobotOptions): HeroRobot | null {
   if (typeof window === "undefined" || window.innerWidth < MIN_WIDTH) return null;
 
@@ -188,19 +241,21 @@ export function mountHeroRobot({
     // the lit faces stay under white.
     // Harder when it is shaded for a dither: less fill, more key, so the
     // faces the key misses fall to the grade's floor.
-    scene.add(new THREE.HemisphereLight(0xfff4f8, 0x5a5660, shaded ? 0.7 : 1.3));
-    const key = new THREE.DirectionalLight(0xffffff, shaded ? 2.6 : 1.7);
-    key.position.set(-2, 3, 4);
+    scene.add(new THREE.HemisphereLight(0xfff4f8, 0x5a5660, light?.sky ?? (shaded ? 0.7 : 1.3)));
+    const key = new THREE.DirectionalLight(0xffffff, light?.keyI ?? (shaded ? 2.6 : 1.7));
+    key.position.set(...(light?.key ?? [-2, 3, 4]));
     if (shaded) {
       // A proper key: it throws shadows, so the lift shades the drivetrain
       // and the channels shade each other. The shadow camera is a box a
-      // metre across round the robot, which is all it ever needs.
+      // metre across round the robot, which is all it ever needs; from the
+      // side (`light`) the robot's box is longer across the light, and the
+      // box is let out round it.
       key.castShadow = true;
       key.shadow.mapSize.set(2048, 2048);
-      key.shadow.camera.left = -0.6;
-      key.shadow.camera.right = 0.6;
-      key.shadow.camera.top = 0.8;
-      key.shadow.camera.bottom = -0.3;
+      key.shadow.camera.left = light ? -0.9 : -0.6;
+      key.shadow.camera.right = light ? 0.9 : 0.6;
+      key.shadow.camera.top = light ? 0.9 : 0.8;
+      key.shadow.camera.bottom = light ? -0.9 : -0.3;
       key.shadow.camera.near = 0.5;
       key.shadow.camera.far = 12;
       key.shadow.bias = -0.0004;
@@ -209,8 +264,9 @@ export function mountHeroRobot({
     scene.add(key);
     // A second, dimmer light from the other side, so the faces the key
     // does not reach are shaded rather than flat.
-    const fill = new THREE.DirectionalLight(0xffe8f0, shaded ? 0.2 : 0.5);
-    fill.position.set(3, 1, -2);
+    const fill = new THREE.DirectionalLight(0xffe8f0, light?.fill ?? (shaded ? 0.2 : 0.5));
+    if (light) fill.position.set(...(light.fillAt ?? [-light.key[0], 1, -light.key[2]]));
+    else fill.position.set(3, 1, -2);
     scene.add(fill);
   }
   // One flat unlit colour on every part: the robot is its outline, and
@@ -266,20 +322,27 @@ export function mountHeroRobot({
     const halfHeight = height / FILL_OPT / 2;
     const dist = halfHeight / Math.tan((FOV * Math.PI) / 360);
     halfWidth = halfHeight * camera.aspect;
-    const eye = axleY + height * 0.08;
-    camera.position.set(0, eye, dist);
-    camera.lookAt(0, eye, 0);
-    // The eye is at axle height and level, so the frame's centre is at the
-    // axle — and the robot's top half is above the frame. An off-axis
-    // lens: the frame is slid up to centre on the robot's middle while the
-    // eye and the horizon stay where they are, which is the only way
-    // "level, at axle height" and "fills 90% of the height" both hold.
-    // The frame is centred on the robot's middle, or — with the floor at
-    // the bottom — its bottom edge is put on y = 0 and it reaches up from
-    // there, so the wheels sit on the edge.
     const centreY = floorAtBottom ? halfHeight : height / 2;
-    const up = ((centreY - eye) / halfHeight) * (h / 2);
-    camera.setViewOffset(w, h, 0, -up, w, h);
+    if (elevation !== undefined) {
+      const a = (elevation * Math.PI) / 180;
+      camera.position.set(0, centreY + Math.sin(a) * dist, Math.cos(a) * dist);
+      camera.lookAt(0, centreY, 0);
+      camera.clearViewOffset();
+    } else {
+      const eye = eyeRadii !== undefined ? axleY * eyeRadii : axleY + height * 0.08;
+      camera.position.set(0, eye, dist);
+      camera.lookAt(0, eye, 0);
+      // The eye is at axle height and level, so the frame's centre is at the
+      // axle — and the robot's top half is above the frame. An off-axis
+      // lens: the frame is slid up to centre on the robot's middle while the
+      // eye and the horizon stay where they are, which is the only way
+      // "level, at axle height" and "fills 90% of the height" both hold.
+      // The frame is centred on the robot's middle, or — with the floor at
+      // the bottom — its bottom edge is put on y = 0 and it reaches up from
+      // there, so the wheels sit on the edge.
+      const up = ((centreY - eye) / halfHeight) * (h / 2);
+      camera.setViewOffset(w, h, 0, -up, w, h);
+    }
     camera.updateProjectionMatrix();
     // The frame's top and bottom in world y, at the robot's plane.
     frameTop = centreY + halfHeight;
@@ -366,24 +429,48 @@ export function mountHeroRobot({
     const gltf = await loader.parseAsync(bytes, "");
     if (disposed) return;
     robot.add(gltf.scene);
+    // `colours`: the grey each of the model's materials is drawn in.
+    const greys = new Map<THREE.Material, THREE.MeshStandardMaterial>();
     gltf.scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && shaded) {
         (o as THREE.Mesh).castShadow = true;
         (o as THREE.Mesh).receiveShadow = true;
       }
-      if (flat && (o as THREE.Mesh).isMesh) {
+      if (shaded && colours && (o as THREE.Mesh).isMesh) {
+        const mesh = o as THREE.Mesh;
+        const old = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        const now = old.map((m) => {
+          let grey = greys.get(m);
+          if (!grey) {
+            const c = (m as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1);
+            const own = Math.max(DARKEST, 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b);
+            const v = COLOUR_MIDDLE * (own / COLOUR_MIDDLE) ** colourSpread;
+            grey = new THREE.MeshStandardMaterial({ color: new THREE.Color(v, v, v), roughness: 0.5, metalness: 0.08 });
+            greys.set(m, grey);
+          }
+          return grey;
+        });
+        for (const m of old) m.dispose();
+        mesh.material = Array.isArray(mesh.material) ? now : now[0];
+      } else if (flat && (o as THREE.Mesh).isMesh) {
         const mesh = o as THREE.Mesh;
         const old = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of old) m.dispose();
         mesh.material = flat;
       }
-      const data = o.userData as { axis?: number[]; sign?: number; radius?: number };
+      const data = o.userData as {
+        axis?: number[];
+        sign?: number;
+        radius?: number;
+      };
       if (/^wheel_/.test(o.name) && data.axis && data.radius) {
         wheels.push({
           node: o,
           axis: new THREE.Vector3().fromArray(data.axis).normalize(),
           sign: data.sign ?? 1,
           radius: data.radius,
+          rest: o.quaternion.clone(),
+          z: 0,
         });
       }
     });
@@ -408,6 +495,11 @@ export function mountHeroRobot({
       robot.add(disc);
     }
     axleY = wheels[0]?.radius ?? size.y * 0.1;
+    robot.updateMatrixWorld(true);
+    for (const w of wheels) {
+      const c = new THREE.Box3().setFromObject(w.node).getCenter(new THREE.Vector3());
+      w.z = robot.worldToLocal(c).z;
+    }
     loaded = true;
     frame();
     if (reduced) parked = true;
@@ -457,8 +549,10 @@ export function mountHeroRobot({
   const ARC_HEADING = Math.atan2(-ARC_P1.z, ARC_P1.x);
   const arcPoint = (x0: number, x3: number, t: number) => {
     const D = x3 - x0;
-    const p1x = x0 + ARC_P1.x * D, p1z = ARC_P1.z * D;
-    const p2x = x3 + ARC_P2.x * D, p2z = ARC_P2.z * D;
+    const p1x = x0 + ARC_P1.x * D,
+      p1z = ARC_P1.z * D;
+    const p2x = x3 + ARC_P2.x * D,
+      p2z = ARC_P2.z * D;
     const u = 1 - t;
     const x = u * u * u * x0 + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * x3;
     const z = 3 * u * u * t * p1z + 3 * u * t * t * p2z;
@@ -482,6 +576,39 @@ export function mountHeroRobot({
     robot.rotation.y = (facing < 0 ? Math.PI : 0) + turn;
     render();
   };
+
+  const spun = new THREE.Quaternion();
+  const wheelsTo = (forward: number, turned: number) => {
+    if (disposed || !loaded) return;
+    for (const w of wheels) {
+      w.node.quaternion
+        .copy(w.rest)
+        .multiply(spun.setFromAxisAngle(w.axis, (w.sign * (forward + w.z * turned)) / w.radius));
+    }
+    render();
+  };
+  // renderDepth's: every part plain white, fogged to black from the
+  // nearest any part can be (the footprint's half diagonal in front of its
+  // middle) to the furthest.
+  const plain = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const renderDepth = () => {
+    if (disposed || !loaded) return;
+    const middle = robot.position.clone();
+    middle.y += height / 2;
+    const d = camera.position.distanceTo(middle);
+    const r = Math.hypot(length, width) / 2;
+    scene.fog = new THREE.Fog(0x000000, d - r, d + r);
+    scene.overrideMaterial = plain;
+    renderer.render(scene, camera);
+    scene.overrideMaterial = null;
+    scene.fog = null;
+    dirty = true;
+  };
+  const measure = () => ({
+    radius: wheels[0]?.radius ?? 0,
+    halfTrack: wheels.length ? wheels.reduce((a, w) => a + Math.abs(w.z), 0) / wheels.length : 0,
+    height: loaded ? height : 0,
+  });
 
   const moveTo = (xFrac: number) => {
     if (disposed || !loaded) return;
@@ -535,9 +662,27 @@ export function mountHeroRobot({
         for (const m of materials) m.dispose();
       }
     });
+    plain.dispose();
     renderer.dispose();
     canvas.remove();
   };
 
-  return { play, seek, yaw, rise, moveTo, arc, ARC_HEADING, topPx, frontPx, canvas, source, dispose, ready };
+  return {
+    play,
+    seek,
+    yaw,
+    rise,
+    moveTo,
+    arc,
+    ARC_HEADING,
+    wheelsTo,
+    renderDepth,
+    measure,
+    topPx,
+    frontPx,
+    canvas,
+    source,
+    dispose,
+    ready,
+  };
 }

@@ -97,7 +97,8 @@ export const elsewhere = [
     href: "https://www.linkedin.com/in/kevinyhe",
     label: "LinkedIn",
   },
-  { handle: "@thekevinlab", href: "https://x.com/thekevinlab", label: "X" },
+  { handle: "@kevinyhe", href: "https://devpost.com/kevinyhe", label: "Devpost" },
+  { handle: "@kevinyhe1", href: "https://x.com/kevinyhe1", label: "X" },
   {
     handle: "@kevin.h_3",
     href: "https://instagram.com/kevin.h_3",
@@ -167,9 +168,12 @@ export const sectionLinks = [
   { href: "/contact", id: "contact", label: "Contact" },
 ] as const;
 
-/** The short set shown in the hero strip and the footers. */
-export const socialLinks = [
-  { href: "https://x.com/thekevinlab", label: "X" },
+/** The short set shown in the hero strip and the footers. `wideOnly`:
+ *  left out of the hero strip on a phone, where four links and the three
+ *  sections ran together into one line. */
+export const socialLinks: { href: string; label: string; wideOnly?: boolean }[] = [
+  { href: "https://x.com/kevinyhe1", label: "X" },
   { href: "https://www.linkedin.com/in/kevinyhe", label: "LinkedIn" },
   { href: "https://github.com/kevinyhe", label: "GitHub" },
+  { href: "https://devpost.com/kevinyhe", label: "Devpost", wideOnly: true },
 ];

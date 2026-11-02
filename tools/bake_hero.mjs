@@ -114,10 +114,13 @@ if (floorDiscs.length !== 4) {
   throw new Error(`expected 4 drive wheels on the floor, found ${floorDiscs.length}`);
 }
 /** Everything that turns with the wheel: any part whose box sits inside
- *  the wheel's box (the disc, the rollers round the rim, spacers), plus
- *  anything small sitting ON THE AXLE within an inch of the wheel plane —
- *  the hub, its insert, the collars either side. Not the motor: it is
- *  bigger than the cap and further out. */
+ *  the wheel's box (the disc, its plates, spacers); anything small sitting
+ *  ON THE AXLE within an inch of the wheel plane — the hub, its insert,
+ *  the collars either side; and the omni wheel's ROLLERS, 24 a wheel in
+ *  two rings of 12 round the rim, each under an inch. The rollers stand
+ *  proud of the disc, so their boxes are not inside its box: the first
+ *  test missed them, and they stood still while the hub turned inside
+ *  them. Not the motor: it is bigger than the cap and further out. */
 const wheels = floorDiscs.map((w) => {
   const D = Math.max(w.size.y, w.size.z);
   const inside = w.box.clone().expandByScalar(0.15);
@@ -125,9 +128,23 @@ const wheels = floorDiscs.map((w) => {
     if (inside.containsBox(p.box)) return true;
     const dx = Math.abs(p.centre.x - w.centre.x);
     const dr = Math.hypot(p.centre.y - w.centre.y, p.centre.z - w.centre.z);
-    return dx <= 1.0 && dr <= 0.6 && Math.max(p.size.x, p.size.y, p.size.z) <= 2.5;
+    const longest = Math.max(p.size.x, p.size.y, p.size.z);
+    if (dx <= 1.0 && dr <= 0.6 && longest <= 2.5) return true;
+    // A roller: within the wheel's own width, out toward the rim.
+    return dx <= w.size.x && dr >= D * 0.3 && dr <= D / 2 && longest <= 1.0;
   });
-  return { centre: w.centre.clone(), radius: D / 2, members };
+  // It rolls on the rollers, which reach past the disc: its radius is the
+  // furthest any part of it gets from the axle.
+  const v = new THREE.Vector3();
+  let radius = D / 2;
+  for (const p of members) {
+    const pos = p.mesh.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += 1) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(p.mesh.matrixWorld);
+      radius = Math.max(radius, Math.hypot(v.y - w.centre.y, v.z - w.centre.z));
+    }
+  }
+  return { centre: w.centre.clone(), radius, members };
 });
 const wheelSet = new Set(wheels.flatMap((w) => w.members));
 log(`wheels: ${wheels.length}, radius ${wheels[0].radius.toFixed(2)} in, ${wheelSet.size} member meshes`);
