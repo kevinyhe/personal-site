@@ -32,3 +32,17 @@ sexy s bot.fbx
 scripts/statue-src/*.glb
 .vercel
 .env*
+
+# Kept on disk, not in the repo
+.agents/
+.codex/
+.claude/
+AGENTS.md
+CLAUDE.md
+skills-lock.json
+vexsim/
+*.fbx
+*.f3z
+*:Zone.Identifier
+Untitled.png
+Kevin_He_Resume.pdf
