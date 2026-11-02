@@ -1,12 +1,11 @@
+import StripNav from "@/components/ideas/i02/StripNav";
 import SectionLink from "@/components/SectionLink";
 import { sectionLinks, socialLinks } from "@/components/siteContent";
 
 /**
  * Clips each word of the lockup at its own bottom edge, so letters parked
- * below it are invisible and rise up into view. Applied to each word rather
- * than to a shared ancestor: clip-path creates a stacking context, and
- * putting one above "He." would isolate its mix-blend-difference. The small
- * negative bottom inset keeps the italic's overhang from being shaved.
+ * below it are invisible and rise up into view. The small negative bottom
+ * inset keeps the italic's overhang from being shaved.
  */
 const CLIP_AT_BASE = "[clip-path:inset(-200vh_-50vw_-0.06em_-50vw)]";
 
@@ -44,8 +43,10 @@ export default function HeroChrome() {
     <>
       <h1 className="sr-only">Kevin He — engineer, Toronto</h1>
 
-      {/* Solid type; only the large right serif word carries the (subtle)
-          difference effect, matching the reference site. */}
+      {/* Solid type. On the home page the layer HeroIntro puts this in is
+          blended by difference with the scene (see there), as the
+          reference site blends its name: a blend set on anything in here
+          is isolated by this fixed layer and that one, and did nothing. */}
       <div className="pointer-events-none fixed inset-0 z-20 flex flex-col px-6 pb-[max(2.8rem,env(safe-area-inset-bottom))] pt-3 text-[#f0f0f0] sm:px-[8rem] sm:py-[4rem]">
         {/* Top strip, set as lukebaffait.fr sets its bar: small uppercase
             sans, medium weight. Signature left, the socials centred with
@@ -64,7 +65,7 @@ export default function HeroChrome() {
 
           <div className="flex items-center justify-center gap-[1.1rem] sm:gap-[1.8rem]">
             {socialLinks.map((social, index) => (
-              <span className="flex items-center gap-[1.1rem] sm:gap-[1.8rem]" key={social.label}>
+              <span className={`${social.wideOnly ? "hidden sm:flex" : "flex"} items-center gap-[1.1rem] sm:gap-[1.8rem]`} key={social.label}>
                 {index > 0 ? (
                   <span aria-hidden="true" className="font-normal opacity-40">
                     /
@@ -86,17 +87,19 @@ export default function HeroChrome() {
               Work, Info and Contact are on this page now. /work, /info and
               /contact still exist and still link to each other; nothing
               here reaches them any more. */}
-          <nav className="flex items-center justify-end gap-[1.1rem] sm:gap-[2.2rem]">
-            {sectionLinks.map((item) => (
-              <SectionLink
-                className="pointer-events-auto transition-opacity duration-200 hover:opacity-60"
-                id={item.id}
-                key={item.id}
-              >
-                {item.label}
-              </SectionLink>
-            ))}
-          </nav>
+          <StripNav>
+            <nav className="flex items-center justify-end gap-[1.1rem] sm:gap-[2.2rem]">
+              {sectionLinks.map((item) => (
+                <SectionLink
+                  className="pointer-events-auto transition-opacity duration-200 hover:opacity-60"
+                  id={item.id}
+                  key={item.id}
+                >
+                  {item.label}
+                </SectionLink>
+              ))}
+            </nav>
+          </StripNav>
         </div>
 
         <div className="flex-1" />
@@ -136,7 +139,7 @@ export default function HeroChrome() {
           <span
             className={
               "mr-0 text-[0.58em] font-normal font-serif-display italic " +
-              "tracking-[-0.08em] mix-blend-difference " + CLIP_AT_BASE
+              "tracking-[-0.08em] " + CLIP_AT_BASE
             }
             data-hero-letters="rtl"
           >

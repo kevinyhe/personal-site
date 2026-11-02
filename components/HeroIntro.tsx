@@ -206,6 +206,9 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const heroLayerRef = useRef<HTMLDivElement | null>(null);
+  // With a tail: the second copy of the type, where only "He." shows,
+  // blended by difference with the scene (see the layer below).
+  const blendLayerRef = useRef<HTMLDivElement | null>(null);
   const scrollSpaceRef = useRef<HTMLDivElement | null>(null);
   const narrationSpaceRef = useRef<HTMLDivElement | null>(null);
   // The narration itself, which is NOT in the flow: it lives in the layer
@@ -279,6 +282,22 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
   // The television is the loading screen. Its own assets are small and
   // preloaded from the HTML head, so it goes up the moment they are in: no
   // bar, no count. The tree builds behind it.
+  // The blend layer goes wherever the type layer goes: the canvas writes
+  // the television's warp to the type layer's style (screenLayerRef), and
+  // this copies it across the moment it changes.
+  useEffect(() => {
+    const layer = heroLayerRef.current;
+    const blend = blendLayerRef.current;
+    if (!layer || !blend) return undefined;
+    const copy = () => {
+      blend.style.transform = layer.style.transform;
+    };
+    copy();
+    const watch = new MutationObserver(copy);
+    watch.observe(layer, { attributeFilter: ["style"], attributes: true });
+    return () => watch.disconnect();
+  }, [hasTail]);
+
   useEffect(() => {
     if (tvShown || !crtReady) return;
     tvShownAtRef.current = performance.now();
@@ -963,6 +982,34 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
         screenLayerRef={heroLayerRef}
       />
 
+      {/* With a tail (the home page): the type again, where only "He."
+          shows, blended by difference with the scene, as lukebaffait.fr
+          blends its name: the near-white word shows the scene under it
+          turned over, pale over the dark and green over the blossom, as his
+          "Baffait." goes cyan over his red. His glow is smooth; our scene is
+          dots, and on its own the blend showed every dot through the word,
+          so the type layer above lays the plain white "He." back over it at
+          60% opacity and only a tint of the turned-over scene comes
+          through. Its own layer, beside the canvas: the type layer is a
+          stacking context (its transform), so a blend on anything in it saw
+          only the layer's own clear ground and did nothing; and a blend on
+          the whole type layer turned the strip's links dark over the bright
+          sky. Inert and hidden from screen readers: the type layer is the
+          real one. The reveal finds these letters too ([data-hero-letters]),
+          so both copies rise together; the transform is copied across (the
+          effect above). */}
+      {tail ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-20 mix-blend-difference [&_[data-hero-letters=ltr]]:text-transparent [&_[data-hero-strip]]:hidden"
+          inert
+          ref={blendLayerRef}
+          style={{ transformOrigin: "0 0", willChange: "transform" }}
+        >
+          {children}
+        </div>
+      ) : null}
+
       {/* The website layer. While the camera is pulled back this whole
           viewport — text, nav, bar, everything — is warped onto the
           monitor's screen with a CSS homography that tracks the projected
@@ -976,7 +1023,10 @@ export default function HeroIntro({ children, tail }: HeroIntroProps) {
       <div
         // pointer-events-none: the layer covers the whole stage. The links
         // inside re-enable their own events.
-        className="pointer-events-none absolute inset-0 z-20"
+        //
+        // With a tail, "He." is at 60% here, over the blend layer's
+        // turned-over copy of it (just above).
+        className={"pointer-events-none absolute inset-0 z-20" + (tail ? " [&_[data-hero-letters=rtl]]:opacity-60" : "")}
         ref={heroLayerRef}
         style={{ transformOrigin: "0 0", willChange: "transform" }}
       >

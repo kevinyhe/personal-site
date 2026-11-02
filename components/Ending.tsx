@@ -4,26 +4,33 @@ import { type JSX, type MouseEvent, useEffect, useRef } from "react";
 
 import { AURORA_RAMP } from "@/components/bandColours";
 import { createDotField, type DotField } from "@/components/dotField";
+import { createGlow } from "@/components/endGlow";
+import { useIdea } from "@/components/ideas/idea";
+import { createSky, depthOf, type Sky } from "@/components/ideas/i09/sky";
 import { ACCENT, GROUND, INK } from "@/components/luke/theme";
 import { scrollToSection } from "@/components/SectionLink";
 import { elsewhere, EMAIL } from "@/components/siteContent";
 import { useTvUp } from "@/components/tvUp";
+import { useNear } from "@/components/useNear";
 
 /**
  * The end of the page, laid out like the last page of lukebaffait.fr.
  *
  * Behind everything is the dotted mountain from before: a night sky with
- * stars wheeling, a glow low on the right, one dark peak with light caught
+ * stars wheeling and now and then one shooting, a glow low on the right, one dark peak with light caught
  * on it, and sondaven's birds crossing now and then. It is painted each
  * frame at one pixel per cell and redrawn as overlapping diamonds by
  * dotField (280 cells across, 180 on a phone), read through the aurora's
  * colours (AURORA_RAMP). It is drawn at 0.6 brightness so the type reads
- * over it, the way his Michelangelo hands sit faint behind his.
+ * over it, the way his Michelangelo hands sit faint behind his. Over it,
+ * screened on, is a faint trace of the light of his hero in the aurora's
+ * pinks (endGlow.ts), across the upper sky and gone by the foot of the
+ * peak.
  *
  * On top, his layout:
  * - Across the top, three columns of small uppercase sans. Left: the email
  *   and the year. Middle (starting at the centre of the page): GitHub,
- *   LinkedIn, X. Right: Work, Info, Contact, which scroll the page. On a
+ *   LinkedIn, Devpost, X. Right: Work, Info, Contact, which scroll the page. On a
  *   phone the email takes the first row and the two link lists share the
  *   second. Each link's letters roll up to a copy of themselves on hover.
  * - Across the bottom, the name: "Kevin" in the sans, "He" in the italic
@@ -38,6 +45,52 @@ import { useTvUp } from "@/components/tvUp";
 
 const ASSETS = "/sonda";
 const FPS = 30;
+
+/** The dots fade in from the section's top edge, so it never shows
+ *  against the one above: over 24vh, eased at both ends (smoothstep in
+ *  nine stops). A straight fade bends sharply where it stops, and on the
+ *  lit sky that bend was a line across the screen a fifth of the way down. */
+const TOP_FADE = `linear-gradient(${Array.from({ length: 9 }, (_, i) => {
+  const t = i / 8;
+  return `rgba(0,0,0,${(t * t * (3 - 2 * t)).toFixed(3)}) ${(24 * t).toFixed(1)}vh`;
+}).join(", ")})`;
+
+/** Shooting stars: a slot every SHOOT_EVERY seconds, SHOOT_CHANCE of
+ *  them with one in, each in the air for SHOOT_FOR seconds. */
+const SHOOT_EVERY = 4.5;
+const SHOOT_CHANCE = 0.8;
+const SHOOT_FOR = 0.9;
+
+/** A hash in 0..1 from two integers, for each shooting star's place. */
+function hash01(a: number, b: number): number {
+  let h = (a * 374761393 + b * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** A shooting star `life` (0..1) into its flight from (x0, y0), heading
+ *  (dx, dy): a third of the frame across, a bright head with a tail
+ *  thinning out behind it, in and out quickly. */
+function shootingStar(x: CanvasRenderingContext2D, W: number, x0: number, y0: number, dx: number, dy: number, life: number): void {
+  const gone = 0.34 * W * life;
+  const hx = x0 + dx * gone;
+  const hy = y0 + dy * gone;
+  const tail = Math.min(0.11 * W, gone);
+  const a = Math.min(1, life / 0.12) * Math.min(1, (1 - life) / 0.35);
+  const streak = x.createLinearGradient(hx - dx * tail, hy - dy * tail, hx, hy);
+  streak.addColorStop(0, "rgba(255,255,255,0)");
+  streak.addColorStop(1, `rgba(255,255,255,${a.toFixed(3)})`);
+  x.globalCompositeOperation = "lighter";
+  x.strokeStyle = streak;
+  x.lineWidth = 1;
+  x.beginPath();
+  x.moveTo(hx - dx * tail, hy - dy * tail);
+  x.lineTo(hx, hy);
+  x.stroke();
+  x.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+  x.fillRect(Math.floor(hx), Math.floor(hy), 1, 1);
+  x.globalCompositeOperation = "source-over";
+}
 
 /** Seeded random, so the stars and the peak are the same every visit. */
 function seeded(seed: number): () => number {
@@ -101,8 +154,8 @@ function Roll({ text }: { text: string }): JSX.Element {
 
 const LINK = "group inline-flex min-h-[2.4em] items-center outline-none focus-visible:underline sm:min-h-0";
 
-/** GitHub, LinkedIn, X, in that order (his GITHUB / LINKEDIN / BEHANCE). */
-const SOCIALS = (["GitHub", "LinkedIn", "X"] as const)
+/** GitHub, LinkedIn, Devpost, X, in that order (his GITHUB / LINKEDIN / BEHANCE). */
+const SOCIALS = (["GitHub", "LinkedIn", "Devpost", "X"] as const)
   .map((label) => elsewhere.find((l) => l.label === label))
   .filter((l): l is (typeof elsewhere)[number] => Boolean(l));
 
@@ -125,11 +178,17 @@ const WORD_RISE =
 export default function Ending(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const glowRef = useRef<HTMLCanvasElement | null>(null);
 
   const tvUp = useTvUp();
-  // Waits for the hero (tvUp.ts) so it does not slow the TV loading.
+  // Idea 9 (/i/9): a sky that answers the cursor (ideas/i09/sky.ts).
+  const touchable = useIdea() === 9;
+  // Waits for the hero (tvUp.ts) so it does not slow the TV loading, and
+  // for the section to be near (useNear.ts): the dot field's WebGL, the
+  // glow's noise and the birds' video are for the last screen of the page.
+  const near = useNear(rootRef);
   useEffect(() => {
-    if (!tvUp) return undefined;
+    if (!tvUp || !near) return undefined;
     const root = rootRef.current;
     const canvas = canvasRef.current;
     if (!root || !canvas) return undefined;
@@ -169,6 +228,8 @@ export default function Ending(): JSX.Element {
       return () => rise.disconnect();
     }
     const dots = field;
+    const glow = glowRef.current ? createGlow(glowRef.current) : null;
+    const sky: Sky | null = touchable && !reduced ? createSky({ root, canvas, stars: 120, shootFor: SHOOT_FOR, shootingStar }) : null;
 
     const birds = document.createElement("video");
     birds.src = `${ASSETS}/birds_04.mp4`;
@@ -209,15 +270,41 @@ export default function Ending(): JSX.Element {
       x.fillRect(0, 0, W, H);
 
       // Stars, wheeling slowly up and to the right, as in a timelapse.
+      // With idea 9 each depth is shifted with the cursor.
       const drift = reduced ? 0 : t * 0.004;
-      for (const s of stars) {
+      const shift = sky?.shift(t, W);
+      for (let i = 0; i < stars.length; i += 1) {
+        const s = stars[i];
         const sx = (s.x + drift) % 1;
         const sy = (s.y - drift * 0.5 + 1) % 1;
         const tw = reduced ? 1 : 0.6 + 0.4 * Math.sin(t * s.f + s.x * 40);
         const v = Math.round(255 * s.a * tw);
         x.fillStyle = `rgb(${v},${v},${v})`;
-        x.fillRect(Math.floor(sx * W), Math.floor(sy * H), 1, 1);
+        if (shift) {
+          const [ox, oy] = shift[depthOf(s.a)];
+          const px = Math.floor(sx * W + ox);
+          const py = Math.floor(sy * H + oy);
+          x.fillRect(px, py, 1, 1);
+          sky?.seen(i, px, py);
+        } else {
+          x.fillRect(Math.floor(sx * W), Math.floor(sy * H), 1, 1);
+        }
       }
+
+      // A shooting star, if this slot has one: from a place in the upper
+      // sky, down and to the left at 17 to 33 degrees, a third of the frame
+      // in SHOOT_FOR seconds, a bright head with a tail thinning out behind
+      // it, in and out quickly. None in the first slot, so the still frame
+      // under reduced motion has none.
+      const slot = Math.floor(t / SHOOT_EVERY);
+      if (!reduced && slot > 0 && hash01(slot, 2) < SHOOT_CHANCE) {
+        const life = (t - slot * SHOOT_EVERY - hash01(slot, 1) * (SHOOT_EVERY - SHOOT_FOR)) / SHOOT_FOR;
+        if (life >= 0 && life <= 1) {
+          const angle = ((17 + 16 * hash01(slot, 5)) * Math.PI) / 180;
+          shootingStar(x, W, (0.3 + 0.62 * hash01(slot, 3)) * W, (0.04 + 0.26 * hash01(slot, 4)) * H, -Math.cos(angle), Math.sin(angle), life);
+        }
+      }
+      sky?.paint(x, W, H, t);
 
       // Birds cross now and then: one pass every 22 seconds, low over the
       // peak from left to right.
@@ -252,7 +339,9 @@ export default function Ending(): JSX.Element {
     let last = -1;
     let start = performance.now();
     const draw = (now: number): void => {
-      dots.render(paint(reduced ? 0 : (now - start) / 1000));
+      const t = reduced ? 0 : (now - start) / 1000;
+      dots.render(paint(t));
+      glow?.draw(t);
     };
     const tick = (now: number): void => {
       raf = 0;
@@ -280,6 +369,7 @@ export default function Ending(): JSX.Element {
     seen.observe(root);
     const sized = new ResizeObserver(() => {
       dots.resize();
+      glow?.resize();
       draw(performance.now());
     });
     sized.observe(canvas);
@@ -296,8 +386,9 @@ export default function Ending(): JSX.Element {
       birds.removeAttribute("src");
       birds.load();
       dots.dispose();
+      sky?.dispose();
     };
-  }, [tvUp]);
+  }, [tvUp, near, touchable]);
 
   /** Scrolls to a section through Lenis when it is running. CONTACT falls
    *  back to this section when there is no contact panel. */
@@ -311,14 +402,26 @@ export default function Ending(): JSX.Element {
 
   return (
     <section className="group/end relative h-[100vh]" id="end" ref={rootRef} style={{ backgroundColor: GROUND, color: INK }}>
-      <div className="sticky top-0 h-[100vh] w-full overflow-hidden">
+      {/* The ground again on the sticky screen: sticky makes it a layer of
+          its own, and the light (screened on) blends only with what is in
+          it. Without it the light's black, where it fades out at the top,
+          went over the dots' faded edge onto nothing, and the top of the
+          screen came out black. */}
+      <div className="sticky top-0 h-[100vh] w-full overflow-hidden" style={{ backgroundColor: GROUND }}>
         <canvas
           aria-hidden="true"
           className="absolute inset-0 z-0 block h-full w-full"
           ref={canvasRef}
           // The diamonds thin out towards the top edge, so the section's
           // edge never shows against the one above.
-          style={{ maskImage: "linear-gradient(transparent, #000 18vh)", WebkitMaskImage: "linear-gradient(transparent, #000 18vh)" }}
+          style={{ maskImage: TOP_FADE, WebkitMaskImage: TOP_FADE }}
+        />
+        {/* The light (endGlow.ts), screened over the mountain. It fades
+            in at its top edge itself. */}
+        <canvas
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 block h-full w-full mix-blend-screen"
+          ref={glowRef}
         />
         {/* Darkens the bottom a little so the name reads over the glow. */}
         <div

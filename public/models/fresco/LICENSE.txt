@@ -1,0 +1,5 @@
+fresco.jpg / depth.jpg / chunks.bin / chunks.json are made from Michelangelo's
+"The Creation of Adam" (Sistine Chapel, c. 1512), public domain, via Wikimedia
+Commons: "Michelangelo - Creation of Adam (cropped).jpg". depth.jpg is a
+relief estimated from that image with Depth Anything V2 small (Apache-2.0);
+chunks.* are that relief as a panel cut into pieces (scripts/bake-fresco-chunks.mjs).

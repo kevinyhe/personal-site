@@ -33,7 +33,8 @@ import { useTvUp } from "@/components/tvUp";
  *                     costs a quarter of the fragments.
  *   30 frames         the curtains cross the frame in 10-25 seconds. Sixty
  *                     frames a second draws the same picture twice.
- *   asleep when idle  nothing is drawn while the tab is hidden, and under
+ *   asleep when idle  nothing is drawn while the tab is hidden, or on the
+ *                     home page while the hero is off the screen, and under
  *                     prefers-reduced-motion it draws one frame and stops.
  *
  * `uFrame` is what makes it match the hero: the shader's constants are tuned
@@ -174,7 +175,20 @@ export default function AuroraBackground() {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
     };
-    const sync = () => (document.hidden ? stop() : start());
+    // On the home page it shows only round the hero: every section under
+    // it lays its own ground over the whole screen (captured with the
+    // aurora hidden, they came out the same to the pixel). So there it
+    // sleeps while the hero is off the screen.
+    const hero = document.querySelector("[data-hero-stage]")?.closest("section");
+    let heroOn = true;
+    const sync = () => (document.hidden || !heroOn ? stop() : start());
+    const seen = hero
+      ? new IntersectionObserver(([e]) => {
+          heroOn = e.isIntersecting;
+          sync();
+        })
+      : null;
+    if (hero) seen?.observe(hero);
 
     if (reduced) renderer.render(scene, camera);
     else start();
@@ -182,6 +196,7 @@ export default function AuroraBackground() {
 
     return () => {
       stop();
+      seen?.disconnect();
       document.removeEventListener("visibilitychange", sync);
       window.removeEventListener("resize", fit);
       quad.geometry.dispose();

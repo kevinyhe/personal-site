@@ -9,6 +9,19 @@
 // Plain TS, no React, no three.js. Everything is deterministic: the engine
 // never picks random numbers.
 
+import { ideaNow } from "@/components/ideas/idea";
+import {
+  joinTouchField,
+  MAX_POINTS,
+  PUSH,
+  PUSH_RADIUS,
+  RIPPLE_WIDTH,
+  TOUCH_IDEA,
+  touchPoints,
+  touchRipple,
+  touchSmearUp,
+} from "@/components/ideas/i01/touchField";
+
 export type Rgb = [number, number, number]; // 0..1 each
 export type Percent = string | number; // "40%" of the box, "45vw" of the width, or px
 
@@ -74,7 +87,7 @@ export type BarCanvas = {
 
 // The reference caps the backing store at 1.5x so a 4k display does not pay
 // for pixels the bars never show.
-const MAX_DPR = 1.5;
+export const MAX_DPR = 1.5;
 // A cell is dropped when any texel within this radius of its sample point is
 // black or transparent. This is what keeps the bars off the black sky around
 // every source and gives the silhouettes their clean edge.
@@ -115,21 +128,93 @@ void main() {
 `;
 
 // Unrolled neighbour test, generated the same way the reference does it.
-function neighbourDiscardGlsl(radius: number): string {
+// `onSky` is the statement run when a neighbour is sky.
+function neighbourTestGlsl(radius: number, onSky: string): string {
   let out = "";
   for (let oy = -radius; oy <= radius; oy++) {
     for (let ox = -radius; ox <= radius; ox++) {
       if (ox === 0 && oy === 0) continue;
       out += `
   neighbor = texture2D(u_texture, uv + vec2(${ox.toFixed(1)}, ${oy.toFixed(1)}) * texelSize);
-  if (neighbor.a < 0.01 || (neighbor.r < 0.01 && neighbor.g < 0.01 && neighbor.b < 0.01)) discard;`;
+  if (isSky(neighbor)) ${onSky}`;
     }
   }
   return out;
 }
 
+// Ghost bars of the scroll smear reach at most this many cells.
+const MAX_GHOST = 6;
+
+// Idea 1 (/i/1, components/ideas/i01): the cursor pushes bars aside, a tap
+// sends a ring through them and a fast scroll leaves ghost bars trailing.
+// Compiled in only when that idea is on (#define TOUCH).
+const TOUCH_GLSL = `
+uniform vec4 u_touch[${MAX_POINTS}];
+uniform float u_touchCount;
+// x: the push's radius, y: its strength, z: px the smear's ghost trails
+// above each bar (negative: below), w: the ripple ring's width. All px.
+uniform vec4 u_touchShape;
+// x, y: the ripple's centre, z: its radius, w: its push.
+uniform vec4 u_ripple;
+
+// True when the cell sampled at uv draws: neither it nor any texel near it
+// is sky. The same test as the main path's.
+bool solid(vec2 uv) {
+  if (isSky(texture2D(u_texture, uv))) return false;
+  vec2 texelSize = 1.0 / u_texSize;
+  vec4 neighbor;
+  ${neighbourTestGlsl(NEIGHBOUR_RADIUS, "return false;")}
+  return true;
+}
+
+// How far the field moves the bar at p, px to the right. The same sum as
+// touchShiftAt in ideas/i01/touchField.ts.
+float pushAt(vec2 p) {
+  float shift = 0.0;
+  float weight = 0.0;
+  for (int i = 0; i < ${MAX_POINTS}; i++) {
+    if (float(i) >= u_touchCount) break;
+    vec2 u = (p - u_touch[i].xy) / u_touchShape.x;
+    float k = exp(-0.5 * dot(u, u));
+    shift += u_touch[i].z * u.x * k;
+    weight += u_touch[i].z * k;
+  }
+  shift = shift * 1.6487213 * u_touchShape.y / max(1.0, weight);
+  if (u_ripple.w > 0.0) {
+    vec2 r = p - u_ripple.xy;
+    float len = max(1.0, length(r));
+    float ring = (len - u_ripple.z) / u_touchShape.w;
+    shift += u_ripple.w * r.x * exp(-ring * ring) / len;
+  }
+  return shift;
+}
+
+// The widest ghost a fast scroll leaves on cell ci: the bars of the cells
+// the picture came from, thinner the further back.
+float ghostWidth(vec2 ci, vec2 cs) {
+  float cells = u_touchShape.z / ((u_bounds.w - u_bounds.y) * cs.y);
+  float reach = floor(abs(cells) + 0.5);
+  float from = -sign(cells);
+  float ghost = 0.0;
+  for (int k = 1; k <= ${MAX_GHOST}; k++) {
+    float fk = float(k);
+    if (fk > reach) break;
+    vec2 gc = (ci + vec2(0.0, from * fk) + 0.5) * cs;
+    vec2 guv = cellUv(gc);
+    if (gc.y > 0.0 && gc.y < 1.0 && solid(guv)) {
+      float br = brightness(texture2D(u_texture, guv));
+      if (br <= u_threshold / 255.0) ghost = max(ghost, barWidth(br) * (1.0 - fk / (reach + 1.0)));
+    }
+  }
+  return ghost;
+}
+`;
+
 const FRAGMENT_SHADER = `
 precision mediump float;
+#if defined(TOUCH) && defined(GL_FRAGMENT_PRECISION_HIGH)
+precision highp float;
+#endif
 uniform sampler2D u_texture;
 uniform vec2 u_resolution;
 uniform vec2 u_texSize;
@@ -149,8 +234,56 @@ uniform vec4 u_crop;
 uniform float u_mirror;
 varying vec2 v_texCoord;
 
+bool isSky(vec4 c) {
+  return c.a < 0.01 || (c.r < 0.01 && c.g < 0.01 && c.b < 0.01);
+}
+
+// Maps a cell centre (0..1 in the box) into the crop window, mirrored if
+// asked. The texture is uploaded flipped (UNPACK_FLIP_Y), so t = 0 is the
+// bottom of the picture and the crop's v (top-down in the picture) turns
+// into 1 - v here.
+vec2 cellUv(vec2 cc) {
+  float sx = u_mirror > 0.5 ? 1.0 - cc.x : cc.x;
+  return vec2(
+    u_crop.x + sx * (u_crop.z - u_crop.x),
+    (1.0 - u_crop.w) + cc.y * (u_crop.w - u_crop.y)
+  );
+}
+
+float brightness(vec4 tc) {
+  vec3 rgb = tc.rgb;
+  if (u_gamma != 1.0) rgb = pow(rgb, vec3(u_gamma));
+
+  float range = u_whitePoint - u_blackPoint;
+  if (range != 0.0) {
+    rgb = clamp((rgb * 255.0 - u_blackPoint) / range, 0.0, 1.0);
+  }
+  return dot(rgb, vec3(0.333)) * tc.a;
+}
+
+// Bar width in cell units: dark cells get the wide bar, bright cells the thin one.
+float barWidth(float br) {
+  return ((1.0 - br) * (u_maxWidth - u_minWidth) + u_minWidth)
+    / (u_bounds.z - u_bounds.x) * u_gridSize.x;
+}
+
+#ifdef TOUCH
+${TOUCH_GLSL}
+#endif
+
 void main() {
   vec2 p = gl_FragCoord.xy;
+#ifdef TOUCH
+  // The pixel shows the picture from shift px to its side. Bars are
+  // measured in screen px through stretch, so a pushed bar moves without
+  // growing.
+  float stretch = 1.0;
+  if (u_touchCount > 0.0 || u_ripple.w > 0.0) {
+    float shift = pushAt(p);
+    stretch = max(0.2, 1.0 - 0.5 * (pushAt(p + vec2(1.0, 0.0)) - pushAt(p - vec2(1.0, 0.0))));
+    p.x -= shift;
+  }
+#endif
   vec2 b0 = u_bounds.xy;
   vec2 b1 = u_bounds.zw;
 
@@ -161,47 +294,45 @@ void main() {
   vec2 cs = 1.0 / u_gridSize;
   vec2 ci = floor(lc / cs);
   vec2 cc = (ci + 0.5) * cs;
+  vec2 cl = (lc - ci * cs) / cs;
 
-  // Map the cell centre into the crop window, mirrored if asked. The texture is
-  // uploaded flipped (UNPACK_FLIP_Y), so t = 0 is the bottom of the picture and
-  // the crop's v (top-down in the picture) turns into 1 - v here.
-  float sx = u_mirror > 0.5 ? 1.0 - cc.x : cc.x;
-  vec2 uv = vec2(
-    u_crop.x + sx * (u_crop.z - u_crop.x),
-    (1.0 - u_crop.w) + cc.y * (u_crop.w - u_crop.y)
-  );
-
+  vec2 uv = cellUv(cc);
   vec4 tc = texture2D(u_texture, uv);
-  if (tc.a < 0.01 || (tc.r < 0.01 && tc.g < 0.01 && tc.b < 0.01)) discard;
-
+#ifdef TOUCH
+  bool sky = !solid(uv);
+  float br = brightness(tc);
+  bool ground = !sky && br > u_threshold / 255.0;
+  float lw = sky || ground ? 0.0 : barWidth(br);
+  float ghost = u_touchShape.z != 0.0 ? ghostWidth(ci, cs) : 0.0;
+  if (sky && ghost <= 0.0) discard;
+  if (abs(cl.x - 0.5) < max(lw, ghost) * 0.5 * stretch) {
+    gl_FragColor = vec4(u_fillColor, u_fillOpacity);
+  } else if (sky) {
+    discard;
+  } else {
+    gl_FragColor = vec4(u_bgColor, u_bgOpacity);
+  }
+#else
+  if (isSky(tc)) discard;
   vec2 texelSize = 1.0 / u_texSize;
   vec4 neighbor;
-  ${neighbourDiscardGlsl(NEIGHBOUR_RADIUS)}
+  ${neighbourTestGlsl(NEIGHBOUR_RADIUS, "discard;")}
 
-  vec3 rgb = tc.rgb;
-  if (u_gamma != 1.0) rgb = pow(rgb, vec3(u_gamma));
-
-  float range = u_whitePoint - u_blackPoint;
-  if (range != 0.0) {
-    rgb = clamp((rgb * 255.0 - u_blackPoint) / range, 0.0, 1.0);
-  }
-
-  float br = dot(rgb, vec3(0.333)) * tc.a;
+  float br = brightness(tc);
   if (br > u_threshold / 255.0) {
     gl_FragColor = vec4(u_bgColor, u_bgOpacity);
     return;
   }
 
-  // Bar width in cell units: dark cells get the wide bar, bright cells the thin one.
-  vec2 cl = (lc - ci * cs) / cs;
-  float lw = ((1.0 - br) * (u_maxWidth - u_minWidth) + u_minWidth)
-    / (b1.x - b0.x) * u_gridSize.x;
-
+  float lw = barWidth(br);
   gl_FragColor = abs(cl.x - 0.5) < lw * 0.5
     ? vec4(u_fillColor, u_fillOpacity)
     : vec4(u_bgColor, u_bgOpacity);
+#endif
 }
 `;
+
+const TOUCH_FRAGMENT_SHADER = `#define TOUCH\n${FRAGMENT_SHADER}`;
 
 export function hexToRgb(hex: string): Rgb {
   if (!hex) return [0, 0, 0];
@@ -316,6 +447,8 @@ export function createBarCanvas(
 
   const frameInterval = 1000 / (options.fps || 60);
   const defaults = { ...DEFAULT_CONFIG, ...(options.defaults ?? {}) };
+  // Idea 1 (/i/1): the bars feel the cursor and the scroll.
+  const touch = ideaNow() === TOUCH_IDEA;
 
   const gl = canvas.getContext("webgl", {
     alpha: true,
@@ -368,6 +501,14 @@ export function createBarCanvas(
   });
   type Locs = ReturnType<typeof readLocations>;
 
+  const readTouchLocations = (p: WebGLProgram) => ({
+    uTouch: gl.getUniformLocation(p, "u_touch"),
+    uTouchCount: gl.getUniformLocation(p, "u_touchCount"),
+    uTouchShape: gl.getUniformLocation(p, "u_touchShape"),
+    uRipple: gl.getUniformLocation(p, "u_ripple"),
+  });
+  type TouchLocs = ReturnType<typeof readTouchLocations>;
+
   const makeBuffer = (data: Float32Array): WebGLBuffer | null => {
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -403,6 +544,7 @@ export function createBarCanvas(
   let positionBuf: WebGLBuffer | null = null;
   let texCoordBuf: WebGLBuffer | null = null;
   let loc: Locs | null = null;
+  let touchLoc: TouchLocs | null = null;
   // Counts how many times the context has come back. A layer that finished
   // loading against an older one is holding a dead texture.
   let glGen = 0;
@@ -415,7 +557,7 @@ export function createBarCanvas(
   // changes per layer. Runs at creation and again when the context comes back.
   const buildPipeline = (): boolean => {
     vs = compile(gl.VERTEX_SHADER, VERTEX_SHADER);
-    fs = compile(gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
+    fs = compile(gl.FRAGMENT_SHADER, touch ? TOUCH_FRAGMENT_SHADER : FRAGMENT_SHADER);
     if (!vs || !fs) return false;
     const prog = gl.createProgram();
     if (!prog) return false;
@@ -431,6 +573,7 @@ export function createBarCanvas(
     gl.useProgram(prog);
     const l = readLocations(prog);
     loc = l;
+    if (touch) touchLoc = readTouchLocations(prog);
 
     positionBuf = makeBuffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]));
     texCoordBuf = makeBuffer(new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]));
@@ -913,6 +1056,30 @@ export function createBarCanvas(
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
 
+  const touchData = new Float32Array(MAX_POINTS * 4);
+  // The field is in client px; the shader wants this canvas's px, y up.
+  const sendTouch = (tl: TouchLocs) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = pixelW / rect.width;
+    const sy = pixelH / rect.height;
+    const points = touchPoints();
+    touchData.fill(0);
+    points.forEach((pt, i) => {
+      touchData[i * 4] = (pt.x - rect.left) * sx;
+      touchData[i * 4 + 1] = (rect.bottom - pt.y) * sy;
+      touchData[i * 4 + 2] = pt.strength;
+    });
+    gl.uniform4fv(tl.uTouch, touchData);
+    gl.uniform1f(tl.uTouchCount, points.length);
+    gl.uniform4f(tl.uTouchShape, PUSH_RADIUS * sx, PUSH * sx, touchSmearUp() * sy, RIPPLE_WIDTH * sx);
+    const ripple = touchRipple();
+    if (ripple) {
+      gl.uniform4f(tl.uRipple, (ripple.x - rect.left) * sx, (rect.bottom - ripple.y) * sy, ripple.radius * sx, ripple.strength * sx);
+    } else {
+      gl.uniform4f(tl.uRipple, 0, 0, 0, 0);
+    }
+  };
+
   const draw = () => {
     if (destroyed || contextLost || !states.length || pixelW === 0 || pixelH === 0) return;
     const l = loc;
@@ -920,6 +1087,7 @@ export function createBarCanvas(
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     cache.fill(NaN);
+    if (touchLoc) sendTouch(touchLoc);
     for (const st of states) {
       if (st.type === "video" && !st.videoReady) continue;
       drawLayer(st, l);
@@ -985,6 +1153,7 @@ export function createBarCanvas(
     positionBuf = null;
     texCoordBuf = null;
     loc = null;
+    touchLoc = null;
     glGen++;
     if (!buildPipeline()) {
       // contextLost stays true: the canvas stays empty instead of crashing.
@@ -997,6 +1166,18 @@ export function createBarCanvas(
   };
   canvas.addEventListener("webglcontextlost", onContextLost);
   canvas.addEventListener("webglcontextrestored", onContextRestored);
+
+  // A live engine draws the field with its own frames; a still one is drawn
+  // again here while the field moves near it.
+  const leaveTouch = touch
+    ? joinTouchField({
+        element: canvas,
+        partial: false,
+        repaint: () => {
+          if (rafId === null && running()) draw();
+        },
+      })
+    : null;
 
   const bc: BarCanvas = {
     loaded: loadAll().then((list) => {
@@ -1025,6 +1206,7 @@ export function createBarCanvas(
       if (destroyed) return;
       destroyed = true;
       stopLoop();
+      leaveTouch?.();
       resizeObserver.disconnect();
       intersection.disconnect();
       // Off before the context goes, or the restore handler would rebuild a
