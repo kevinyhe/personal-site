@@ -27,3 +27,8 @@ sexy s bot.fbx
 
 # Session scratch (probe scripts, captures). Never project source.
 .scratch-*/
+
+# statue scans are fetched, see scripts/statue-src/README.md
+scripts/statue-src/*.glb
+.vercel
+.env*
