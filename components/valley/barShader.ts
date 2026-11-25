@@ -522,6 +522,8 @@ export function createBarCanvas(
   let rafId: number | null = null;
   let lastDrawAt = 0;
   let visible = false;
+  let reuploadOwed = false;
+  let drawOwed = false;
   let paused = false;
   let destroyed = false;
   let contextLost = false;
@@ -667,11 +669,15 @@ export function createBarCanvas(
       rafId = null;
       return;
     }
-    if (now - lastDrawAt >= frameInterval - 1) {
-      // The 1 ms slack keeps a 60 fps cap from dropping every other frame when
-      // rAF timestamps land a hair under 16.67 ms apart.
+    // The 1 ms slack keeps a 60 fps cap from dropping every other frame when
+    // rAF timestamps land a hair under 16.67 ms apart.
+    const due = now - lastDrawAt >= frameInterval - 1;
+    if (due) {
       lastDrawAt = now;
       advanceSources(now);
+    }
+    if (due || drawOwed) {
+      drawOwed = false;
       draw();
     }
     rafId = requestAnimationFrame(tick);
@@ -682,6 +688,10 @@ export function createBarCanvas(
   const startDrawing = () => {
     stopLoop();
     if (!running()) return;
+    if (reuploadOwed) {
+      reuploadOwed = false;
+      reuploadStillSources();
+    }
     if (!live) {
       draw();
       return;
@@ -879,6 +889,13 @@ export function createBarCanvas(
     }
   };
 
+  const reuploadStillSources = () => {
+    const stamp = ++uploadStamp;
+    for (const st of states) {
+      if (st.type === "canvas" && st.source && !st.source.animated) uploadCanvas(st, stamp);
+    }
+  };
+
   const loadCanvasSource = async (layer: Extract<BarLayer, { type: "canvas" }>) => {
     const shared = canvasTextureFor(layer.source.canvas);
     if (!shared) return null;
@@ -979,7 +996,6 @@ export function createBarCanvas(
   const drawLayer = (st: LayerState, l: Locs) => {
     const cfg = st.config;
     gl.bindTexture(gl.TEXTURE_2D, st.tex);
-    if (st.type === "video") updateVideoTexture(st);
 
     const texW = st.type === "video" ? st.video?.videoWidth || 1920 : st.width;
     const texH = st.type === "video" ? st.video?.videoHeight || 1080 : st.height;
@@ -1053,6 +1069,15 @@ export function createBarCanvas(
     const mirror = (cfg.mirrorX ?? defaults.mirrorX) ? 1 : 0;
     setCached(U.Mirror, mirror, () => gl.uniform1f(l.uMirror, mirror));
 
+    if (!touch) {
+      const left = Math.max(0, Math.floor(x));
+      const bottom = Math.max(0, Math.floor(b0y));
+      const right = Math.min(pixelW, Math.ceil(b1x));
+      const top = Math.min(pixelH, Math.ceil(b1y));
+      if (right <= left || top <= bottom) return;
+      gl.scissor(left, bottom, right - left, top - bottom);
+    }
+    if (st.type === "video") updateVideoTexture(st);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
 
@@ -1084,14 +1109,17 @@ export function createBarCanvas(
     if (destroyed || contextLost || !states.length || pixelW === 0 || pixelH === 0) return;
     const l = loc;
     if (!l) return;
+    gl.disable(gl.SCISSOR_TEST);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     cache.fill(NaN);
     if (touchLoc) sendTouch(touchLoc);
+    if (!touch) gl.enable(gl.SCISSOR_TEST);
     for (const st of states) {
       if (st.type === "video" && !st.videoReady) continue;
       drawLayer(st, l);
     }
+    gl.disable(gl.SCISSOR_TEST);
   };
 
   // Makes one layer's texture again after the context came back. Nothing is
@@ -1235,11 +1263,14 @@ export function createBarCanvas(
       // one (the wordmark after its font arrived) can show the new pixels.
       // This is also how a still engine repaints after its config is tweened,
       // since it holds no loop of its own.
-      if (opts?.reupload !== false) {
-        const stamp = ++uploadStamp;
-        for (const st of states) {
-          if (st.type === "canvas" && st.source && !st.source.animated) uploadCanvas(st, stamp);
-        }
+      if (!visible) {
+        reuploadOwed ||= opts?.reupload !== false;
+        return;
+      }
+      if (opts?.reupload !== false) reuploadStillSources();
+      if (rafId !== null) {
+        drawOwed = true;
+        return;
       }
       draw();
     },
@@ -1250,7 +1281,9 @@ export function createBarCanvas(
       if (contextLost || !loc) return;
       gl.uniform3fv(loc.uBg, bg);
       gl.uniform3fv(loc.uFill, fill);
-      if (visible) draw();
+      if (!visible) return;
+      if (rafId !== null) drawOwed = true;
+      else draw();
     },
     setPaused: (p) => {
       if (paused === p) return;

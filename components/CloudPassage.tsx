@@ -312,6 +312,7 @@ export default function Passage(): JSX.Element {
       : null;
 
     const glide = gsap.parseEase("sine.inOut");
+    let coloursAt = Number.NaN;
     // pan: screens of the sideways run, eased in.
     const apply = (p: number, extra: number, pan = 0) => {
       const t = glide(ramp(p, TURN[0], TURN[1]));
@@ -325,7 +326,10 @@ export default function Passage(): JSX.Element {
       // The new ground: pink, faded in under the bank while it is closed.
       groundEl.style.backgroundColor = css(paletteGround(1));
       groundEl.style.opacity = String(t);
-      clouds?.setColors(hexToRgb(GROUND), paletteCloud(t));
+      if (t !== coloursAt) {
+        coloursAt = t;
+        clouds?.setColors(hexToRgb(GROUND), paletteCloud(t));
+      }
       const settle = glide(ramp(p, SETTLE[0], SETTLE[1]));
       CLOUDS.forEach((c, i) => {
         const cfg = configs[i];

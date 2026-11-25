@@ -178,7 +178,7 @@ const WORD_RISE =
 export default function Ending(): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const glowRef = useRef<HTMLCanvasElement | null>(null);
+  const glowRef = useRef<HTMLDivElement | null>(null);
 
   const tvUp = useTvUp();
   // Idea 9 (/i/9): a sky that answers the cursor (ideas/i09/sky.ts).
@@ -386,6 +386,7 @@ export default function Ending(): JSX.Element {
       birds.removeAttribute("src");
       birds.load();
       dots.dispose();
+      glow?.dispose();
       sky?.dispose();
     };
   }, [tvUp, near, touchable]);
@@ -418,11 +419,7 @@ export default function Ending(): JSX.Element {
         />
         {/* The light (endGlow.ts), screened over the mountain. It fades
             in at its top edge itself. */}
-        <canvas
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 block h-full w-full mix-blend-screen"
-          ref={glowRef}
-        />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 mix-blend-screen" ref={glowRef} />
         {/* Darkens the bottom a little so the name reads over the glow. */}
         <div
           aria-hidden="true"

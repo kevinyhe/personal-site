@@ -109,4 +109,6 @@ export const sceneFx = {
    * full-screen scene nobody can see.
    */
   covered: false,
+  /** True while ValleyTransition has faded the hero stage fully out. */
+  stageHidden: false,
 };

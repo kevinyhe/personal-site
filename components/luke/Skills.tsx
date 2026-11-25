@@ -23,7 +23,7 @@ import { createRobotTurn, type Ink, type Rect, WIDEST } from "@/components/luke/
 import { SKILLS } from "@/components/luke/skills-data";
 import { Em, INK, Serif } from "@/components/luke/theme";
 import { useTvUp } from "@/components/tvUp";
-import { useNear } from "@/components/useNear";
+import { NEAR, useNear } from "@/components/useNear";
 
 /**
  * Skills, and the way into it.
@@ -205,6 +205,7 @@ export default function Skills(): JSX.Element {
   const near = useNear(root);
   useEffect(() => {
     if (!tvUp || !near) return undefined;
+    const section = root.current;
     const stage = robotStageRef.current;
     const track = trackRef.current;
     const sentence = sentenceRef.current;
@@ -213,7 +214,7 @@ export default function Skills(): JSX.Element {
     const grid = gridRef.current;
     const tray = bench ? trayRef.current : null;
     const words = wordRefs.current.filter((w): w is HTMLSpanElement => !!w);
-    if (!stage || !track || !sentence || !list || !box || !grid) return undefined;
+    if (!section || !stage || !track || !sentence || !list || !box || !grid) return undefined;
     const groups = [...list.querySelectorAll<HTMLElement>("[data-group]")];
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Two columns: the groups are beside the robot, in its path.
@@ -364,9 +365,20 @@ export default function Skills(): JSX.Element {
         }
       }
     };
+    // Off screen, nothing it sets shows, and its reads of the layout after
+    // its writes cost a phone a reflow a frame all the way down the page.
+    let inReach = false;
     const ask = (): void => {
-      if (!frame) frame = requestAnimationFrame(apply);
+      if (inReach && !frame) frame = requestAnimationFrame(apply);
     };
+    const reach = new IntersectionObserver(
+      ([entry]) => {
+        inReach = entry.isIntersecting;
+        ask();
+      },
+      { rootMargin: NEAR },
+    );
+    reach.observe(section);
     // Plum on the pink page or pink on the dark one: which faces of the
     // robot are inked (robotTurn.ts).
     const offPalette = onPalette((t) => {
@@ -384,6 +396,7 @@ export default function Skills(): JSX.Element {
     window.addEventListener("resize", ask);
     return () => {
       gone = true;
+      reach.disconnect();
       watch.disconnect();
       window.removeEventListener("scroll", ask);
       window.removeEventListener("resize", ask);

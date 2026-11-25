@@ -228,6 +228,9 @@ export default function ValleyTransition() {
         {
           autoAlpha: 0,
           ease: "none",
+          onUpdate(this: gsap.core.Tween) {
+            sceneFx.stageHidden = this.progress() >= 1;
+          },
           scrollTrigger: {
             start: () => statementTop() - window.innerHeight * 0.92,
             end: () => statementTop() - window.innerHeight * 0.71,
@@ -240,6 +243,7 @@ export default function ValleyTransition() {
     return () => {
       context.revert();
       sceneFx.dolly = 0;
+      sceneFx.stageHidden = false;
       gsap.set(stage, { clearProps: "transform,opacity,visibility" });
     };
   }, []);

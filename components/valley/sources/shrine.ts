@@ -588,12 +588,59 @@ export function createShrine(options: ShrineOptions): CanvasSource {
  * time so the engine skips the upload.
  */
 const ANIM_FPS = 10;
+/** Successive precincts redraw this far apart, as a share of a frame of ANIM_FPS, so they do not all land in one display frame. */
+const REDRAW_STAGGER = 0.2;
 /** How far the key swings, in radians, and how long one loop takes. */
 const SWING = 0.26;
 const SWING_PERIOD = 23;
 /** And how far the scene itself turns with it. */
 const TURN = 0.022;
 const TURN_PERIOD = 31;
+
+let precinctsMade = 0;
+
+/**
+ * Every precinct draws through one renderer, so the page holds one WebGL
+ * context for all of them. Its canvas is as large as the largest precinct;
+ * each one draws into the bottom-left corner and copies that corner out.
+ */
+let sharedRenderer: { renderer: THREE.WebGLRenderer; users: number; width: number; height: number } | null = null;
+
+function acquireRenderer(w: number, h: number): THREE.WebGLRenderer {
+  if (!sharedRenderer) {
+    const renderer = new THREE.WebGLRenderer({
+      canvas: document.createElement("canvas"),
+      // The uprights, the railings and the bracket blocks are a pixel or two
+      // wide at this size.
+      antialias: true,
+      alpha: false,
+      powerPreference: "low-power",
+    });
+    renderer.setPixelRatio(1);
+    renderer.setClearColor(0x000000, 1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // No tone curve: the greys above are worked out as albedo times irradiance
+    // straight to sRGB, and a filmic curve would move every one of them.
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setScissorTest(true);
+    sharedRenderer = { renderer, users: 0, width: 0, height: 0 };
+  }
+  sharedRenderer.users += 1;
+  if (w > sharedRenderer.width || h > sharedRenderer.height) {
+    sharedRenderer.width = Math.max(sharedRenderer.width, w);
+    sharedRenderer.height = Math.max(sharedRenderer.height, h);
+    sharedRenderer.renderer.setSize(sharedRenderer.width, sharedRenderer.height, false);
+  }
+  return sharedRenderer.renderer;
+}
+
+function releaseRenderer(): void {
+  if (!sharedRenderer) return;
+  sharedRenderer.users -= 1;
+  if (sharedRenderer.users > 0) return;
+  sharedRenderer.renderer.dispose();
+  sharedRenderer = null;
+}
 
 function render(
   options: ShrineOptions,
@@ -614,14 +661,7 @@ function render(
 
   let renderer: THREE.WebGLRenderer | null = null;
   try {
-    renderer = new THREE.WebGLRenderer({
-      canvas: document.createElement("canvas"),
-      // The uprights, the railings and the bracket blocks are a pixel or two
-      // wide at this size.
-      antialias: true,
-      alpha: false,
-      powerPreference: "low-power",
-    });
+    renderer = acquireRenderer(w, h);
   } catch (error) {
     console.warn("shrine: WebGL unavailable", error);
     return {
@@ -634,14 +674,6 @@ function render(
       },
     };
   }
-  renderer.setPixelRatio(1);
-  renderer.setSize(w, h, false);
-  renderer.setClearColor(0x000000, 1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  // No tone curve: the greys above are worked out as albedo times irradiance
-  // straight to sRGB, and a filmic curve would move every one of them.
-  renderer.toneMapping = THREE.NoToneMapping;
-
   const scene = new THREE.Scene();
   scene.add(new THREE.AmbientLight(0xffffff, AMBIENT));
   const key = new THREE.DirectionalLight(0xffffff, KEY);
@@ -674,19 +706,24 @@ function render(
       subject.rotation.y =
         baseYaw + Math.sin((timeSec / TURN_PERIOD) * Math.PI * 2) * TURN;
     }
+    renderer.setViewport(0, 0, w, h);
+    renderer.setScissor(0, 0, w, h);
     renderer.render(scene, camera);
-    if (ctx) ctx.drawImage(renderer.domElement, 0, 0, w, h);
+    const drawn = renderer.domElement;
+    if (ctx) ctx.drawImage(drawn, 0, drawn.height - h, w, h, 0, 0, w, h);
   };
   draw(0);
 
-  let last = -Infinity;
+  const phase = (precinctsMade++ * REDRAW_STAGGER) % 1;
+  let lastSlot = -Infinity;
   return {
     canvas,
     animated: true,
     ready: Promise.resolve(),
     update: (timeSec: number) => {
-      if (timeSec - last < 1 / ANIM_FPS) return false;
-      last = timeSec;
+      const slot = Math.floor(timeSec * ANIM_FPS + phase);
+      if (slot === lastSlot) return false;
+      lastSlot = slot;
       draw(timeSec);
       return true;
     },
@@ -698,7 +735,7 @@ function render(
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of materials) m.dispose();
       });
-      renderer?.dispose();
+      if (renderer) releaseRenderer();
       renderer = null;
       canvas.width = 1;
       canvas.height = 1;

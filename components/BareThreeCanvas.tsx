@@ -8307,7 +8307,7 @@ void main() {
         // The black sheet is shut over the stage (the hand-over to the Work
         // section): nothing drawn here could be seen. The loop keeps
         // ticking so the first frame after the sheet opens is immediate.
-        if (reportedReady && sceneFx.covered) return;
+        if (reportedReady && (sceneFx.covered || sceneFx.stageHidden)) return;
         const parallaxMoving =
           !prefersReducedMotion &&
           (Math.abs(pointerParallaxTarget.x - pointerParallaxSmooth.x) >
