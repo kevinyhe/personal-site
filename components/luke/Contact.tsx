@@ -77,6 +77,9 @@ const STATUE_CELL_NARROW = 6;
  *  circle, and a fade there hid his top instead. Once the panel is open it
  *  is cut to the panel's box, corners and all. */
 const STATUES_OPEN = "inset(100vh 0 0 0 round max(2.4rem, 18px))";
+/** The statues' and the panel's z while the circle opens: over the page
+ *  above (app/page.tsx's z-20) and over the ground inside the circle. */
+const RAISED = "22";
 /** The statues' pictures. The query names the cut (scripts/contact-statue.mjs),
  *  so a copy of an earlier cut, kept by the browser or by BarPicture's own
  *  cache of what it has loaded, is not used: drawn into this cut's box it
@@ -89,6 +92,7 @@ export default function Contact(): JSX.Element {
   const panel = useRef<HTMLDivElement | null>(null);
   const cover = useRef<HTMLDivElement | null>(null);
   const statues = useRef<HTMLDivElement | null>(null);
+  const disc = useRef<HTMLDivElement | null>(null);
 
   const tvUp = useTvUp();
   const statueCell = useMedia("(min-width: 1024px)") ? STATUE_CELL : STATUE_CELL_NARROW;
@@ -105,26 +109,36 @@ export default function Contact(): JSX.Element {
     // screen (which, in the panel's own coordinates, is t × screen height
     // down from its top) and grows until it covers the whole screen.
     //
-    // The circle is a hole, onto the dark ground: cut out of
-    // the page above (the block Skills ends, app/page.tsx, whose bottom is
-    // the panel's top) and out of a cover in its colour over this section,
-    // and the panel inside it is clipped to it. A clip path, not a mask:
-    // the block above is many screens tall, and a mask is drawn at its size.
+    // Inside the circle is the dark ground, the statues and the panel; out
+    // of it, the page above (the block Skills ends, app/page.tsx, whose
+    // bottom is the panel's top) and, under the end of the cloud bank's
+    // track that hangs past it (CloudPassage.tsx), a cover in its colour
+    // over this section. While it opens, the inside is lifted over the
+    // page above (RAISED) rather than seen through a hole cut in it: a hole
+    // in a block many screens tall had the browser paint it again every
+    // frame, and that was most of a slow GPU's frame. For that, the block
+    // this section is in (app/page.tsx's z-10) is not a layer of its own
+    // while it opens, so the cover stays under the page above and the
+    // inside goes over it. The ground inside is a disc made at its full
+    // size and scaled down, so it is never painted again either.
     const prev = el.previousElementSibling ?? el.parentElement?.previousElementSibling ?? null;
     const above = prev instanceof HTMLElement ? prev : null;
+    const block = el.parentElement;
     const coverEl = cover.current;
     const layer = statues.current;
-    /** The box with a round hole r across at (its middle, y), and a wide
-     *  margin round it, so nothing that hangs over its edges is cut. */
-    const hole = (box: HTMLElement, y: number, r: number): string => {
-      const w = box.offsetWidth;
-      const h = box.offsetHeight;
-      const m = 1e4;
-      const f = (v: number): string => v.toFixed(1);
-      return `path(evenodd, "M${-m} ${-m}H${w + m}V${h + m}H${-m}Z M${f(w / 2 - r)} ${f(y)}a${f(r)} ${f(r)} 0 1 0 ${f(2 * r)} 0a${f(r)} ${f(r)} 0 1 0 ${f(-2 * r)} 0Z")`;
+    const discEl = disc.current;
+    let discRadius = 0;
+    const sizeDisc = (radius: number): void => {
+      if (!discEl || radius === discRadius) return;
+      discRadius = radius;
+      const px = `${radius.toFixed(1)}px`;
+      Object.assign(discEl.style, { width: `${(2 * radius).toFixed(1)}px`, height: `${(2 * radius).toFixed(1)}px`, marginLeft: `-${px}`, marginTop: `-${px}` });
     };
-    const cut = (target: HTMLElement | null, y: number, r: number): void => {
-      if (target) target.style.clipPath = r > 0 ? hole(target, y, r) : "";
+    const raise = (on: boolean): void => {
+      if (block) block.style.zIndex = on ? "auto" : "";
+      sheet.style.zIndex = on ? RAISED : "";
+      if (layer) layer.style.zIndex = on ? RAISED : "";
+      if (discEl) discEl.style.visibility = on ? "visible" : "hidden";
     };
     // Shut, the page above is cut off at its own foot: the cloud bank's
     // track hangs a screen past it, over this panel (CloudPassage.tsx),
@@ -139,17 +153,21 @@ export default function Contact(): JSX.Element {
       const full = Math.hypot(w / 2, h) * 1.02;
       const r = full * Math.pow(Math.min(1, Math.max(0, t)), 1.25);
       if (t >= 1 || r < 0.5) {
+        raise(false);
         sheet.style.clipPath = t >= 1 ? "none" : "circle(0px at 50% 0px)";
         if (layer) layer.style.clipPath = t >= 1 ? STATUES_OPEN : "circle(0px at 50% 0px)";
         shut();
-        cut(coverEl, 0, 0);
         return;
       }
       const cy = t * h;
+      raise(true);
+      if (above) above.style.clipPath = "";
       sheet.style.clipPath = `circle(${r.toFixed(1)}px at 50% ${cy.toFixed(1)}px)`;
       if (layer) layer.style.clipPath = `circle(${r.toFixed(1)}px at 50% ${(cy - layer.offsetTop).toFixed(1)}px)`;
-      cut(coverEl, cy, r);
-      if (above) cut(above, above.offsetHeight + cy, r);
+      if (discEl) {
+        sizeDisc(full);
+        discEl.style.transform = `translate3d(0, ${cy.toFixed(1)}px, 0) scale(${(r / full).toFixed(5)})`;
+      }
     };
     // The cover is the page above's colour, which turns with the cloud's.
     const offPalette = onPalette((t) => {
@@ -267,9 +285,9 @@ export default function Contact(): JSX.Element {
       ctx.revert();
       unplace();
       offPalette();
+      raise(false);
       sheet.style.clipPath = "";
-      cut(above, 0, 0);
-      cut(coverEl, 0, 0);
+      if (above) above.style.clipPath = "";
       if (coverEl) coverEl.style.visibility = "";
       if (layer) layer.style.clipPath = STATUES_OPEN;
     };
@@ -279,12 +297,19 @@ export default function Contact(): JSX.Element {
 
   return (
     <section aria-labelledby="contact-panel-title" id="contact" className="relative font-sans" ref={root} style={{ backgroundColor: GROUND }}>
-      {/* The dark ground behind the last screen of the page above, seen
-          only through the circle cut in it (see grow). */}
+      {/* The dark ground behind the last screen of the page above. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-full h-[100vh]" style={{ backgroundColor: GROUND }} />
       {/* The page above carried on over this section until the circle
           opens it (see grow). Only there while it opens. */}
       <div aria-hidden="true" className="pointer-events-none invisible absolute inset-0 z-[1]" ref={cover} />
+      {/* The ground inside the circle while it opens, over the page above
+          and under the statues and the panel (see grow). */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none invisible absolute left-1/2 top-0 z-[21] rounded-full"
+        ref={disc}
+        style={{ backgroundColor: GROUND, willChange: "transform" }}
+      />
       {/* The statues behind it all, drifting slower than the page (see
           the effect), under the panel and running a screen up past its
           top (see STATUES_OPEN). Faint, so the words and hands over them
